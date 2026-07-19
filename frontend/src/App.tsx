@@ -7,6 +7,7 @@ import Chat from './pages/Chat'
 import Datasources from './pages/Datasources'
 import Files from './pages/Files'
 import Login from './pages/Login'
+import Memories from './pages/Memories'
 import Profiles from './pages/Profiles'
 import TemplatesPage from './pages/Templates'
 import Tenants from './pages/Tenants'
@@ -30,6 +31,7 @@ function Shell() {
     { to: '/templates', label: 'Templates', show: can('templates', 'view') },
     { to: '/fontes-de-dados', label: 'Fontes de dados', show: can('datasources', 'view') },
     { to: '/arquivos', label: 'Arquivos', show: can('files', 'view') },
+    { to: '/memorias', label: 'Memórias', show: !(user?.is_master ?? false) },
   ].filter((l) => l.show)
 
   return (
@@ -75,6 +77,7 @@ function Shell() {
           <Route path="/templates" element={<TemplatesPage />} />
           <Route path="/fontes-de-dados" element={<Datasources />} />
           <Route path="/arquivos" element={<Files />} />
+          <Route path="/memorias" element={<Memories />} />
           <Route path="*" element={<Navigate to={links[0]?.to ?? '/usuarios'} replace />} />
         </Routes>
       </main>

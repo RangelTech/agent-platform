@@ -226,6 +226,7 @@ async def send_message(request: Request, user: dict = Depends(current_user)):
         "message": payload.message,
         "attachments": attachments,
         "transcription": _transcription_spec(user["tenant_id"]) if attachments else {},
+        "user_id": str(user["id"]),
         **run,
     }
     headers = {}
@@ -279,6 +280,22 @@ async def send_message(request: Request, user: dict = Depends(current_user)):
                        VALUES (%s, 'assistant', %s)""",
                     (chat_id, assistant_text),
                 )
+            # Fire post-conversation fact extraction (cheap model, async).
+            try:
+                from app.tasks import enqueue_kernel_task
+
+                enqueue_kernel_task(
+                    "/v1/extract-memories",
+                    {
+                        "thread_id": chat_id,
+                        "tenant_id": str(user["tenant_id"]),
+                        "user_id": str(user["id"]),
+                        "model": run["supervisor"]["model"],
+                        "embedding": run.get("embedding", {}),
+                    },
+                )
+            except Exception:  # noqa: BLE001 — memory must never break the chat
+                logger.exception("failed to enqueue memory extraction")
 
     return StreamingResponse(
         relay(),

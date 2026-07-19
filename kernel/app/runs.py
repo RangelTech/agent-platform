@@ -71,6 +71,7 @@ class RunRequest(BaseModel):
     agents: list[AgentSpec] = Field(default_factory=list)
     max_steps: int = Field(default=6, ge=1, le=20)
     tenant_id: str | None = None
+    user_id: str | None = None
     # name -> value, resolved into {{secret:NAME}} references inside tools;
     # never exposed to the model context.
     secrets: dict[str, str] = Field(default_factory=dict)
@@ -127,6 +128,17 @@ async def create_run(payload: RunRequest):
                     payload.attachments,
                     payload.transcription or {"provider": "stub"},
                 )
+                # Long-term memories relevant to this turn ride in run_config
+                # and are injected into the supervisor's system prompt.
+                if payload.user_id and payload.embedding:
+                    from app.memories import recall
+
+                    run_config["memories"] = await recall(
+                        tenant_id=payload.tenant_id,
+                        user_id=payload.user_id,
+                        query=payload.message,
+                        embedding=payload.embedding,
+                    )
                 async for mode, chunk in graph.astream(
                     {
                         "messages": [{"role": "user", "content": user_content}],

@@ -251,7 +251,13 @@ async def _supervisor_node(state: RunState) -> dict:
     )
     tool_defs = _agent_tool_defs(list(agents.values())) or None
     supervisor_config = ModelConfig(**supervisor["model"])
-    messages = _history_messages(state, supervisor.get("prompt", ""))
+    system_prompt = supervisor.get("prompt", "")
+    memories = run_config.get("memories") or []
+    if memories:
+        system_prompt += "\n\nO que você sabe sobre este usuário (memórias):\n" + "\n".join(
+            f"- {m}" for m in memories
+        )
+    messages = _history_messages(state, system_prompt)
 
     async def emit(delta: str):
         writer({"type": "token", "text": delta})

@@ -60,6 +60,29 @@ async def ingest_file_endpoint(payload: IngestFileIn):
     return {"status": "ok"}
 
 
+class ExtractMemoriesIn(BaseModel):
+    thread_id: str
+    tenant_id: str
+    user_id: str
+    model: dict
+    embedding: dict = {}
+
+
+@app.post("/v1/extract-memories", dependencies=[Depends(require_internal_auth)])
+async def extract_memories_endpoint(payload: ExtractMemoriesIn):
+    """Post-conversation fact extraction (async via Cloud Tasks / dev inline)."""
+    from app.memories import extract_memories
+
+    saved = await extract_memories(
+        thread_id=payload.thread_id,
+        tenant_id=payload.tenant_id,
+        user_id=payload.user_id,
+        model=payload.model,
+        embedding=payload.embedding or {"provider": "stub"},
+    )
+    return {"saved": saved}
+
+
 class TestDatasourceIn(BaseModel):
     kind: str
     config: dict = {}
