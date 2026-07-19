@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [backend, kernel]
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: agent_llm
+          POSTGRES_USER: agent
+          POSTGRES_PASSWORD: agent
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U agent -d agent_llm"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        working-directory: ${{ matrix.service }}
+        run: pip install -r requirements-dev.txt
+      - name: Lint
+        working-directory: ${{ matrix.service }}
+        run: ruff check .
+      - name: Test (unit + integration)
+        working-directory: ${{ matrix.service }}
+        env:
+          DATABASE_URL: postgresql://agent:agent@localhost:5433/agent_llm
+        run: pytest -q -m "integration or not integration"
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install & build
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
