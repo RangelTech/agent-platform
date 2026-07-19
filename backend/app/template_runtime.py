@@ -69,6 +69,9 @@ def build_run_payload(tenant_id, template_id: str | None) -> dict:
                 },
                 "agents": [],
                 "max_steps": 4,
+                "tenant_id": str(tenant_id),
+                "secrets": {},
+                "mcp_servers": [],
             }
 
         def service_by_id(service_id):
@@ -85,6 +88,30 @@ def build_run_payload(tenant_id, template_id: str | None) -> dict:
             "SELECT * FROM template_agents WHERE version_id = %s ORDER BY sort_order",
             (version["id"],),
         ).fetchall()
+
+        # Active named secrets, decrypted only here — they cross the internal
+        # OIDC link and are substituted inside tools, never shown to the model.
+        secret_rows = conn.execute(
+            "SELECT name, value_encrypted FROM secrets WHERE tenant_id = %s AND is_active",
+            (tenant_id,),
+        ).fetchall()
+        secrets = {r["name"]: decrypt(r["value_encrypted"]) for r in secret_rows}
+
+        server_rows = conn.execute(
+            """SELECT name, url, auth_token_encrypted
+                 FROM template_mcp_servers WHERE version_id = %s""",
+            (version["id"],),
+        ).fetchall()
+        mcp_servers = [
+            {
+                "name": s["name"],
+                "url": s["url"],
+                "auth_token": decrypt(s["auth_token_encrypted"])
+                if s["auth_token_encrypted"]
+                else None,
+            }
+            for s in server_rows
+        ]
 
         return {
             "supervisor": {
@@ -105,8 +132,12 @@ def build_run_payload(tenant_id, template_id: str | None) -> dict:
                         a["model_override"],
                         a["reasoning_effort"],
                     ),
+                    "tools": a["tools"] or [],
                 }
                 for a in agents
             ],
             "max_steps": version["max_steps"],
+            "tenant_id": str(tenant_id),
+            "secrets": secrets,
+            "mcp_servers": mcp_servers,
         }

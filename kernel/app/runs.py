@@ -42,11 +42,18 @@ class AgentSpec(BaseModel):
     description: str = Field(min_length=1)
     prompt: str = Field(min_length=1)
     model: ModelSpec
+    tools: list[str] = Field(default_factory=list)
 
 
 class SupervisorSpec(BaseModel):
     prompt: str = ""
     model: ModelSpec
+
+
+class McpServerSpec(BaseModel):
+    name: str = Field(min_length=1, max_length=60, pattern=r"^[a-z0-9_]+$")
+    url: str
+    auth_token: str | None = None
 
 
 class RunRequest(BaseModel):
@@ -55,6 +62,11 @@ class RunRequest(BaseModel):
     supervisor: SupervisorSpec
     agents: list[AgentSpec] = Field(default_factory=list)
     max_steps: int = Field(default=6, ge=1, le=20)
+    tenant_id: str | None = None
+    # name -> value, resolved into {{secret:NAME}} references inside tools;
+    # never exposed to the model context.
+    secrets: dict[str, str] = Field(default_factory=dict)
+    mcp_servers: list[McpServerSpec] = Field(default_factory=list)
 
 
 def require_internal_auth(request: Request) -> None:
@@ -79,6 +91,10 @@ async def create_run(payload: RunRequest):
         "supervisor": payload.supervisor.model_dump(),
         "agents": [a.model_dump() for a in payload.agents],
         "max_steps": payload.max_steps,
+        "tenant_id": payload.tenant_id,
+        "thread_id": payload.thread_id,
+        "secrets": payload.secrets,
+        "mcp_servers": [s.model_dump() for s in payload.mcp_servers],
     }
 
     async def event_stream():
@@ -106,6 +122,18 @@ async def create_run(payload: RunRequest):
                                     {
                                         "name": chunk["name"],
                                         "status": "start" if kind == "agent_start" else "done",
+                                    },
+                                )
+                            )
+                        elif kind == "tool_call":
+                            await queue.put(
+                                (
+                                    "tool",
+                                    {
+                                        "agent": chunk["agent"],
+                                        "tool": chunk["tool"],
+                                        "status": chunk["status"],
+                                        "duration_ms": chunk["duration_ms"],
                                     },
                                 )
                             )

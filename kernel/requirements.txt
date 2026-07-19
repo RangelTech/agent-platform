@@ -7,3 +7,4 @@ langgraph>=0.4
 langgraph-checkpoint-postgres>=2.0
 # <1.93: 1.93+ ships only an sdist that needs a Rust toolchain to build.
 litellm>=1.60,<1.93
+mcp>=1.9

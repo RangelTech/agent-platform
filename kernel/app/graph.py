@@ -10,6 +10,7 @@ Hard limits (max_steps per turn) make runaway loops impossible.
 
 import json
 import logging
+import time
 
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.config import get_stream_writer
@@ -18,6 +19,7 @@ from psycopg_pool import AsyncConnectionPool
 
 from app.config import settings
 from app.providers import ModelConfig, complete
+from app.tools import ExternalServers, open_catalog_session, set_run_secrets
 
 logger = logging.getLogger(__name__)
 
@@ -65,26 +67,148 @@ def _agent_tool_defs(agents: list[dict]) -> list[dict]:
     ]
 
 
-async def _run_specialist(agent: dict, task: str, writer) -> str:
+async def _record_tool_call(
+    run_config: dict, agent: str, tool: str, arguments: dict, output: str,
+    status: str, started: float, writer,
+) -> None:
+    duration_ms = int((time.monotonic() - started) * 1000)
+    writer(
+        {
+            "type": "tool_call",
+            "agent": agent,
+            "tool": tool,
+            "status": status,
+            "duration_ms": duration_ms,
+        }
+    )
+    from app.trace import insert_tool_call
+
+    await insert_tool_call(
+        tenant_id=run_config.get("tenant_id"),
+        chat_id=run_config.get("thread_id"),
+        agent_name=agent,
+        tool_name=tool,
+        input=arguments,
+        output=output[:10_000],
+        status=status,
+        duration_ms=duration_ms,
+    )
+
+
+async def _execute_tool(
+    name: str, arguments: dict, catalog_session, external: ExternalServers
+) -> str:
+    if name in external.tools:
+        return await external.call(name, arguments)
+    result = await catalog_session.call_tool(name, arguments)
+    parts = [c.text for c in result.content if getattr(c, "text", None)]
+    return "\n".join(parts) or "(sem conteúdo)"
+
+
+async def _run_specialist(
+    agent: dict, task: str, writer, run_config: dict, tool_defs: dict,
+    catalog_session, external: ExternalServers,
+) -> str:
+    """One specialist turn: its own model, its own tools, a short bounded
+    tool-loop. Output goes back to the supervisor, not to the user stream."""
     writer({"type": "agent_start", "name": agent["name"]})
     config = ModelConfig(**agent["model"])
+    allowed_names = {t for t in agent.get("tools", []) if t in tool_defs}
+    allowed = [tool_defs[t] for t in allowed_names] or None
     messages = [
         {"role": "system", "content": agent["prompt"]},
         {"role": "user", "content": task},
     ]
 
     async def swallow(_delta: str):
-        # Specialist output goes to the supervisor, not to the user stream.
         return None
 
+    output = ""
     try:
-        result = await complete(config, messages, swallow)
-        output = result.content or "(especialista não retornou conteúdo)"
+        for _round in range(settings.specialist_max_tool_rounds):
+            result = await complete(config, messages, swallow, tools=allowed)
+            if not result.tool_calls:
+                output = result.content or "(especialista não retornou conteúdo)"
+                break
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": result.content or None,
+                    "tool_calls": [
+                        {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {"name": tc.name, "arguments": tc.arguments},
+                        }
+                        for tc in result.tool_calls
+                    ],
+                }
+            )
+            for tc in result.tool_calls:
+                try:
+                    arguments = json.loads(tc.arguments or "{}")
+                except json.JSONDecodeError:
+                    arguments = {"_raw": tc.arguments}
+                started = time.monotonic()
+                if tc.name not in allowed_names:
+                    # A model may hallucinate a tool it was never offered;
+                    # refuse without executing.
+                    tool_output = f"ERRO: tool {tc.name} não disponível para este agente"
+                    status = "error"
+                else:
+                    try:
+                        tool_output = await _execute_tool(
+                            tc.name, arguments, catalog_session, external
+                        )
+                        status = "ok"
+                    except Exception as exc:  # noqa: BLE001 — reported into the loop
+                        tool_output = f"ERRO na tool {tc.name}: {exc}"
+                        status = "error"
+                await _record_tool_call(
+                    run_config, agent["name"], tc.name, arguments, tool_output,
+                    status, started, writer,
+                )
+                messages.append(
+                    {"role": "tool", "tool_call_id": tc.id, "content": tool_output}
+                )
+        else:
+            result = await complete(
+                config,
+                messages
+                + [{"role": "user", "content": "Responda agora com o que você tem."}],
+                swallow,
+            )
+            output = result.content or "(sem resposta)"
     except Exception as exc:  # noqa: BLE001 — reported into the loop, not fatal
         logger.exception("specialist %s failed", agent["name"])
         output = f"ERRO no especialista {agent['name']}: {exc}"
     writer({"type": "agent_done", "name": agent["name"]})
     return output
+
+
+async def _load_tool_defs(catalog_session, external: ExternalServers) -> dict:
+    """All available tools as OpenAI-style function defs, keyed by name."""
+    defs: dict[str, dict] = {}
+    listed = await catalog_session.list_tools()
+    for tool in listed.tools:
+        defs[tool.name] = {
+            "type": "function",
+            "function": {
+                "name": tool.name,
+                "description": tool.description or "",
+                "parameters": tool.inputSchema or {"type": "object", "properties": {}},
+            },
+        }
+    for public, (_server, _tool, schema) in external.tools.items():
+        defs[public] = {
+            "type": "function",
+            "function": {
+                "name": public,
+                "description": f"Tool externa {public}",
+                "parameters": schema or {"type": "object", "properties": {}},
+            },
+        }
+    return defs
 
 
 async def _supervisor_node(state: RunState) -> dict:
@@ -94,6 +218,7 @@ async def _supervisor_node(state: RunState) -> dict:
     max_steps = int(run_config.get("max_steps", settings.max_steps_default))
     writer = get_stream_writer()
 
+    set_run_secrets(run_config.get("secrets", {}))
     tool_defs = _agent_tool_defs(list(agents.values())) or None
     supervisor_config = ModelConfig(**supervisor["model"])
     messages = _history_messages(state, supervisor.get("prompt", ""))
@@ -102,58 +227,67 @@ async def _supervisor_node(state: RunState) -> dict:
         writer({"type": "token", "text": delta})
 
     final_text = ""
-    for _step in range(max_steps):
-        result = await complete(supervisor_config, messages, emit, tools=tool_defs)
-        if not result.tool_calls:
-            final_text = result.content
-            break
+    async with (
+        open_catalog_session() as catalog_session,
+        ExternalServers(run_config.get("mcp_servers", [])) as external,
+    ):
+        platform_tools = await _load_tool_defs(catalog_session, external)
 
-        # Record the assistant turn that requested the calls, then answer them.
-        messages.append(
-            {
-                "role": "assistant",
-                "content": result.content or None,
-                "tool_calls": [
-                    {
-                        "id": tc.id,
-                        "type": "function",
-                        "function": {"name": tc.name, "arguments": tc.arguments},
-                    }
-                    for tc in result.tool_calls
-                ],
-            }
-        )
-        for tc in result.tool_calls:
-            agent = agents.get(tc.name)
-            if agent is None:
-                output = f"ERRO: especialista '{tc.name}' não existe."
-            else:
-                try:
-                    task = json.loads(tc.arguments or "{}").get("task", "")
-                except json.JSONDecodeError:
-                    task = tc.arguments
-                output = await _run_specialist(agent, task, writer)
+        for _step in range(max_steps):
+            result = await complete(supervisor_config, messages, emit, tools=tool_defs)
+            if not result.tool_calls:
+                final_text = result.content
+                break
+
+            # Record the assistant turn that requested the calls, then answer them.
             messages.append(
-                {"role": "tool", "tool_call_id": tc.id, "content": output}
-            )
-    else:
-        # Step budget exhausted: force a final answer, no tools allowed.
-        writer({"type": "limit", "detail": "max_steps"})
-        result = await complete(
-            supervisor_config,
-            messages
-            + [
                 {
-                    "role": "user",
-                    "content": (
-                        "Limite de passos atingido. Responda agora ao usuário "
-                        "com o que você já tem."
-                    ),
+                    "role": "assistant",
+                    "content": result.content or None,
+                    "tool_calls": [
+                        {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {"name": tc.name, "arguments": tc.arguments},
+                        }
+                        for tc in result.tool_calls
+                    ],
                 }
-            ],
-            emit,
-        )
-        final_text = result.content
+            )
+            for tc in result.tool_calls:
+                agent = agents.get(tc.name)
+                if agent is None:
+                    output = f"ERRO: especialista '{tc.name}' não existe."
+                else:
+                    try:
+                        task = json.loads(tc.arguments or "{}").get("task", "")
+                    except json.JSONDecodeError:
+                        task = tc.arguments
+                    output = await _run_specialist(
+                        agent, task, writer, run_config, platform_tools,
+                        catalog_session, external,
+                    )
+                messages.append(
+                    {"role": "tool", "tool_call_id": tc.id, "content": output}
+                )
+        else:
+            # Step budget exhausted: force a final answer, no tools allowed.
+            writer({"type": "limit", "detail": "max_steps"})
+            result = await complete(
+                supervisor_config,
+                messages
+                + [
+                    {
+                        "role": "user",
+                        "content": (
+                            "Limite de passos atingido. Responda agora ao usuário "
+                            "com o que você já tem."
+                        ),
+                    }
+                ],
+                emit,
+            )
+            final_text = result.content
 
     return {"messages": [{"role": "assistant", "content": final_text}]}
 

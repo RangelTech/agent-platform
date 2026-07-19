@@ -9,6 +9,7 @@ import re
 
 from fastapi import APIRouter, Depends, HTTPException
 from psycopg.errors import UniqueViolation
+from psycopg.types.json import Json
 from pydantic import BaseModel, Field
 
 from app.auth import require
@@ -27,6 +28,13 @@ class AgentIn(BaseModel):
     ai_service_id: str | None = None
     model_override: str | None = None
     reasoning_effort: str | None = None
+    tools: list[str] = Field(default_factory=list)
+
+
+class McpServerIn(BaseModel):
+    name: str = Field(min_length=1, max_length=60, pattern=r"^[a-z0-9_]+$")
+    url: str = Field(min_length=8, max_length=2000)
+    auth_token: str | None = None
 
 
 class VersionIn(BaseModel):
@@ -36,6 +44,7 @@ class VersionIn(BaseModel):
     supervisor_reasoning_effort: str | None = None
     max_steps: int = Field(default=6, ge=1, le=20)
     agents: list[AgentIn] = Field(default_factory=list)
+    mcp_servers: list[McpServerIn] = Field(default_factory=list)
     notes: str = ""
 
 
@@ -162,8 +171,8 @@ def create_version(
             conn.execute(
                 """INSERT INTO template_agents
                        (version_id, name, description, prompt, ai_service_id,
-                        model_override, reasoning_effort, sort_order)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+                        model_override, reasoning_effort, sort_order, tools)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     version["id"],
                     agent.name,
@@ -173,6 +182,21 @@ def create_version(
                     agent.model_override,
                     agent.reasoning_effort,
                     order,
+                    Json(agent.tools),
+                ),
+            )
+        from app.crypto import encrypt
+
+        for server in payload.mcp_servers:
+            conn.execute(
+                """INSERT INTO template_mcp_servers
+                       (version_id, name, url, auth_token_encrypted)
+                   VALUES (%s, %s, %s, %s)""",
+                (
+                    version["id"],
+                    server.name,
+                    server.url,
+                    encrypt(server.auth_token) if server.auth_token else None,
                 ),
             )
     return {"id": str(version["id"]), "version_number": number}
@@ -215,6 +239,10 @@ def get_version(
             "SELECT * FROM template_agents WHERE version_id = %s ORDER BY sort_order",
             (version_id,),
         ).fetchall()
+        mcp_servers = conn.execute(
+            "SELECT name, url FROM template_mcp_servers WHERE version_id = %s",
+            (version_id,),
+        ).fetchall()
     return {
         "id": str(version["id"]),
         "version_number": version["version_number"],
@@ -236,9 +264,12 @@ def get_version(
                 "ai_service_id": str(a["ai_service_id"]) if a["ai_service_id"] else None,
                 "model_override": a["model_override"],
                 "reasoning_effort": a["reasoning_effort"],
+                "tools": a["tools"] or [],
             }
             for a in agents
         ],
+        # Tokens are write-only; the editor resubmits them when changing servers.
+        "mcp_servers": [{"name": s["name"], "url": s["url"]} for s in mcp_servers],
     }
 
 

@@ -3,43 +3,12 @@
 Everything here needs Postgres (the checkpointer) — marked integration.
 """
 
-import json
 import uuid
 
 import pytest
-from app.main import app
-from httpx import ASGITransport, AsyncClient
+from tests.conftest import sse_events as _events
 
 pytestmark = [pytest.mark.integration, pytest.mark.anyio]
-
-
-@pytest.fixture
-def anyio_backend():
-    return "asyncio"
-
-
-@pytest.fixture
-async def client():
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://kernel") as c:
-        yield c
-    from app.graph import close_graph
-
-    await close_graph()
-
-
-def _events(sse_text: str) -> list[tuple[str, dict]]:
-    events = []
-    for block in sse_text.strip().split("\n\n"):
-        event, data = None, None
-        for line in block.splitlines():
-            if line.startswith("event: "):
-                event = line[len("event: ") :]
-            elif line.startswith("data: "):
-                data = json.loads(line[len("data: ") :])
-        if event:
-            events.append((event, data))
-    return events
 
 
 STUB = {"provider": "stub", "model": "stub-1"}

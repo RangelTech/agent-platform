@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     turn_timeout_seconds: float = 120.0
     # Default supervisor step budget per turn when the template omits it.
     max_steps_default: int = 6
+    # Tool rounds a specialist may take before being forced to answer.
+    specialist_max_tool_rounds: int = 4
     checkpoint_pool_size: int = 5
     # Shared secret for backend->kernel calls. Empty disables the check (dev).
     internal_token: str = ""

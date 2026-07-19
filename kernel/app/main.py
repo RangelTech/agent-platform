@@ -13,6 +13,9 @@ from app.runs import router as runs_router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     yield
+    from app.trace import close_trace_pool
+
+    await close_trace_pool()
     await close_graph()
 
 
@@ -23,6 +26,23 @@ app.include_router(runs_router)
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "kernel"}
+
+
+@app.get("/v1/tools", dependencies=[Depends(require_internal_auth)])
+async def list_platform_tools():
+    """Tool catalog via MCP list_tools — feeds the template editor."""
+    from app.tools import open_catalog_session
+
+    async with open_catalog_session() as session:
+        listed = await session.list_tools()
+    return [
+        {
+            "name": t.name,
+            "description": t.description or "",
+            "parameters": t.inputSchema or {},
+        }
+        for t in listed.tools
+    ]
 
 
 class TestModelIn(BaseModel):

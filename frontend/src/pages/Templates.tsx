@@ -8,9 +8,11 @@ import {
   deployVersion,
   getVersion,
   listTemplates,
+  listToolkits,
   listVersions,
   type AgentDraft,
   type TemplateSummary,
+  type ToolInfo,
 } from '../lib/templates'
 
 interface AiServiceOption {
@@ -27,6 +29,7 @@ const EMPTY_AGENT: AgentDraft = {
   ai_service_id: null,
   model_override: null,
   reasoning_effort: null,
+  tools: [],
 }
 
 const EFFORTS = [
@@ -39,14 +42,22 @@ const EFFORTS = [
 function AgentEditor({
   agent,
   services,
+  toolkits,
   onChange,
   onRemove,
 }: {
   agent: AgentDraft
   services: AiServiceOption[]
+  toolkits: ToolInfo[]
   onChange: (a: AgentDraft) => void
   onRemove: () => void
 }) {
+  function toggleTool(name: string) {
+    const tools = agent.tools.includes(name)
+      ? agent.tools.filter((t) => t !== name)
+      : [...agent.tools, name]
+    onChange({ ...agent, tools })
+  }
   return (
     <div className="space-y-3 rounded-lg border border-slate-800 bg-slate-950/60 p-4" data-testid="agent-editor">
       <div className="grid gap-3 sm:grid-cols-2">
@@ -103,6 +114,33 @@ function AgentEditor({
           className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-500"
         />
       </label>
+      <div>
+        <span className="mb-1 block text-sm text-slate-300">Ferramentas</span>
+        <div className="flex flex-wrap gap-2">
+          {toolkits.map((tool) => (
+            <label
+              key={tool.name}
+              title={tool.description}
+              className={`cursor-pointer rounded-full border px-3 py-1 text-xs transition ${
+                agent.tools.includes(tool.name)
+                  ? 'border-indigo-500 bg-indigo-950 text-indigo-200'
+                  : 'border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-500'
+              }`}
+            >
+              <input
+                type="checkbox"
+                className="hidden"
+                checked={agent.tools.includes(tool.name)}
+                onChange={() => toggleTool(tool.name)}
+              />
+              {tool.name}
+            </label>
+          ))}
+          {toolkits.length === 0 && (
+            <span className="text-xs text-slate-500">catálogo indisponível</span>
+          )}
+        </div>
+      </div>
       <Button type="button" variant="danger" onClick={onRemove}>
         Remover agente
       </Button>
@@ -116,6 +154,11 @@ export default function Templates() {
   const { data: services = [] } = useQuery({
     queryKey: ['ai-services'],
     queryFn: () => api<AiServiceOption[]>('/ai-services'),
+  })
+  const { data: toolkits = [] } = useQuery({
+    queryKey: ['toolkits'],
+    queryFn: listToolkits,
+    staleTime: 5 * 60_000,
   })
 
   const [selected, setSelected] = useState<TemplateSummary | null>(null)
@@ -337,6 +380,7 @@ export default function Templates() {
               key={i}
               agent={agent}
               services={services}
+              toolkits={toolkits}
               onChange={(a) => setAgents(agents.map((x, j) => (j === i ? a : x)))}
               onRemove={() => setAgents(agents.filter((_, j) => j !== i))}
             />

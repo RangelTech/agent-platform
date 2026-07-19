@@ -16,7 +16,15 @@ export interface AgentDraft {
   ai_service_id: string | null
   model_override: string | null
   reasoning_effort: string | null
+  tools: string[]
 }
+
+export interface ToolInfo {
+  name: string
+  description: string
+}
+
+export const listToolkits = () => api<ToolInfo[]>('/toolkits')
 
 export interface VersionDetail {
   id: string
