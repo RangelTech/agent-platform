@@ -15,9 +15,17 @@ export interface ChatMessage {
   created_at: string
 }
 
+export interface ArtifactEvent {
+  artifact_id: string
+  kind: string
+  title: string
+}
+
 export interface StreamCallbacks {
   onChatId?: (chatId: string) => void
   onToken?: (text: string) => void
+  onAgent?: (name: string, status: string) => void
+  onArtifact?: (artifact: ArtifactEvent) => void
   onDone?: (fullText: string) => void
   onError?: (detail: string) => void
 }
@@ -80,6 +88,12 @@ export async function sendMessage(
             break
           case 'token':
             callbacks.onToken?.(data.text)
+            break
+          case 'agent':
+            callbacks.onAgent?.(data.name, data.status)
+            break
+          case 'artifact':
+            callbacks.onArtifact?.(data as unknown as ArtifactEvent)
             break
           case 'done':
             callbacks.onDone?.(data.text)

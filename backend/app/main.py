@@ -9,6 +9,7 @@ from app.bootstrap import bootstrap_master
 from app.config import settings
 from app.migrations import run_migrations
 from app.routes import ai_services as ai_service_routes
+from app.routes import artifacts as artifact_routes
 from app.routes import auth as auth_routes
 from app.routes import chats as chat_routes
 from app.routes import datasources as datasource_routes
@@ -63,6 +64,7 @@ app.include_router(ai_service_routes.router)
 app.include_router(template_routes.router)
 app.include_router(secret_routes.router)
 app.include_router(datasource_routes.router)
+app.include_router(artifact_routes.router)
 app.include_router(toolkit_routes.router)
 
 

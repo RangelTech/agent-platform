@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Button } from '../components/ui'
 import { api } from '../lib/api'
+import { ArtifactCard, type ArtifactRef } from '../components/ArtifactCard'
 import { sendMessage, type ChatMessage, type ChatSummary } from '../lib/chat'
 import { listTemplates } from '../lib/templates'
 
@@ -28,12 +29,17 @@ export default function Chat() {
   const [error, setError] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
 
+  const [artifacts, setArtifacts] = useState<ArtifactRef[]>([])
+  const [workingAgent, setWorkingAgent] = useState('')
+
   useEffect(() => {
     if (!activeChat) {
       setMessages([])
+      setArtifacts([])
       return
     }
     api<ChatMessage[]>(`/chats/${activeChat}/messages`).then(setMessages)
+    api<ArtifactRef[]>(`/chats/${activeChat}/artifacts`).then(setArtifacts).catch(() => setArtifacts([]))
     // Reflect the conversation's pinned template in the picker.
     const chat = chats.find((c) => c.id === activeChat)
     if (chat) setTemplateId(chat.template_id ?? '')
@@ -66,8 +72,15 @@ export default function Chat() {
         acc += t
         setStreaming(acc)
       },
+      onAgent: (name, status) => {
+        setWorkingAgent(status === 'start' ? name : '')
+      },
+      onArtifact: (artifact) => {
+        setArtifacts((a) => [...a, artifact])
+      },
       onDone: (full) => {
         setStreaming('')
+        setWorkingAgent('')
         setMessages((m) => [
           ...m,
           { id: `done-${Date.now()}`, role: 'assistant', content: full, created_at: '' },
@@ -75,6 +88,7 @@ export default function Chat() {
       },
       onError: (detail) => {
         setStreaming('')
+        setWorkingAgent('')
         setError(detail)
       },
     }, templateId || null)
@@ -143,6 +157,14 @@ export default function Chat() {
               {m.content}
             </div>
           ))}
+          {artifacts.map((artifact) => (
+            <ArtifactCard key={artifact.artifact_id} artifact={artifact} />
+          ))}
+          {workingAgent && (
+            <p className="text-xs text-slate-500" data-testid="working-agent">
+              ⚙ {workingAgent} trabalhando…
+            </p>
+          )}
           {streaming && (
             <div
               data-testid="streaming-message"

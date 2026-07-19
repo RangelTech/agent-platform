@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 from pydantic import BaseModel
 
-from app import providers
+from app import providers, tools_output  # noqa: F401 — registers output tools
 from app.config import settings
 from app.graph import close_graph
 from app.runs import require_internal_auth
