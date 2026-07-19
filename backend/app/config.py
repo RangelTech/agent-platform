@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     # When set (Cloud Run), the backend sends an OIDC ID token with this
     # audience on every kernel call. Usually the kernel's own URL.
     kernel_audience: str = ""
+    # Fernet master key for secrets at rest (Secret Manager in production).
+    encryption_key: str = ""
 
     # Master bootstrap. The password is only used when the master does not yet
     # exist; production must supply a real one via Secret Manager.

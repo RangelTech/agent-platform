@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { NavLink, Navigate, Route, BrowserRouter as Router, Routes, useLocation } from 'react-router-dom'
 import { Button } from './components/ui'
 import { AuthProvider, useAuth } from './lib/auth'
+import AiServices from './pages/AiServices'
 import Chat from './pages/Chat'
 import Login from './pages/Login'
 import Profiles from './pages/Profiles'
@@ -22,6 +23,7 @@ function Shell() {
     { to: '/empresas', label: 'Empresas', show: user?.is_master ?? false },
     { to: '/usuarios', label: 'Usuários', show: can('users', 'view') },
     { to: '/perfis', label: 'Perfis', show: can('user_profiles', 'view') },
+    { to: '/servicos-ia', label: 'Serviços de IA', show: can('ai_services', 'view') },
   ].filter((l) => l.show)
 
   return (
@@ -63,6 +65,7 @@ function Shell() {
           <Route path="/empresas" element={user?.is_master ? <Tenants /> : <Navigate to="/usuarios" />} />
           <Route path="/usuarios" element={<Users />} />
           <Route path="/perfis" element={<Profiles />} />
+          <Route path="/servicos-ia" element={<AiServices />} />
           <Route path="*" element={<Navigate to={links[0]?.to ?? '/usuarios'} replace />} />
         </Routes>
       </main>

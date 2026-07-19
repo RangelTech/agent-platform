@@ -1,9 +1,13 @@
+import threading
 import uuid
 
 import psycopg
 import pytest
+import uvicorn
 from app.config import settings
 from app.migrations import run_migrations
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
 
 
@@ -44,6 +48,38 @@ def master_token(client):
 
 def auth(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
+
+
+def _fake_kernel_app() -> FastAPI:
+    app = FastAPI()
+
+    @app.post("/v1/runs")
+    async def runs(payload: dict):
+        async def stream():
+            yield 'event: token\ndata: {"text": "olá"}\n\n'
+            yield 'event: token\ndata: {"text": " mundo"}\n\n'
+            yield 'event: done\ndata: {"text": "olá mundo"}\n\n'
+
+        return StreamingResponse(stream(), media_type="text/event-stream")
+
+    return app
+
+
+@pytest.fixture(scope="session")
+def fake_kernel():
+    """Real HTTP server on a random port — the backend talks to it over the wire."""
+    config = uvicorn.Config(
+        _fake_kernel_app(), host="127.0.0.1", port=0, log_level="error"
+    )
+    server = uvicorn.Server(config)
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    while not server.started:
+        pass
+    port = server.servers[0].sockets[0].getsockname()[1]
+    yield f"http://127.0.0.1:{port}"
+    server.should_exit = True
+    thread.join(timeout=5)
 
 
 @pytest.fixture

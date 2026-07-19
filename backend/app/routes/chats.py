@@ -116,15 +116,33 @@ def _ensure_chat(user: dict, payload: SendRequest) -> dict:
     return chat
 
 
-def _model_spec() -> dict:
-    """Interim model resolution (replaced by AI services in ticket 05)."""
-    if settings.ai_provider == "stub" or not settings.ai_api_key:
-        return {"provider": "stub", "model": "stub-1"}
-    return {
-        "provider": settings.ai_provider,
-        "model": settings.ai_model,
-        "api_key": settings.ai_api_key,
-    }
+def _model_spec(tenant_id) -> dict:
+    """Resolve the tenant's active AI service. Falls back to env config (dev)
+    and finally to the stub so a missing setup never breaks the chat."""
+    from app.crypto import decrypt
+
+    with get_connection() as conn:
+        row = conn.execute(
+            """SELECT * FROM ai_services
+                WHERE tenant_id = %s AND is_active AND auth_type = 'api_key'
+                      AND api_key_encrypted IS NOT NULL
+                ORDER BY created_at LIMIT 1""",
+            (tenant_id,),
+        ).fetchone()
+    if row is not None:
+        return {
+            "provider": "openai" if row["provider"] == "openai-compatible" else row["provider"],
+            "model": row["model"],
+            "api_key": decrypt(row["api_key_encrypted"]),
+            "api_base": row["api_base"],
+        }
+    if settings.ai_provider != "stub" and settings.ai_api_key:
+        return {
+            "provider": settings.ai_provider,
+            "model": settings.ai_model,
+            "api_key": settings.ai_api_key,
+        }
+    return {"provider": "stub", "model": "stub-1"}
 
 
 @router.post("/chat/send")
@@ -135,7 +153,7 @@ async def send_message(payload: SendRequest, user: dict = Depends(current_user))
     kernel_payload = {
         "thread_id": chat_id,
         "message": payload.message,
-        "model": _model_spec(),
+        "model": _model_spec(user["tenant_id"]),
         "system_prompt": settings.ai_system_prompt,
     }
     headers = {}

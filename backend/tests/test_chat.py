@@ -7,45 +7,11 @@ smoke and Playwright.
 """
 
 import json
-import threading
 
 import pytest
-import uvicorn
-from fastapi import FastAPI
-from fastapi.responses import StreamingResponse
 from tests.conftest import auth
 
 pytestmark = pytest.mark.integration
-
-
-def _fake_kernel_app() -> FastAPI:
-    app = FastAPI()
-
-    @app.post("/v1/runs")
-    async def runs(payload: dict):
-        async def stream():
-            yield 'event: token\ndata: {"text": "olá"}\n\n'
-            yield 'event: token\ndata: {"text": " mundo"}\n\n'
-            yield 'event: done\ndata: {"text": "olá mundo"}\n\n'
-
-        return StreamingResponse(stream(), media_type="text/event-stream")
-
-    return app
-
-
-@pytest.fixture(scope="module")
-def fake_kernel():
-    """Real HTTP server on a random port — the backend talks to it over the wire."""
-    config = uvicorn.Config(_fake_kernel_app(), host="127.0.0.1", port=0, log_level="error")
-    server = uvicorn.Server(config)
-    thread = threading.Thread(target=server.run, daemon=True)
-    thread.start()
-    while not server.started:
-        pass
-    port = server.servers[0].sockets[0].getsockname()[1]
-    yield f"http://127.0.0.1:{port}"
-    server.should_exit = True
-    thread.join(timeout=5)
 
 
 @pytest.fixture

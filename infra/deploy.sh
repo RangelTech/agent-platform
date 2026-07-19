@@ -48,7 +48,7 @@ deploy_backend() {
     --image=$REPO/teste_ia-backend:$SHORT_SHA \
     --service-account=$RUNTIME_SA \
     --add-cloudsql-instances=$SQL_CONNECTION \
-    --set-secrets=DATABASE_URL=teste-ia-database-url:latest \
+    --set-secrets=DATABASE_URL=teste-ia-database-url:latest,ENCRYPTION_KEY=teste-ia-encryption-key:latest \
     --set-env-vars=KERNEL_URL=$kernel_url,KERNEL_AUDIENCE=$kernel_url \
     --allow-unauthenticated \
     --memory=512Mi --cpu=1 --min-instances=0 --max-instances=5 \
