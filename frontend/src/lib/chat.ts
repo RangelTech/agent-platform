@@ -12,6 +12,7 @@ export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
+  attachments?: { kind: string; name: string }[]
   created_at: string
 }
 
@@ -36,18 +37,26 @@ export async function sendMessage(
   chatId: string | null,
   callbacks: StreamCallbacks,
   templateId?: string | null,
+  attachments?: File[],
   signal?: AbortSignal,
 ): Promise<void> {
   const token = getToken()
-  const res = await fetch('/api/chat/send', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify({ message, chat_id: chatId, template_id: templateId ?? null }),
-    signal,
-  })
+  let body: BodyInit
+  const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {}
+
+  if (attachments && attachments.length > 0) {
+    const form = new FormData()
+    form.append('message', message)
+    if (chatId) form.append('chat_id', chatId)
+    if (templateId) form.append('template_id', templateId)
+    for (const file of attachments) form.append('files', file)
+    body = form // browser sets the multipart boundary
+  } else {
+    headers['Content-Type'] = 'application/json'
+    body = JSON.stringify({ message, chat_id: chatId, template_id: templateId ?? null })
+  }
+
+  const res = await fetch('/api/chat/send', { method: 'POST', headers, body, signal })
 
   if (!res.ok || !res.body) {
     const detail = await res

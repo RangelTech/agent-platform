@@ -142,3 +142,77 @@ def test_kernel_down_yields_an_error_event(client, chat_user):
     )
     assert status == 200
     assert "event: error" in body
+
+
+def test_multipart_send_stores_attachment_and_forwards_descriptor(
+    client, master_token, fake_kernel
+):
+    """Multipart /api/chat/send: the upload lands in storage, the message row
+    records it, and the kernel payload carries the descriptor."""
+    import io
+    import threading
+    import uuid as _uuid
+
+    import uvicorn
+    from fastapi import FastAPI
+    from fastapi.responses import StreamingResponse
+
+    captured = {}
+    app = FastAPI()
+
+    @app.post("/v1/runs")
+    async def runs(payload: dict):
+        captured.update(payload)
+
+        async def stream():
+            yield 'event: done\ndata: {"text": "li o anexo"}\n\n'
+
+        return StreamingResponse(stream(), media_type="text/event-stream")
+
+    config = uvicorn.Config(app, host="127.0.0.1", port=0, log_level="error")
+    server = uvicorn.Server(config)
+    threading.Thread(target=server.run, daemon=True).start()
+    while not server.started:
+        pass
+    port = server.servers[0].sockets[0].getsockname()[1]
+
+    key = f"mm-{_uuid.uuid4().hex[:6]}"
+    t = client.post(
+        "/api/tenants",
+        json={"name": "MM", "tenant_key": key},
+        headers=auth(master_token),
+    ).json()
+    email = f"mm-{_uuid.uuid4().hex[:6]}@x.com"
+    client.post(
+        "/api/users",
+        json={"email": email, "name": "MM", "password": "senha-forte-123", "tenant_id": t["id"]},
+        headers=auth(master_token),
+    )
+    utoken = client.post(
+        "/api/auth/login", json={"email": email, "password": "senha-forte-123"}
+    ).json()["token"]
+
+    from app.config import settings as backend_settings
+
+    backend_settings.kernel_url = f"http://127.0.0.1:{port}"
+    with client.stream(
+        "POST",
+        "/api/chat/send",
+        data={"message": "leia isso"},
+        files={"files": ("nota.txt", io.BytesIO(b"conteudo da nota"), "text/plain")},
+        headers=auth(utoken),
+    ) as response:
+        body = "".join(response.iter_text())
+    server.should_exit = True
+
+    assert "event: done" in body
+    assert len(captured["attachments"]) == 1
+    att = captured["attachments"][0]
+    assert att["kind"] == "file" and att["name"] == "nota.txt"
+    from pathlib import Path
+
+    assert Path(att["storage_path"]).read_bytes() == b"conteudo da nota"
+
+    chats = client.get("/api/chats", headers=auth(utoken)).json()
+    messages = client.get(f"/api/chats/{chats[0]['id']}/messages", headers=auth(utoken)).json()
+    assert messages[0]["attachments"] == [{"kind": "file", "name": "nota.txt"}]

@@ -10,8 +10,9 @@ import json
 import logging
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
+from psycopg.types.json import Json
 from pydantic import BaseModel, Field
 
 from app.auth import current_user
@@ -62,7 +63,7 @@ def list_messages(chat_id: str, user: dict = Depends(current_user)):
         if chat is None:
             raise HTTPException(status_code=404, detail="Conversa não encontrada")
         rows = conn.execute(
-            """SELECT id, role, content, created_at FROM chat_messages
+            """SELECT id, role, content, attachments, created_at FROM chat_messages
                 WHERE chat_id = %s ORDER BY created_at""",
             (chat_id,),
         ).fetchall()
@@ -71,6 +72,10 @@ def list_messages(chat_id: str, user: dict = Depends(current_user)):
             "id": str(r["id"]),
             "role": r["role"],
             "content": r["content"],
+            "attachments": [
+                {"kind": a.get("kind"), "name": a.get("name")}
+                for a in (r["attachments"] or [])
+            ],
             "created_at": r["created_at"].isoformat(),
         }
         for r in rows
@@ -89,7 +94,8 @@ def hide_chat(chat_id: str, user: dict = Depends(current_user)):
     return {"status": "ok"}
 
 
-def _ensure_chat(user: dict, payload: SendRequest) -> dict:
+def _ensure_chat(user: dict, payload: SendRequest, attachments: list[dict] | None = None) -> dict:
+    attachments = attachments or []
     if user["tenant_id"] is None:
         # The master administers the platform; conversations belong to tenant
         # users. This also guarantees chats always carry a tenant_id.
@@ -125,23 +131,103 @@ def _ensure_chat(user: dict, payload: SendRequest) -> dict:
                 (user["tenant_id"], user["id"], title, payload.template_id),
             ).fetchone()
         conn.execute(
-            "INSERT INTO chat_messages (chat_id, role, content) VALUES (%s, 'user', %s)",
-            (chat["id"], payload.message),
+            """INSERT INTO chat_messages (chat_id, role, content, attachments)
+               VALUES (%s, 'user', %s, %s)""",
+            (chat["id"], payload.message, Json(attachments)),
         )
         conn.execute("UPDATE chats SET updated_at = now() WHERE id = %s", (chat["id"],))
     return chat
 
 
+_ATTACHMENT_KINDS = {"image": "image", "audio": "audio"}
+
+
+async def _store_uploads(user: dict, uploads: list) -> list[dict]:
+    """Persist chat attachments to object storage; returns kernel descriptors."""
+    import uuid as _uuid
+
+    from app.storage import save_bytes
+
+    attachments = []
+    for upload in uploads:
+        data = await upload.read()
+        if not data:
+            continue
+        if len(data) > settings.max_upload_bytes:
+            raise HTTPException(status_code=413, detail="Anexo grande demais")
+        content_type = upload.content_type or "application/octet-stream"
+        kind = _ATTACHMENT_KINDS.get(content_type.split("/", 1)[0], "file")
+        name = upload.filename or "anexo"
+        path = save_bytes(
+            f"tenants/{user['tenant_id']}/chats/attachments/{_uuid.uuid4()}/{name}",
+            data,
+            content_type,
+        )
+        attachments.append(
+            {"kind": kind, "name": name, "content_type": content_type, "storage_path": path}
+        )
+    return attachments
+
+
+def _transcription_spec(tenant_id) -> dict:
+    """Whisper provider from the tenant's services: Groq (fast/cheap) first,
+    then OpenAI; stub otherwise (dev)."""
+    from app.crypto import decrypt
+
+    with get_connection() as conn:
+        rows = conn.execute(
+            """SELECT provider, api_key_encrypted FROM ai_services
+                WHERE tenant_id = %s AND is_active AND api_key_encrypted IS NOT NULL
+                ORDER BY created_at""",
+            (tenant_id,),
+        ).fetchall()
+    for row in rows:
+        if row["provider"] == "groq":
+            return {
+                "provider": "groq",
+                "model": "groq/whisper-large-v3-turbo",
+                "api_key": decrypt(row["api_key_encrypted"]),
+            }
+    for row in rows:
+        if row["provider"] == "openai":
+            return {
+                "provider": "openai",
+                "model": "whisper-1",
+                "api_key": decrypt(row["api_key_encrypted"]),
+            }
+    return {"provider": "stub"}
+
+
 @router.post("/chat/send")
-async def send_message(payload: SendRequest, user: dict = Depends(current_user)):
-    chat = _ensure_chat(user, payload)
+async def send_message(request: Request, user: dict = Depends(current_user)):
+    # JSON for text-only sends; multipart when attachments ride along.
+    content_type = request.headers.get("content-type", "")
+    if content_type.startswith("multipart/"):
+        form = await request.form()
+        payload = SendRequest(
+            message=str(form.get("message") or "").strip() or "(anexo enviado)",
+            chat_id=str(form.get("chat_id") or "") or None,
+            template_id=str(form.get("template_id") or "") or None,
+        )
+        attachments = await _store_uploads(user, form.getlist("files"))
+    else:
+        payload = SendRequest(**(await request.json()))
+        attachments = []
+
+    chat = _ensure_chat(user, payload, attachments)
     chat_id = str(chat["id"])
 
     from app.template_runtime import build_run_payload
 
     template_id = str(chat["template_id"]) if chat["template_id"] else None
     run = build_run_payload(user["tenant_id"], template_id)
-    kernel_payload = {"thread_id": chat_id, "message": payload.message, **run}
+    kernel_payload = {
+        "thread_id": chat_id,
+        "message": payload.message,
+        "attachments": attachments,
+        "transcription": _transcription_spec(user["tenant_id"]) if attachments else {},
+        **run,
+    }
     headers = {}
     if settings.kernel_audience:
         from app.gcp_auth import id_token_for

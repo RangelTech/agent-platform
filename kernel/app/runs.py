@@ -78,6 +78,10 @@ class RunRequest(BaseModel):
     datasources: list[DatasourceSpec] = Field(default_factory=list)
     # Embedding provider for RAG lookups: {provider, model, api_key}.
     embedding: dict = Field(default_factory=dict)
+    # Uploaded attachments already in object storage.
+    attachments: list[dict] = Field(default_factory=list)
+    # Whisper provider for audio attachments: {provider, model, api_key}.
+    transcription: dict = Field(default_factory=dict)
 
 
 def require_internal_auth(request: Request) -> None:
@@ -116,9 +120,16 @@ async def create_run(payload: RunRequest):
         async def produce():
             final_text = ""
             try:
+                from app.attachments import build_user_content
+
+                user_content = await build_user_content(
+                    payload.message,
+                    payload.attachments,
+                    payload.transcription or {"provider": "stub"},
+                )
                 async for mode, chunk in graph.astream(
                     {
-                        "messages": [{"role": "user", "content": payload.message}],
+                        "messages": [{"role": "user", "content": user_content}],
                         "run_config": run_config,
                     },
                     config={"configurable": {"thread_id": payload.thread_id}},

@@ -31,6 +31,10 @@ export default function Chat() {
 
   const [artifacts, setArtifacts] = useState<ArtifactRef[]>([])
   const [workingAgent, setWorkingAgent] = useState('')
+  const [pendingFiles, setPendingFiles] = useState<File[]>([])
+  const [recording, setRecording] = useState(false)
+  const recorderRef = useRef<MediaRecorder | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (!activeChat) {
@@ -53,7 +57,7 @@ export default function Chat() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
     const text = draft.trim()
-    if (!text || busy) return
+    if ((!text && pendingFiles.length === 0) || busy) return
 
     setDraft('')
     setError('')
@@ -91,11 +95,37 @@ export default function Chat() {
         setWorkingAgent('')
         setError(detail)
       },
-    }, templateId || null)
+    }, templateId || null, pendingFiles)
+    setPendingFiles([])
     setBusy(false)
     qc.invalidateQueries({ queryKey: ['chats'] })
   }
 
+
+  async function toggleRecording() {
+    if (recording) {
+      recorderRef.current?.stop()
+      return
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const recorder = new MediaRecorder(stream)
+      const parts: Blob[] = []
+      recorder.ondataavailable = (e) => parts.push(e.data)
+      recorder.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop())
+        const blob = new Blob(parts, { type: recorder.mimeType || 'audio/webm' })
+        const file = new File([blob], `audio-${Date.now()}.webm`, { type: blob.type })
+        setPendingFiles((f) => [...f, file])
+        setRecording(false)
+      }
+      recorderRef.current = recorder
+      recorder.start()
+      setRecording(true)
+    } catch {
+      setError('Microfone indisponível')
+    }
+  }
   return (
     <div className="flex h-[calc(100vh-57px)]">
       <aside className="w-64 shrink-0 overflow-y-auto border-r border-slate-800 p-3">
@@ -155,6 +185,15 @@ export default function Chat() {
               }`}
             >
               {m.content}
+              {(m.attachments ?? []).length > 0 && (
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {(m.attachments ?? []).map((a, i) => (
+                    <span key={i} className="rounded-full bg-black/20 px-2 py-0.5 text-xs">
+                      {a.kind === 'image' ? '🖼' : a.kind === 'audio' ? '🎤' : '📄'} {a.name}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
           {artifacts.map((artifact) => (
@@ -182,7 +221,46 @@ export default function Chat() {
           <div ref={bottomRef} />
         </div>
 
+        {pendingFiles.length > 0 && (
+          <div className="flex flex-wrap gap-2 border-t border-slate-800 px-3 pt-2">
+            {pendingFiles.map((f, i) => (
+              <span key={i} className="flex items-center gap-1 rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-300">
+                {f.type.startsWith('image/') ? '🖼' : f.type.startsWith('audio/') ? '🎤' : '📄'} {f.name}
+                <button
+                  type="button"
+                  className="ml-1 text-slate-500 hover:text-rose-400"
+                  onClick={() => setPendingFiles(pendingFiles.filter((_, j) => j !== i))}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
         <form onSubmit={onSubmit} className="flex gap-2 border-t border-slate-800 p-3">
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            data-testid="chat-file-input"
+            accept="image/*,audio/*,.pdf,.docx,.txt,.md,.csv,.xlsx"
+            className="hidden"
+            onChange={(e) => {
+              setPendingFiles([...pendingFiles, ...Array.from(e.target.files ?? [])])
+              e.target.value = ''
+            }}
+          />
+          <Button type="button" variant="ghost" onClick={() => fileInputRef.current?.click()} title="Anexar arquivo">
+            📎
+          </Button>
+          <Button
+            type="button"
+            variant={recording ? 'danger' : 'ghost'}
+            onClick={toggleRecording}
+            title={recording ? 'Parar gravação' : 'Gravar áudio'}
+          >
+            {recording ? '⏹' : '🎤'}
+          </Button>
           <input
             name="chat-input"
             value={draft}
