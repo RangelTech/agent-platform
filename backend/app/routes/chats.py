@@ -139,7 +139,11 @@ async def send_message(payload: SendRequest, user: dict = Depends(current_user))
         "system_prompt": settings.ai_system_prompt,
     }
     headers = {}
-    if settings.kernel_internal_token:
+    if settings.kernel_audience:
+        from app.gcp_auth import id_token_for
+
+        headers["Authorization"] = f"Bearer {await id_token_for(settings.kernel_audience)}"
+    elif settings.kernel_internal_token:
         headers["Authorization"] = f"Bearer {settings.kernel_internal_token}"
 
     async def relay():

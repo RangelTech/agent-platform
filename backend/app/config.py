@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     )
     # Shared secret for backend->kernel calls (dev; Cloud Run uses OIDC).
     kernel_internal_token: str = ""
+    # When set (Cloud Run), the backend sends an OIDC ID token with this
+    # audience on every kernel call. Usually the kernel's own URL.
+    kernel_audience: str = ""
 
     # Master bootstrap. The password is only used when the master does not yet
     # exist; production must supply a real one via Secret Manager.
