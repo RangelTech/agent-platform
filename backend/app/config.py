@@ -16,6 +16,18 @@ class Settings(BaseSettings):
     # baked into the image in production.
     static_dir: str = ""
 
+    # Sessions
+    session_hours: int = 24
+    session_idle_minutes: int = 120
+
+    # Master bootstrap. The password is only used when the master does not yet
+    # exist; production must supply a real one via Secret Manager.
+    # example.com is IANA-reserved for exactly this: a placeholder that is a
+    # syntactically valid address nobody can receive mail at.
+    master_email: str = "master@example.com"
+    master_password: str = "admin123"
+    master_name: str = "Master"
+
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 

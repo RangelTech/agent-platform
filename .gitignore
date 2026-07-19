@@ -24,3 +24,7 @@ Thumbs.db
 
 # Build artifacts
 *.log
+
+# Playwright
+frontend/test-results/
+frontend/playwright-report/

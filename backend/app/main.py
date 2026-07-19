@@ -5,8 +5,13 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 
+from app.bootstrap import bootstrap_master
 from app.config import settings
 from app.migrations import run_migrations
+from app.routes import auth as auth_routes
+from app.routes import profiles as profile_routes
+from app.routes import tenants as tenant_routes
+from app.routes import users as user_routes
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -27,8 +32,9 @@ async def lifespan(app: FastAPI):
         applied = run_migrations()
         if applied:
             logger.info("migrations applied: %s", applied)
+        bootstrap_master()
     except Exception:
-        logger.exception("migration run failed — continuing so /health can report")
+        logger.exception("boot tasks failed — continuing so /health can report")
     yield
 
 
@@ -42,6 +48,10 @@ def health():
 
 # API routers are registered here, before the SPA fallback below. Route order
 # matters: the catch-all must stay last or it would shadow every /api route.
+app.include_router(auth_routes.router)
+app.include_router(tenant_routes.router)
+app.include_router(profile_routes.router)
+app.include_router(user_routes.router)
 
 
 def _mount_spa(application: FastAPI) -> None:
