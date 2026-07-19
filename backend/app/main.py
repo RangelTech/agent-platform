@@ -4,7 +4,6 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.migrations import run_migrations
@@ -41,21 +40,40 @@ def health():
     return {"status": "ok", "service": "backend"}
 
 
-static_dir = _resolve_static_dir()
-if static_dir:
-    app.mount("/assets", StaticFiles(directory=static_dir / "assets"), name="assets")
+# API routers are registered here, before the SPA fallback below. Route order
+# matters: the catch-all must stay last or it would shadow every /api route.
 
-    @app.get("/{full_path:path}")
+
+def _mount_spa(application: FastAPI) -> None:
+    """Register the SPA fallback. Must be called after every API router."""
+    static_dir = _resolve_static_dir()
+
+    if static_dir is None:
+
+        @application.get("/")
+        def placeholder():
+            return JSONResponse(
+                {
+                    "service": "backend",
+                    "hint": "frontend build not found — run npm run build",
+                }
+            )
+
+        return
+
+    root = static_dir.resolve()
+    index = root / "index.html"
+
+    @application.get("/{full_path:path}")
     def spa(full_path: str):
-        """SPA catch-all: serve real files if present, else index.html."""
-        candidate = static_dir / full_path
-        if full_path and candidate.is_file():
-            return FileResponse(candidate)
-        return FileResponse(static_dir / "index.html")
-else:
+        """Serve a real build file when it exists, else index.html so the SPA
+        can route client-side. Paths are confined to the build directory."""
+        if full_path:
+            candidate = (root / full_path).resolve()
+            # Confinement check: blocks traversal such as ../../etc/passwd
+            if candidate.is_file() and candidate.is_relative_to(root):
+                return FileResponse(candidate)
+        return FileResponse(index)
 
-    @app.get("/")
-    def placeholder():
-        return JSONResponse(
-            {"service": "backend", "hint": "frontend build not found — run npm run build"}
-        )
+
+_mount_spa(app)
