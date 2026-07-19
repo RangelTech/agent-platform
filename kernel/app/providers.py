@@ -34,6 +34,10 @@ class StubScript:
     """Deterministic responses keyed by substring of the last user message.
 
     Falls back to `default`. Exposed via kernel settings for the test suites.
+    Reply grammar:
+      "texto qualquer"                 → plain text answer
+      "__RAISE__"                      → scripted provider failure
+      "TOOL:<name>:<json-args>"        → emit one tool call (agents-as-tools)
     """
 
     def __init__(self, rules: list[tuple[str, str]] | None = None, default: str = "ok"):
@@ -56,27 +60,53 @@ stub_script = StubScript(
 )
 
 
-async def _stream_stub(messages: list[dict]) -> AsyncIterator[str]:
+@dataclass
+class ToolCall:
+    id: str
+    name: str
+    arguments: str  # raw JSON string, as providers emit it
+
+
+@dataclass
+class Completion:
+    """Result of one model call: streamed text and/or requested tool calls."""
+
+    content: str = ""
+    tool_calls: list[ToolCall] = field(default_factory=list)
+
+
+def _scripted_reply(messages: list[dict]) -> str:
     last_user = next(
-        (m["content"] for m in reversed(messages) if m["role"] == "user"), ""
+        (m["content"] for m in reversed(messages) if m["role"] in ("user", "tool")),
+        "",
     )
     if isinstance(last_user, list):  # multimodal content blocks
-        last_user = " ".join(
-            b.get("text", "") for b in last_user if isinstance(b, dict)
-        )
-    reply = stub_script.reply_for(last_user)
+        last_user = " ".join(b.get("text", "") for b in last_user if isinstance(b, dict))
+    return stub_script.reply_for(str(last_user))
+
+
+async def _stream_stub(messages: list[dict], on_delta) -> Completion:
+    reply = _scripted_reply(messages)
     if reply == "__RAISE__":
         raise RuntimeError("stub provider error (scripted)")
-    # Stream word by word so SSE behaviour is genuinely exercised.
+    if reply.startswith("TOOL:"):
+        _, name, args = reply.split(":", 2)
+        return Completion(tool_calls=[ToolCall(id="stub-call-1", name=name, arguments=args)])
     words = reply.split(" ")
+    parts = []
     for i, word in enumerate(words):
-        yield word if i == 0 else " " + word
+        delta = word if i == 0 else " " + word
+        parts.append(delta)
+        await on_delta(delta)
+    return Completion(content="".join(parts))
 
 
-async def _stream_litellm(config: ModelConfig, messages: list[dict]) -> AsyncIterator[str]:
+async def _stream_litellm(
+    config: ModelConfig, messages: list[dict], on_delta, tools: list[dict] | None
+) -> Completion:
     import litellm
 
-    response = await litellm.acompletion(
+    kwargs = dict(
         model=config.litellm_model,
         messages=messages,
         api_key=config.api_key,
@@ -86,13 +116,65 @@ async def _stream_litellm(config: ModelConfig, messages: list[dict]) -> AsyncIte
         stream=True,
         **config.extra,
     )
+    if tools:
+        kwargs["tools"] = tools
+
+    response = await litellm.acompletion(**kwargs)
+
+    content_parts: list[str] = []
+    # Streamed tool calls arrive as fragments indexed by position.
+    calls: dict[int, dict] = {}
     async for chunk in response:
         delta = chunk.choices[0].delta
-        if delta and delta.content:
-            yield delta.content
+        if delta is None:
+            continue
+        if delta.content:
+            content_parts.append(delta.content)
+            await on_delta(delta.content)
+        for tc in delta.tool_calls or []:
+            slot = calls.setdefault(
+                tc.index, {"id": "", "name": "", "arguments": ""}
+            )
+            if tc.id:
+                slot["id"] = tc.id
+            if tc.function and tc.function.name:
+                slot["name"] += tc.function.name
+            if tc.function and tc.function.arguments:
+                slot["arguments"] += tc.function.arguments
+
+    tool_calls = [
+        ToolCall(id=c["id"] or f"call-{i}", name=c["name"], arguments=c["arguments"] or "{}")
+        for i, c in sorted(calls.items())
+    ]
+    return Completion(content="".join(content_parts), tool_calls=tool_calls)
+
+
+async def complete(
+    config: ModelConfig,
+    messages: list[dict],
+    on_delta,
+    tools: list[dict] | None = None,
+) -> Completion:
+    """One model call. Text deltas go to `on_delta` as they stream; the full
+    result (content + any tool calls) is returned at the end."""
+    if config.provider == "stub":
+        return await _stream_stub(messages, on_delta)
+    return await _stream_litellm(config, messages, on_delta, tools)
 
 
 def stream_completion(config: ModelConfig, messages: list[dict]) -> AsyncIterator[str]:
-    if config.provider == "stub":
-        return _stream_stub(messages)
-    return _stream_litellm(config, messages)
+    """Text-only compatibility wrapper over `complete` (used by /v1/test-model)."""
+
+    async def generator():
+        queue: list[str] = []
+
+        async def collect(delta: str):
+            queue.append(delta)
+
+        result = await complete(config, messages, collect)
+        for d in queue:
+            yield d
+        if not queue and result.content:
+            yield result.content
+
+    return generator()

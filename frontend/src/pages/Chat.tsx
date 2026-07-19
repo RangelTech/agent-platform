@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Button } from '../components/ui'
 import { api } from '../lib/api'
 import { sendMessage, type ChatMessage, type ChatSummary } from '../lib/chat'
+import { listTemplates } from '../lib/templates'
 
 function useChats() {
   return useQuery({
@@ -14,7 +15,12 @@ function useChats() {
 export default function Chat() {
   const qc = useQueryClient()
   const { data: chats = [] } = useChats()
+  const { data: templates = [] } = useQuery({
+    queryKey: ['templates'],
+    queryFn: listTemplates,
+  })
   const [activeChat, setActiveChat] = useState<string | null>(null)
+  const [templateId, setTemplateId] = useState<string>('')
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [draft, setDraft] = useState('')
   const [streaming, setStreaming] = useState('')
@@ -28,6 +34,10 @@ export default function Chat() {
       return
     }
     api<ChatMessage[]>(`/chats/${activeChat}/messages`).then(setMessages)
+    // Reflect the conversation's pinned template in the picker.
+    const chat = chats.find((c) => c.id === activeChat)
+    if (chat) setTemplateId(chat.template_id ?? '')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeChat])
 
   useEffect(() => {
@@ -67,7 +77,7 @@ export default function Chat() {
         setStreaming('')
         setError(detail)
       },
-    })
+    }, templateId || null)
     setBusy(false)
     qc.invalidateQueries({ queryKey: ['chats'] })
   }
@@ -97,6 +107,24 @@ export default function Chat() {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex items-center gap-2 border-b border-slate-800 px-4 py-2">
+          <span className="text-xs uppercase tracking-wide text-slate-500">Assistente</span>
+          <select
+            name="template-picker"
+            value={templateId}
+            onChange={(e) => setTemplateId(e.target.value)}
+            className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-sm text-slate-200 outline-none focus:border-indigo-500"
+          >
+            <option value="">Padrão</option>
+            {templates
+              .filter((t) => t.active_version_id)
+              .map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+          </select>
+        </div>
         <div className="flex-1 space-y-4 overflow-y-auto p-4" data-testid="message-list">
           {messages.length === 0 && !streaming && (
             <p className="mt-16 text-center text-sm text-slate-500">

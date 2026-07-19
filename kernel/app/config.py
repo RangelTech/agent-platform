@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     port: int = 8080
     # Hard ceiling for one conversation turn, model call included.
     turn_timeout_seconds: float = 120.0
+    # Default supervisor step budget per turn when the template omits it.
+    max_steps_default: int = 6
     checkpoint_pool_size: int = 5
     # Shared secret for backend->kernel calls. Empty disables the check (dev).
     internal_token: str = ""

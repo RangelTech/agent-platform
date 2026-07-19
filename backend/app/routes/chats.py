@@ -26,12 +26,15 @@ router = APIRouter(prefix="/api", tags=["chats"])
 class SendRequest(BaseModel):
     message: str = Field(min_length=1, max_length=32_000)
     chat_id: str | None = None
+    # Pins/switches the conversation's template. Persisted on the chat.
+    template_id: str | None = None
 
 
 def _serialize_chat(row: dict) -> dict:
     return {
         "id": str(row["id"]),
         "title": row["title"],
+        "template_id": str(row["template_id"]) if row.get("template_id") else None,
         "created_at": row["created_at"].isoformat(),
         "updated_at": row["updated_at"].isoformat(),
     }
@@ -94,6 +97,14 @@ def _ensure_chat(user: dict, payload: SendRequest) -> dict:
             status_code=400, detail="Usuário master não participa de conversas"
         )
     with get_connection() as conn:
+        if payload.template_id:
+            owned = conn.execute(
+                """SELECT 1 FROM templates
+                    WHERE id = %s AND tenant_id = %s AND NOT is_deleted""",
+                (payload.template_id, user["tenant_id"]),
+            ).fetchone()
+            if owned is None:
+                raise HTTPException(status_code=404, detail="Template não encontrado")
         if payload.chat_id:
             chat = conn.execute(
                 "SELECT * FROM chats WHERE id = %s AND user_id = %s",
@@ -101,12 +112,17 @@ def _ensure_chat(user: dict, payload: SendRequest) -> dict:
             ).fetchone()
             if chat is None:
                 raise HTTPException(status_code=404, detail="Conversa não encontrada")
+            if payload.template_id and str(chat["template_id"] or "") != payload.template_id:
+                chat = conn.execute(
+                    "UPDATE chats SET template_id = %s WHERE id = %s RETURNING *",
+                    (payload.template_id, chat["id"]),
+                ).fetchone()
         else:
             title = payload.message[:60] + ("…" if len(payload.message) > 60 else "")
             chat = conn.execute(
-                """INSERT INTO chats (tenant_id, user_id, title)
-                   VALUES (%s, %s, %s) RETURNING *""",
-                (user["tenant_id"], user["id"], title),
+                """INSERT INTO chats (tenant_id, user_id, title, template_id)
+                   VALUES (%s, %s, %s, %s) RETURNING *""",
+                (user["tenant_id"], user["id"], title, payload.template_id),
             ).fetchone()
         conn.execute(
             "INSERT INTO chat_messages (chat_id, role, content) VALUES (%s, 'user', %s)",
@@ -116,46 +132,15 @@ def _ensure_chat(user: dict, payload: SendRequest) -> dict:
     return chat
 
 
-def _model_spec(tenant_id) -> dict:
-    """Resolve the tenant's active AI service. Falls back to env config (dev)
-    and finally to the stub so a missing setup never breaks the chat."""
-    from app.crypto import decrypt
-
-    with get_connection() as conn:
-        row = conn.execute(
-            """SELECT * FROM ai_services
-                WHERE tenant_id = %s AND is_active AND auth_type = 'api_key'
-                      AND api_key_encrypted IS NOT NULL
-                ORDER BY created_at LIMIT 1""",
-            (tenant_id,),
-        ).fetchone()
-    if row is not None:
-        return {
-            "provider": "openai" if row["provider"] == "openai-compatible" else row["provider"],
-            "model": row["model"],
-            "api_key": decrypt(row["api_key_encrypted"]),
-            "api_base": row["api_base"],
-        }
-    if settings.ai_provider != "stub" and settings.ai_api_key:
-        return {
-            "provider": settings.ai_provider,
-            "model": settings.ai_model,
-            "api_key": settings.ai_api_key,
-        }
-    return {"provider": "stub", "model": "stub-1"}
-
-
 @router.post("/chat/send")
 async def send_message(payload: SendRequest, user: dict = Depends(current_user)):
     chat = _ensure_chat(user, payload)
     chat_id = str(chat["id"])
 
-    kernel_payload = {
-        "thread_id": chat_id,
-        "message": payload.message,
-        "model": _model_spec(user["tenant_id"]),
-        "system_prompt": settings.ai_system_prompt,
-    }
+    from app.template_runtime import build_run_payload
+
+    run = build_run_payload(user["tenant_id"], str(chat["template_id"]) if chat["template_id"] else None)
+    kernel_payload = {"thread_id": chat_id, "message": payload.message, **run}
     headers = {}
     if settings.kernel_audience:
         from app.gcp_auth import id_token_for

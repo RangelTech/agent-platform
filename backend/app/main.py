@@ -12,6 +12,7 @@ from app.routes import ai_services as ai_service_routes
 from app.routes import auth as auth_routes
 from app.routes import chats as chat_routes
 from app.routes import profiles as profile_routes
+from app.routes import templates as template_routes
 from app.routes import tenants as tenant_routes
 from app.routes import users as user_routes
 
@@ -56,6 +57,7 @@ app.include_router(profile_routes.router)
 app.include_router(user_routes.router)
 app.include_router(chat_routes.router)
 app.include_router(ai_service_routes.router)
+app.include_router(template_routes.router)
 
 
 def _mount_spa(application: FastAPI) -> None:

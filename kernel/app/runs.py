@@ -1,13 +1,14 @@
 """POST /v1/runs — execute one conversation turn, streaming SSE.
 
 Events:
-  event: token   data: {"text": "..."}          (one per model delta)
-  event: done    data: {"text": "<full reply>"}
-  event: error   data: {"detail": "..."}
+  event: token        data: {"text": "..."}      (supervisor deltas)
+  event: agent        data: {"name": "...", "status": "start|done"}
+  event: limit        data: {"detail": "max_steps"}
+  event: done         data: {"text": "<full reply>"}
+  event: error        data: {"detail": "..."}
 
 The turn is bounded by settings.turn_timeout_seconds; hitting it emits an
-error event and stops the run. Client disconnects cancel the run cleanly —
-no orphaned work survives the request.
+error event and stops the run. Client disconnects cancel the run cleanly.
 """
 
 import asyncio
@@ -33,13 +34,27 @@ class ModelSpec(BaseModel):
     api_base: str | None = None
     temperature: float | None = None
     max_tokens: int | None = None
+    extra: dict = Field(default_factory=dict)
+
+
+class AgentSpec(BaseModel):
+    name: str = Field(min_length=1, max_length=100, pattern=r"^[a-z0-9_]+$")
+    description: str = Field(min_length=1)
+    prompt: str = Field(min_length=1)
+    model: ModelSpec
+
+
+class SupervisorSpec(BaseModel):
+    prompt: str = ""
+    model: ModelSpec
 
 
 class RunRequest(BaseModel):
     thread_id: str = Field(min_length=1, max_length=200)
     message: str = Field(min_length=1)
-    model: ModelSpec
-    system_prompt: str = ""
+    supervisor: SupervisorSpec
+    agents: list[AgentSpec] = Field(default_factory=list)
+    max_steps: int = Field(default=6, ge=1, le=20)
 
 
 def require_internal_auth(request: Request) -> None:
@@ -60,6 +75,12 @@ def _sse(event: str, data: dict) -> str:
 async def create_run(payload: RunRequest):
     graph = await get_graph()
 
+    run_config = {
+        "supervisor": payload.supervisor.model_dump(),
+        "agents": [a.model_dump() for a in payload.agents],
+        "max_steps": payload.max_steps,
+    }
+
     async def event_stream():
         queue: asyncio.Queue = asyncio.Queue()
 
@@ -69,14 +90,27 @@ async def create_run(payload: RunRequest):
                 async for mode, chunk in graph.astream(
                     {
                         "messages": [{"role": "user", "content": payload.message}],
-                        "model": payload.model.model_dump(),
-                        "system_prompt": payload.system_prompt,
+                        "run_config": run_config,
                     },
                     config={"configurable": {"thread_id": payload.thread_id}},
                     stream_mode=["custom", "values"],
                 ):
-                    if mode == "custom" and chunk.get("type") == "token":
-                        await queue.put(("token", {"text": chunk["text"]}))
+                    if mode == "custom":
+                        kind = chunk.get("type")
+                        if kind == "token":
+                            await queue.put(("token", {"text": chunk["text"]}))
+                        elif kind in ("agent_start", "agent_done"):
+                            await queue.put(
+                                (
+                                    "agent",
+                                    {
+                                        "name": chunk["name"],
+                                        "status": "start" if kind == "agent_start" else "done",
+                                    },
+                                )
+                            )
+                        elif kind == "limit":
+                            await queue.put(("limit", {"detail": chunk["detail"]}))
                     elif mode == "values" and chunk.get("messages"):
                         final_text = chunk["messages"][-1].content
                 await queue.put(("done", {"text": final_text}))
@@ -102,8 +136,6 @@ async def create_run(payload: RunRequest):
                 event, data = item
                 yield _sse(event, data)
         finally:
-            # Covers client disconnects too: StreamingResponse closes the
-            # generator, and cancelling the producer kills the model call.
             producer.cancel()
 
     return StreamingResponse(

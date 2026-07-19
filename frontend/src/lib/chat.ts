@@ -3,6 +3,7 @@ import { getToken } from './api'
 export interface ChatSummary {
   id: string
   title: string
+  template_id: string | null
   created_at: string
   updated_at: string
 }
@@ -26,6 +27,7 @@ export async function sendMessage(
   message: string,
   chatId: string | null,
   callbacks: StreamCallbacks,
+  templateId?: string | null,
   signal?: AbortSignal,
 ): Promise<void> {
   const token = getToken()
@@ -35,7 +37,7 @@ export async function sendMessage(
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify({ message, chat_id: chatId }),
+    body: JSON.stringify({ message, chat_id: chatId, template_id: templateId ?? null }),
     signal,
   })
 

@@ -115,8 +115,9 @@ def test_chat_uses_the_tenant_service(client, tenant_admin, fake_kernel, monkeyp
         "".join(response.iter_text())
 
     server.should_exit = True
-    assert captured["model"]["provider"] == "gemini"
-    assert captured["model"]["api_key"] == "a-chave-do-tenant"
+    model = captured["supervisor"]["model"]
+    assert model["provider"] == "gemini"
+    assert model["api_key"] == "a-chave-do-tenant"
     assert _json.dumps(captured)  # sanity
 
 

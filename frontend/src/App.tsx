@@ -6,6 +6,7 @@ import AiServices from './pages/AiServices'
 import Chat from './pages/Chat'
 import Login from './pages/Login'
 import Profiles from './pages/Profiles'
+import TemplatesPage from './pages/Templates'
 import Tenants from './pages/Tenants'
 import Users from './pages/Users'
 
@@ -24,6 +25,7 @@ function Shell() {
     { to: '/usuarios', label: 'Usuários', show: can('users', 'view') },
     { to: '/perfis', label: 'Perfis', show: can('user_profiles', 'view') },
     { to: '/servicos-ia', label: 'Serviços de IA', show: can('ai_services', 'view') },
+    { to: '/templates', label: 'Templates', show: can('templates', 'view') },
   ].filter((l) => l.show)
 
   return (
@@ -66,6 +68,7 @@ function Shell() {
           <Route path="/usuarios" element={<Users />} />
           <Route path="/perfis" element={<Profiles />} />
           <Route path="/servicos-ia" element={<AiServices />} />
+          <Route path="/templates" element={<TemplatesPage />} />
           <Route path="*" element={<Navigate to={links[0]?.to ?? '/usuarios'} replace />} />
         </Routes>
       </main>
