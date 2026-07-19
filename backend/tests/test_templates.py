@@ -190,7 +190,9 @@ def test_chat_sends_the_template_run_payload(client, master_token, tenant_admin,
     assert json.dumps(captured)
 
 
-def test_chat_rejects_template_of_another_tenant(client, master_token, tenant_admin, template, fake_kernel):
+def test_chat_rejects_template_of_another_tenant(
+    client, master_token, tenant_admin, template, fake_kernel
+):
     other = client.post(
         "/api/tenants",
         json={"name": "X", "tenant_key": f"x-{uuid.uuid4().hex[:6]}"},
