@@ -45,6 +45,7 @@ class VersionIn(BaseModel):
     max_steps: int = Field(default=6, ge=1, le=20)
     agents: list[AgentIn] = Field(default_factory=list)
     mcp_servers: list[McpServerIn] = Field(default_factory=list)
+    datasource_ids: list[str] = Field(default_factory=list)
     notes: str = ""
 
 
@@ -132,6 +133,14 @@ def _validate_version(conn, payload: VersionIn, tenant_id) -> None:
             raise HTTPException(
                 status_code=400, detail="Serviço de IA não pertence ao tenant"
             )
+    for datasource_id in payload.datasource_ids:
+        row = conn.execute(
+            "SELECT tenant_id FROM datasources WHERE id = %s", (datasource_id,)
+        ).fetchone()
+        if row is None or str(row["tenant_id"]) != str(tenant_id):
+            raise HTTPException(
+                status_code=400, detail="Fonte de dados não pertence ao tenant"
+            )
 
 
 @router.post("/{template_id}/versions", status_code=201)
@@ -184,6 +193,12 @@ def create_version(
                     order,
                     Json(agent.tools),
                 ),
+            )
+        for datasource_id in payload.datasource_ids:
+            conn.execute(
+                """INSERT INTO template_version_datasources (version_id, datasource_id)
+                   VALUES (%s, %s)""",
+                (version["id"], datasource_id),
             )
         from app.crypto import encrypt
 
@@ -243,6 +258,10 @@ def get_version(
             "SELECT name, url FROM template_mcp_servers WHERE version_id = %s",
             (version_id,),
         ).fetchall()
+        datasource_ids = conn.execute(
+            "SELECT datasource_id FROM template_version_datasources WHERE version_id = %s",
+            (version_id,),
+        ).fetchall()
     return {
         "id": str(version["id"]),
         "version_number": version["version_number"],
@@ -270,6 +289,7 @@ def get_version(
         ],
         # Tokens are write-only; the editor resubmits them when changing servers.
         "mcp_servers": [{"name": s["name"], "url": s["url"]} for s in mcp_servers],
+        "datasource_ids": [str(d["datasource_id"]) for d in datasource_ids],
     }
 
 

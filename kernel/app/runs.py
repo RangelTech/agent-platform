@@ -56,6 +56,13 @@ class McpServerSpec(BaseModel):
     auth_token: str | None = None
 
 
+class DatasourceSpec(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    kind: str
+    config: dict = Field(default_factory=dict)
+    secret: str | None = None
+
+
 class RunRequest(BaseModel):
     thread_id: str = Field(min_length=1, max_length=200)
     message: str = Field(min_length=1)
@@ -67,6 +74,7 @@ class RunRequest(BaseModel):
     # never exposed to the model context.
     secrets: dict[str, str] = Field(default_factory=dict)
     mcp_servers: list[McpServerSpec] = Field(default_factory=list)
+    datasources: list[DatasourceSpec] = Field(default_factory=list)
 
 
 def require_internal_auth(request: Request) -> None:
@@ -95,6 +103,7 @@ async def create_run(payload: RunRequest):
         "thread_id": payload.thread_id,
         "secrets": payload.secrets,
         "mcp_servers": [s.model_dump() for s in payload.mcp_servers],
+        "datasources": [d.model_dump() for d in payload.datasources],
     }
 
     async def event_stream():
@@ -134,6 +143,17 @@ async def create_run(payload: RunRequest):
                                         "tool": chunk["tool"],
                                         "status": chunk["status"],
                                         "duration_ms": chunk["duration_ms"],
+                                    },
+                                )
+                            )
+                        elif kind == "artifact":
+                            await queue.put(
+                                (
+                                    "artifact",
+                                    {
+                                        "artifact_id": chunk["artifact_id"],
+                                        "kind": chunk["kind"],
+                                        "title": chunk["title"],
                                     },
                                 )
                             )

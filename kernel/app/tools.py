@@ -10,6 +10,7 @@ and their tools are namespaced ext_<server>_<tool>.
 import json
 import re
 from contextlib import AsyncExitStack
+from contextvars import ContextVar
 from decimal import Decimal, InvalidOperation
 
 import httpx
@@ -21,18 +22,44 @@ catalog = FastMCP("agent-platform-tools")
 
 _SECRET_REF = re.compile(r"\{\{secret:([A-Za-z0-9_.-]+)\}\}")
 
-# Set per-run by the runtime; secrets never travel through the LLM context.
-_run_secrets: dict[str, str] = {}
+# Per-run execution context. A ContextVar (not a module global) because the
+# kernel serves concurrent runs in one process — a global would leak one
+# tenant's secrets/datasources into another tenant's run.
+RUN_CONTEXT: ContextVar[dict] = ContextVar("run_context")
 
 
-def set_run_secrets(secrets: dict[str, str]) -> None:
-    _run_secrets.clear()
-    _run_secrets.update(secrets)
+def _context() -> dict:
+    try:
+        return RUN_CONTEXT.get()
+    except LookupError:
+        return {}
+
+
+def set_run_context(
+    *, secrets: dict[str, str], datasources: list[dict], tenant_id, chat_id
+) -> None:
+    RUN_CONTEXT.set(
+        {
+            "secrets": secrets,
+            "datasources": {d["name"]: d for d in datasources},
+            "tenant_id": tenant_id,
+            "chat_id": chat_id,
+            "agent": "",
+        }
+    )
+
+
+def set_current_agent(agent_name: str) -> None:
+    context = dict(_context())
+    context["agent"] = agent_name
+    RUN_CONTEXT.set(context)
 
 
 def _resolve_secrets(text: str) -> str:
+    secrets = _context().get("secrets", {})
+
     def sub(match: re.Match) -> str:
-        return _run_secrets.get(match.group(1), match.group(0))
+        return secrets.get(match.group(1), match.group(0))
 
     return _SECRET_REF.sub(sub, text)
 
@@ -84,6 +111,66 @@ async def call_http_api(
         return f"HTTP {response.status_code}\n{text}"
     except httpx.HTTPError as exc:
         return f"ERRO: {exc}"
+
+
+@catalog.tool()
+async def describe_datasources() -> str:
+    """Lista as fontes de dados disponíveis nesta conversa, com suas tabelas e
+    colunas. Chame antes de escrever SQL para saber o que existe."""
+    context = _context()
+    datasources = context.get("datasources", {})
+    if not datasources:
+        return "Nenhuma fonte de dados vinculada a este template."
+
+    from app.datasources import list_tables
+
+    output = []
+    for name, datasource in datasources.items():
+        entry = {"datasource": name, "kind": datasource["kind"]}
+        try:
+            entry["tables"] = await list_tables(datasource)
+        except Exception as exc:  # noqa: BLE001 — reported to the model
+            entry["error"] = str(exc)[:300]
+        output.append(entry)
+    return json.dumps(output, ensure_ascii=False, default=str)
+
+
+@catalog.tool()
+async def run_sql_query(datasource: str, query: str, title: str = "") -> str:
+    """Executa uma consulta SQL de LEITURA (SELECT/WITH) na fonte de dados e
+    materializa o resultado como um dataset artifact. Retorna o artifact_id,
+    o schema e uma amostra das primeiras linhas — use o artifact_id para
+    encadear com outras tools (gráfico, planilha) sem reexecutar a consulta.
+    `datasource` é o nome da fonte (veja describe_datasources)."""
+    from app.config import settings
+    from app.datasources import execute_query
+    from app.storage import register_artifact
+
+    context = _context()
+    source = context.get("datasources", {}).get(datasource)
+    if source is None:
+        available = ", ".join(context.get("datasources", {})) or "(nenhuma)"
+        return f"ERRO: fonte '{datasource}' não existe. Disponíveis: {available}"
+    try:
+        columns, rows = await execute_query(source, query, settings.sql_max_rows)
+    except Exception as exc:  # noqa: BLE001 — the model needs the error to retry
+        return f"ERRO na consulta: {exc}"
+
+    preview = rows[: settings.artifact_preview_rows]
+    descriptor = await register_artifact(
+        tenant_id=context.get("tenant_id"),
+        chat_id=context.get("chat_id"),
+        agent_name=context.get("agent", ""),
+        kind="dataset",
+        title=title or f"Consulta em {datasource}",
+        schema_json=columns,
+        preview_json=preview,
+        row_count=len(rows),
+        payload=json.dumps(
+            {"columns": columns, "rows": rows}, ensure_ascii=False, default=str
+        ).encode(),
+    )
+    return json.dumps(descriptor, ensure_ascii=False, default=str)
 
 
 def open_catalog_session():

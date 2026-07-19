@@ -19,7 +19,12 @@ from psycopg_pool import AsyncConnectionPool
 
 from app.config import settings
 from app.providers import ModelConfig, complete
-from app.tools import ExternalServers, open_catalog_session, set_run_secrets
+from app.tools import (
+    ExternalServers,
+    open_catalog_session,
+    set_current_agent,
+    set_run_context,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +117,7 @@ async def _run_specialist(
     """One specialist turn: its own model, its own tools, a short bounded
     tool-loop. Output goes back to the supervisor, not to the user stream."""
     writer({"type": "agent_start", "name": agent["name"]})
+    set_current_agent(agent["name"])
     config = ModelConfig(**agent["model"])
     allowed_names = {t for t in agent.get("tools", []) if t in tool_defs}
     allowed = [tool_defs[t] for t in allowed_names] or None
@@ -168,6 +174,21 @@ async def _run_specialist(
                     run_config, agent["name"], tc.name, arguments, tool_output,
                     status, started, writer,
                 )
+                # Materialized artifacts surface as their own stream event so
+                # the frontend can render/download them.
+                if status == "ok" and '"artifact_id"' in tool_output:
+                    try:
+                        descriptor = json.loads(tool_output)
+                        writer(
+                            {
+                                "type": "artifact",
+                                "artifact_id": descriptor["artifact_id"],
+                                "kind": descriptor.get("kind", ""),
+                                "title": descriptor.get("title", ""),
+                            }
+                        )
+                    except (json.JSONDecodeError, KeyError):
+                        pass
                 messages.append(
                     {"role": "tool", "tool_call_id": tc.id, "content": tool_output}
                 )
@@ -218,7 +239,12 @@ async def _supervisor_node(state: RunState) -> dict:
     max_steps = int(run_config.get("max_steps", settings.max_steps_default))
     writer = get_stream_writer()
 
-    set_run_secrets(run_config.get("secrets", {}))
+    set_run_context(
+        secrets=run_config.get("secrets", {}),
+        datasources=run_config.get("datasources", []),
+        tenant_id=run_config.get("tenant_id"),
+        chat_id=run_config.get("thread_id"),
+    )
     tool_defs = _agent_tool_defs(list(agents.values())) or None
     supervisor_config = ModelConfig(**supervisor["model"])
     messages = _history_messages(state, supervisor.get("prompt", ""))

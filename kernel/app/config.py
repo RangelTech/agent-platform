@@ -13,6 +13,15 @@ class Settings(BaseSettings):
     max_steps_default: int = 6
     # Tool rounds a specialist may take before being forced to answer.
     specialist_max_tool_rounds: int = 4
+
+    # Artifact payload storage: GCS when bucket is set, local dir otherwise.
+    gcs_bucket: str = ""
+    gcs_prefix: str = "agent llm"
+    artifacts_local_dir: str = "./artifacts"
+    # Rows shown to the model as a dataset preview.
+    artifact_preview_rows: int = 10
+    # Hard cap on rows a SQL tool call may materialize.
+    sql_max_rows: int = 50_000
     checkpoint_pool_size: int = 5
     # Shared secret for backend->kernel calls. Empty disables the check (dev).
     internal_token: str = ""

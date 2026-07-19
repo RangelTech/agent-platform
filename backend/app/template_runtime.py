@@ -97,6 +97,22 @@ def build_run_payload(tenant_id, template_id: str | None) -> dict:
         ).fetchall()
         secrets = {r["name"]: decrypt(r["value_encrypted"]) for r in secret_rows}
 
+        datasource_rows = conn.execute(
+            """SELECT d.* FROM template_version_datasources l
+                 JOIN datasources d ON d.id = l.datasource_id
+                WHERE l.version_id = %s AND d.is_active""",
+            (version["id"],),
+        ).fetchall()
+        datasources = [
+            {
+                "name": d["name"],
+                "kind": d["kind"],
+                "config": d["config"],
+                "secret": decrypt(d["secret_encrypted"]) if d["secret_encrypted"] else None,
+            }
+            for d in datasource_rows
+        ]
+
         server_rows = conn.execute(
             """SELECT name, url, auth_token_encrypted
                  FROM template_mcp_servers WHERE version_id = %s""",
@@ -140,4 +156,5 @@ def build_run_payload(tenant_id, template_id: str | None) -> dict:
             "tenant_id": str(tenant_id),
             "secrets": secrets,
             "mcp_servers": mcp_servers,
+            "datasources": datasources,
         }

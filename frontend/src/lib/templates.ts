@@ -36,6 +36,7 @@ export interface VersionDetail {
   max_steps: number
   notes: string
   agents: AgentDraft[]
+  datasource_ids: string[]
 }
 
 export interface VersionSummary {

@@ -28,7 +28,7 @@ deploy_kernel() {
     --service-account=$RUNTIME_SA \
     --add-cloudsql-instances=$SQL_CONNECTION \
     --set-secrets=DATABASE_URL=teste-ia-database-url:latest \
-    --set-env-vars=ENABLE_STUB_CONTROL=false \
+    --set-env-vars="ENABLE_STUB_CONTROL=false,GCS_BUCKET=eduk-prd-lake,GCS_PREFIX=agent llm" \
     --no-allow-unauthenticated \
     --memory=1Gi --cpu=1 --min-instances=0 --max-instances=3 \
     --timeout=600

@@ -45,6 +45,20 @@ async def list_platform_tools():
     ]
 
 
+class TestDatasourceIn(BaseModel):
+    kind: str
+    config: dict = {}
+    secret: str | None = None
+
+
+@app.post("/v1/test-datasource", dependencies=[Depends(require_internal_auth)])
+async def test_datasource(payload: TestDatasourceIn):
+    from app.datasources import test_connection
+
+    ok, detail = await test_connection(payload.model_dump())
+    return {"ok": ok, "detail": detail}
+
+
 class TestModelIn(BaseModel):
     provider: str
     model: str

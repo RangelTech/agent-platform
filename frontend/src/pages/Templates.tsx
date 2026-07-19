@@ -172,6 +172,12 @@ export default function Templates() {
   const [supervisorEffort, setSupervisorEffort] = useState('')
   const [maxSteps, setMaxSteps] = useState(6)
   const [agents, setAgents] = useState<AgentDraft[]>([])
+  const [datasourceIds, setDatasourceIds] = useState<string[]>([])
+
+  const { data: datasources = [] } = useQuery({
+    queryKey: ['datasources'],
+    queryFn: () => api<{ id: string; name: string; kind: string }[]>('/datasources'),
+  })
 
   const { data: versions = [] } = useQuery({
     queryKey: ['versions', selected?.id],
@@ -189,6 +195,7 @@ export default function Templates() {
       setSupervisorEffort('')
       setMaxSteps(6)
       setAgents([])
+      setDatasourceIds([])
       return
     }
     getVersion(selected.id, source).then((v) => {
@@ -197,6 +204,7 @@ export default function Templates() {
       setSupervisorEffort(v.supervisor_reasoning_effort ?? '')
       setMaxSteps(v.max_steps)
       setAgents(v.agents)
+      setDatasourceIds(v.datasource_ids ?? [])
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected?.id, versions.length])
@@ -221,6 +229,7 @@ export default function Templates() {
         supervisor_reasoning_effort: supervisorEffort || null,
         max_steps: maxSteps,
         agents,
+        datasource_ids: datasourceIds,
       })
       return v
     },
@@ -385,6 +394,40 @@ export default function Templates() {
               onRemove={() => setAgents(agents.filter((_, j) => j !== i))}
             />
           ))}
+        </div>
+      </Card>
+
+      <Card title="Fontes de dados do template">
+        <div className="flex flex-wrap gap-2">
+          {datasources.map((ds) => (
+            <label
+              key={ds.id}
+              className={`cursor-pointer rounded-full border px-3 py-1 text-xs transition ${
+                datasourceIds.includes(ds.id)
+                  ? 'border-emerald-500 bg-emerald-950 text-emerald-200'
+                  : 'border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-500'
+              }`}
+            >
+              <input
+                type="checkbox"
+                className="hidden"
+                checked={datasourceIds.includes(ds.id)}
+                onChange={() =>
+                  setDatasourceIds(
+                    datasourceIds.includes(ds.id)
+                      ? datasourceIds.filter((i) => i !== ds.id)
+                      : [...datasourceIds, ds.id],
+                  )
+                }
+              />
+              {ds.name} ({ds.kind})
+            </label>
+          ))}
+          {datasources.length === 0 && (
+            <span className="text-xs text-slate-500">
+              Nenhuma fonte cadastrada — crie em "Fontes de dados".
+            </span>
+          )}
         </div>
       </Card>
 
