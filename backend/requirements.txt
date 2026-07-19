@@ -8,3 +8,5 @@ bcrypt>=4.1
 pydantic[email]>=2.8
 cryptography>=42
 google-cloud-storage>=2.18
+python-multipart>=0.0.9
+google-cloud-tasks>=2.16

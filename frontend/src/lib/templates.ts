@@ -17,6 +17,7 @@ export interface AgentDraft {
   model_override: string | null
   reasoning_effort: string | null
   tools: string[]
+  file_ids: string[]
 }
 
 export interface ToolInfo {

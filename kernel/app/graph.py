@@ -244,6 +244,10 @@ async def _supervisor_node(state: RunState) -> dict:
         datasources=run_config.get("datasources", []),
         tenant_id=run_config.get("tenant_id"),
         chat_id=run_config.get("thread_id"),
+        embedding=run_config.get("embedding") or None,
+        agent_files={
+            a["name"]: a.get("file_ids", []) for a in run_config.get("agents", [])
+        },
     )
     tool_defs = _agent_tool_defs(list(agents.values())) or None
     supervisor_config = ModelConfig(**supervisor["model"])

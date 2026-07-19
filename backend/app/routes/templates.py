@@ -29,6 +29,7 @@ class AgentIn(BaseModel):
     model_override: str | None = None
     reasoning_effort: str | None = None
     tools: list[str] = Field(default_factory=list)
+    file_ids: list[str] = Field(default_factory=list)
 
 
 class McpServerIn(BaseModel):
@@ -141,6 +142,14 @@ def _validate_version(conn, payload: VersionIn, tenant_id) -> None:
             raise HTTPException(
                 status_code=400, detail="Fonte de dados não pertence ao tenant"
             )
+    for file_id in {f for a in payload.agents for f in a.file_ids}:
+        row = conn.execute(
+            "SELECT tenant_id FROM files WHERE id = %s", (file_id,)
+        ).fetchone()
+        if row is None or str(row["tenant_id"]) != str(tenant_id):
+            raise HTTPException(
+                status_code=400, detail="Arquivo não pertence ao tenant"
+            )
 
 
 @router.post("/{template_id}/versions", status_code=201)
@@ -177,11 +186,11 @@ def create_version(
             ),
         ).fetchone()
         for order, agent in enumerate(payload.agents):
-            conn.execute(
+            agent_row = conn.execute(
                 """INSERT INTO template_agents
                        (version_id, name, description, prompt, ai_service_id,
                         model_override, reasoning_effort, sort_order, tools)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
                 (
                     version["id"],
                     agent.name,
@@ -193,7 +202,12 @@ def create_version(
                     order,
                     Json(agent.tools),
                 ),
-            )
+            ).fetchone()
+            for file_id in agent.file_ids:
+                conn.execute(
+                    "INSERT INTO template_agent_files (agent_id, file_id) VALUES (%s, %s)",
+                    (agent_row["id"], file_id),
+                )
         for datasource_id in payload.datasource_ids:
             conn.execute(
                 """INSERT INTO template_version_datasources (version_id, datasource_id)
@@ -262,6 +276,13 @@ def get_version(
             "SELECT datasource_id FROM template_version_datasources WHERE version_id = %s",
             (version_id,),
         ).fetchall()
+        conn2_files = conn.execute(
+            """SELECT af.agent_id, af.file_id
+                 FROM template_agent_files af
+                 JOIN template_agents a ON a.id = af.agent_id
+                WHERE a.version_id = %s""",
+            (version_id,),
+        ).fetchall()
     return {
         "id": str(version["id"]),
         "version_number": version["version_number"],
@@ -284,6 +305,11 @@ def get_version(
                 "model_override": a["model_override"],
                 "reasoning_effort": a["reasoning_effort"],
                 "tools": a["tools"] or [],
+                "file_ids": [
+                    str(f["file_id"])
+                    for f in conn2_files
+                    if str(f["agent_id"]) == str(a["id"])
+                ],
             }
             for a in agents
         ],

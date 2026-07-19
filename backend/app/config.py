@@ -38,6 +38,20 @@ class Settings(BaseSettings):
     # Fernet master key for secrets at rest (Secret Manager in production).
     encryption_key: str = ""
 
+    # Object storage (uploads). GCS when bucket set, local dir otherwise —
+    # must match the kernel's settings so both sides read the same paths.
+    gcs_bucket: str = ""
+    gcs_prefix: str = "agent llm"
+    storage_local_dir: str = "../kernel/artifacts"
+    # Max upload size for business files.
+    max_upload_bytes: int = 50 * 1024 * 1024
+
+    # Cloud Tasks queue path (projects/.../queues/...) for async work; empty
+    # in dev, where a background task calls the kernel directly.
+    cloud_tasks_queue: str = ""
+    # Audience/SA for Cloud Tasks -> kernel OIDC calls.
+    tasks_service_account: str = ""
+
     # Master bootstrap. The password is only used when the master does not yet
     # exist; production must supply a real one via Secret Manager.
     # example.com is IANA-reserved for exactly this: a placeholder that is a

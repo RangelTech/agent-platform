@@ -45,6 +45,21 @@ async def list_platform_tools():
     ]
 
 
+class IngestFileIn(BaseModel):
+    file_id: str
+    embedding: dict = {}
+
+
+@app.post("/v1/ingest-file", dependencies=[Depends(require_internal_auth)])
+async def ingest_file_endpoint(payload: IngestFileIn):
+    """Chunk + embed one uploaded file. Called by Cloud Tasks (prod) or the
+    backend's background task (dev). Errors land in files.status."""
+    from app.ingestion import ingest_file
+
+    await ingest_file(payload.file_id, payload.embedding or {"provider": "stub"})
+    return {"status": "ok"}
+
+
 class TestDatasourceIn(BaseModel):
     kind: str
     config: dict = {}

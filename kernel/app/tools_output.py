@@ -183,7 +183,8 @@ async def generate_pdf(title: str, content_markdown: str, artifact_id: str = "")
         pdf.multi_cell(0, 6, latin1(" | ".join(names)), new_x="LMARGIN", new_y="NEXT")
         pdf.set_font("helvetica", "", 9)
         for row in dataset["rows"][:200]:
-            pdf.multi_cell(0, 5, latin1(" | ".join(str(v) for v in row)), new_x="LMARGIN", new_y="NEXT")
+            line = latin1(" | ".join(str(v) for v in row))
+            pdf.multi_cell(0, 5, line, new_x="LMARGIN", new_y="NEXT")
 
     payload = bytes(pdf.output())
 

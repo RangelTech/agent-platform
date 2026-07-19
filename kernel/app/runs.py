@@ -43,6 +43,7 @@ class AgentSpec(BaseModel):
     prompt: str = Field(min_length=1)
     model: ModelSpec
     tools: list[str] = Field(default_factory=list)
+    file_ids: list[str] = Field(default_factory=list)
 
 
 class SupervisorSpec(BaseModel):
@@ -75,6 +76,8 @@ class RunRequest(BaseModel):
     secrets: dict[str, str] = Field(default_factory=dict)
     mcp_servers: list[McpServerSpec] = Field(default_factory=list)
     datasources: list[DatasourceSpec] = Field(default_factory=list)
+    # Embedding provider for RAG lookups: {provider, model, api_key}.
+    embedding: dict = Field(default_factory=dict)
 
 
 def require_internal_auth(request: Request) -> None:
@@ -104,6 +107,7 @@ async def create_run(payload: RunRequest):
         "secrets": payload.secrets,
         "mcp_servers": [s.model_dump() for s in payload.mcp_servers],
         "datasources": [d.model_dump() for d in payload.datasources],
+        "embedding": payload.embedding,
     }
 
     async def event_stream():

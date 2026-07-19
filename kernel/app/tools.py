@@ -36,7 +36,13 @@ def _context() -> dict:
 
 
 def set_run_context(
-    *, secrets: dict[str, str], datasources: list[dict], tenant_id, chat_id
+    *,
+    secrets: dict[str, str],
+    datasources: list[dict],
+    tenant_id,
+    chat_id,
+    embedding: dict | None = None,
+    agent_files: dict[str, list[str]] | None = None,
 ) -> None:
     RUN_CONTEXT.set(
         {
@@ -45,14 +51,17 @@ def set_run_context(
             "tenant_id": tenant_id,
             "chat_id": chat_id,
             "agent": "",
+            "embedding": embedding or {"provider": "stub"},
+            "agent_files": agent_files or {},
         }
     )
 
 
 def set_current_agent(agent_name: str) -> None:
-    context = dict(_context())
-    context["agent"] = agent_name
-    RUN_CONTEXT.set(context)
+    # Mutate the shared dict IN PLACE: the in-memory MCP server task snapshots
+    # the ContextVar when the session opens, so a later .set() would be
+    # invisible to tool handlers — the shared object reference is not.
+    _context()["agent"] = agent_name
 
 
 def _resolve_secrets(text: str) -> str:
@@ -171,6 +180,33 @@ async def run_sql_query(datasource: str, query: str, title: str = "") -> str:
         ).encode(),
     )
     return json.dumps(descriptor, ensure_ascii=False, default=str)
+
+
+@catalog.tool()
+async def query_agent_rag(question: str) -> str:
+    """Busca semântica nos documentos da empresa vinculados a você. Use para
+    responder perguntas sobre conteúdo de arquivos (políticas, manuais,
+    contratos). Retorna os trechos mais relevantes com a fonte."""
+    context = _context()
+    file_ids = context.get("agent_files", {}).get(context.get("agent", ""), [])
+    if not file_ids:
+        return "Nenhum documento vinculado a este agente."
+
+    from app.ingestion import search_chunks
+
+    results = await search_chunks(
+        context.get("embedding", {"provider": "stub"}),
+        question,
+        file_ids,
+        context.get("tenant_id"),
+    )
+    if not results:
+        return "Nenhum trecho relevante encontrado nos documentos."
+    parts = [
+        f"[{r['file']} — trecho {r['chunk']} — similaridade {r['similarity']}]\n{r['content']}"
+        for r in results
+    ]
+    return "\n\n".join(parts)
 
 
 def open_catalog_session():

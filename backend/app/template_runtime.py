@@ -37,6 +37,31 @@ def _model_from_service(row: dict | None, model_override: str | None, effort: st
     return spec
 
 
+def _embedding_spec(conn, tenant_id) -> dict:
+    """Embedding provider from the tenant's services (Gemini or OpenAI keys
+    embed natively); stub otherwise (dev)."""
+    rows = conn.execute(
+        """SELECT provider, api_key_encrypted FROM ai_services
+            WHERE tenant_id = %s AND is_active AND api_key_encrypted IS NOT NULL
+            ORDER BY created_at""",
+        (tenant_id,),
+    ).fetchall()
+    for row in rows:
+        if row["provider"] == "gemini":
+            return {
+                "provider": "gemini",
+                "model": "gemini/text-embedding-004",
+                "api_key": decrypt(row["api_key_encrypted"]),
+            }
+        if row["provider"] == "openai":
+            return {
+                "provider": "openai",
+                "model": "text-embedding-3-small",
+                "api_key": decrypt(row["api_key_encrypted"]),
+            }
+    return {"provider": "stub"}
+
+
 def _default_service(conn, tenant_id) -> dict | None:
     return conn.execute(
         """SELECT * FROM ai_services
@@ -88,6 +113,16 @@ def build_run_payload(tenant_id, template_id: str | None) -> dict:
             "SELECT * FROM template_agents WHERE version_id = %s ORDER BY sort_order",
             (version["id"],),
         ).fetchall()
+        agent_file_rows = conn.execute(
+            """SELECT af.agent_id, af.file_id
+                 FROM template_agent_files af
+                 JOIN template_agents a ON a.id = af.agent_id
+                WHERE a.version_id = %s""",
+            (version["id"],),
+        ).fetchall()
+        files_by_agent: dict[str, list[str]] = {}
+        for r in agent_file_rows:
+            files_by_agent.setdefault(str(r["agent_id"]), []).append(str(r["file_id"]))
 
         # Active named secrets, decrypted only here — they cross the internal
         # OIDC link and are substituted inside tools, never shown to the model.
@@ -149,6 +184,7 @@ def build_run_payload(tenant_id, template_id: str | None) -> dict:
                         a["reasoning_effort"],
                     ),
                     "tools": a["tools"] or [],
+                    "file_ids": files_by_agent.get(str(a["id"]), []),
                 }
                 for a in agents
             ],
@@ -157,4 +193,5 @@ def build_run_payload(tenant_id, template_id: str | None) -> dict:
             "secrets": secrets,
             "mcp_servers": mcp_servers,
             "datasources": datasources,
+            "embedding": _embedding_spec(conn, tenant_id),
         }

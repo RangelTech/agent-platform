@@ -30,6 +30,7 @@ const EMPTY_AGENT: AgentDraft = {
   model_override: null,
   reasoning_effort: null,
   tools: [],
+  file_ids: [],
 }
 
 const EFFORTS = [
@@ -43,15 +44,23 @@ function AgentEditor({
   agent,
   services,
   toolkits,
+  files,
   onChange,
   onRemove,
 }: {
   agent: AgentDraft
   services: AiServiceOption[]
   toolkits: ToolInfo[]
+  files: { id: string; name: string; status: string }[]
   onChange: (a: AgentDraft) => void
   onRemove: () => void
 }) {
+  function toggleFile(id: string) {
+    const file_ids = agent.file_ids.includes(id)
+      ? agent.file_ids.filter((f) => f !== id)
+      : [...agent.file_ids, id]
+    onChange({ ...agent, file_ids })
+  }
   function toggleTool(name: string) {
     const tools = agent.tools.includes(name)
       ? agent.tools.filter((t) => t !== name)
@@ -141,6 +150,32 @@ function AgentEditor({
           )}
         </div>
       </div>
+      <div>
+        <span className="mb-1 block text-sm text-slate-300">Documentos (RAG)</span>
+        <div className="flex flex-wrap gap-2">
+          {files.filter((f) => f.status === 'ready').map((f) => (
+            <label
+              key={f.id}
+              className={`cursor-pointer rounded-full border px-3 py-1 text-xs transition ${
+                agent.file_ids.includes(f.id)
+                  ? 'border-amber-500 bg-amber-950 text-amber-200'
+                  : 'border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-500'
+              }`}
+            >
+              <input
+                type="checkbox"
+                className="hidden"
+                checked={agent.file_ids.includes(f.id)}
+                onChange={() => toggleFile(f.id)}
+              />
+              {f.name}
+            </label>
+          ))}
+          {files.filter((f) => f.status === 'ready').length === 0 && (
+            <span className="text-xs text-slate-500">nenhum arquivo pronto — envie em "Arquivos"</span>
+          )}
+        </div>
+      </div>
       <Button type="button" variant="danger" onClick={onRemove}>
         Remover agente
       </Button>
@@ -174,6 +209,10 @@ export default function Templates() {
   const [agents, setAgents] = useState<AgentDraft[]>([])
   const [datasourceIds, setDatasourceIds] = useState<string[]>([])
 
+  const { data: businessFiles = [] } = useQuery({
+    queryKey: ['files'],
+    queryFn: () => api<{ id: string; name: string; status: string }[]>('/files'),
+  })
   const { data: datasources = [] } = useQuery({
     queryKey: ['datasources'],
     queryFn: () => api<{ id: string; name: string; kind: string }[]>('/datasources'),
@@ -390,6 +429,7 @@ export default function Templates() {
               agent={agent}
               services={services}
               toolkits={toolkits}
+              files={businessFiles}
               onChange={(a) => setAgents(agents.map((x, j) => (j === i ? a : x)))}
               onRemove={() => setAgents(agents.filter((_, j) => j !== i))}
             />

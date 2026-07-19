@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from './lib/auth'
 import AiServices from './pages/AiServices'
 import Chat from './pages/Chat'
 import Datasources from './pages/Datasources'
+import Files from './pages/Files'
 import Login from './pages/Login'
 import Profiles from './pages/Profiles'
 import TemplatesPage from './pages/Templates'
@@ -28,6 +29,7 @@ function Shell() {
     { to: '/servicos-ia', label: 'Serviços de IA', show: can('ai_services', 'view') },
     { to: '/templates', label: 'Templates', show: can('templates', 'view') },
     { to: '/fontes-de-dados', label: 'Fontes de dados', show: can('datasources', 'view') },
+    { to: '/arquivos', label: 'Arquivos', show: can('files', 'view') },
   ].filter((l) => l.show)
 
   return (
@@ -72,6 +74,7 @@ function Shell() {
           <Route path="/servicos-ia" element={<AiServices />} />
           <Route path="/templates" element={<TemplatesPage />} />
           <Route path="/fontes-de-dados" element={<Datasources />} />
+          <Route path="/arquivos" element={<Files />} />
           <Route path="*" element={<Navigate to={links[0]?.to ?? '/usuarios'} replace />} />
         </Routes>
       </main>
