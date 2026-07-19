@@ -1,5 +1,9 @@
 fastapi>=0.115
 uvicorn[standard]>=0.30
-psycopg[binary]>=3.2
+psycopg[binary,pool]>=3.2
 pydantic>=2.8
 pydantic-settings>=2.4
+langgraph>=0.4
+langgraph-checkpoint-postgres>=2.0
+# <1.93: 1.93+ ships only an sdist that needs a Rust toolchain to build.
+litellm>=1.60,<1.93

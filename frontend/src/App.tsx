@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { NavLink, Navigate, Route, BrowserRouter as Router, Routes } from 'react-router-dom'
+import { NavLink, Navigate, Route, BrowserRouter as Router, Routes, useLocation } from 'react-router-dom'
 import { Button } from './components/ui'
 import { AuthProvider, useAuth } from './lib/auth'
+import Chat from './pages/Chat'
 import Login from './pages/Login'
 import Profiles from './pages/Profiles'
 import Tenants from './pages/Tenants'
@@ -13,8 +14,11 @@ const queryClient = new QueryClient({
 
 function Shell() {
   const { user, signOut, can } = useAuth()
+  const isChat = useLocation().pathname === '/chat'
 
   const links = [
+    // The master administers the platform and has no tenant to chat in.
+    { to: '/chat', label: 'Chat', show: !(user?.is_master ?? false) },
     { to: '/empresas', label: 'Empresas', show: user?.is_master ?? false },
     { to: '/usuarios', label: 'Usuários', show: can('users', 'view') },
     { to: '/perfis', label: 'Perfis', show: can('user_profiles', 'view') },
@@ -53,8 +57,9 @@ function Shell() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 py-6">
+      <main className={isChat ? '' : 'mx-auto max-w-6xl px-4 py-6'}>
         <Routes>
+          <Route path="/chat" element={<Chat />} />
           <Route path="/empresas" element={user?.is_master ? <Tenants /> : <Navigate to="/usuarios" />} />
           <Route path="/usuarios" element={<Users />} />
           <Route path="/perfis" element={<Profiles />} />

@@ -9,6 +9,7 @@ from app.bootstrap import bootstrap_master
 from app.config import settings
 from app.migrations import run_migrations
 from app.routes import auth as auth_routes
+from app.routes import chats as chat_routes
 from app.routes import profiles as profile_routes
 from app.routes import tenants as tenant_routes
 from app.routes import users as user_routes
@@ -52,6 +53,7 @@ app.include_router(auth_routes.router)
 app.include_router(tenant_routes.router)
 app.include_router(profile_routes.router)
 app.include_router(user_routes.router)
+app.include_router(chat_routes.router)
 
 
 def _mount_spa(application: FastAPI) -> None:

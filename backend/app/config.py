@@ -20,6 +20,19 @@ class Settings(BaseSettings):
     session_hours: int = 24
     session_idle_minutes: int = 120
 
+    # Interim model config, replaced by per-tenant AI services in ticket 05.
+    # provider "stub" (or an empty key) routes to the kernel's stub provider.
+    ai_provider: str = "stub"
+    # gemini-flash-latest: rolling alias — fixed models age out for new API
+    # users (2.5-flash already returns 404 for keys created in 2026).
+    ai_model: str = "gemini-flash-latest"
+    ai_api_key: str = ""
+    ai_system_prompt: str = (
+        "Você é um assistente corporativo. Responda em português, de forma clara e objetiva."
+    )
+    # Shared secret for backend->kernel calls (dev; Cloud Run uses OIDC).
+    kernel_internal_token: str = ""
+
     # Master bootstrap. The password is only used when the master does not yet
     # exist; production must supply a real one via Secret Manager.
     # example.com is IANA-reserved for exactly this: a placeholder that is a
