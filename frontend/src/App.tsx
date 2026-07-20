@@ -6,6 +6,7 @@ import AiServices from './pages/AiServices'
 import Chat from './pages/Chat'
 import Datasources from './pages/Datasources'
 import Files from './pages/Files'
+import Integrations from './pages/Integrations'
 import Login from './pages/Login'
 import Memories from './pages/Memories'
 import Profiles from './pages/Profiles'
@@ -34,6 +35,7 @@ function Shell() {
     { to: '/arquivos', label: 'Arquivos', show: can('files', 'view') },
     { to: '/memorias', label: 'Memórias', show: !(user?.is_master ?? false) },
     { to: '/consumo', label: 'Consumo', show: can('usage', 'view') },
+    { to: '/integracoes', label: 'Integrações', show: can('integrations', 'view') },
   ].filter((l) => l.show)
 
   return (
@@ -81,6 +83,7 @@ function Shell() {
           <Route path="/arquivos" element={<Files />} />
           <Route path="/memorias" element={<Memories />} />
           <Route path="/consumo" element={<Usage />} />
+          <Route path="/integracoes" element={<Integrations />} />
           <Route path="*" element={<Navigate to={links[0]?.to ?? '/usuarios'} replace />} />
         </Routes>
       </main>
