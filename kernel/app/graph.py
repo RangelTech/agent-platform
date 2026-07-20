@@ -72,6 +72,23 @@ def _agent_tool_defs(agents: list[dict]) -> list[dict]:
     ]
 
 
+async def _record_usage(run_config: dict, agent_name: str, config: ModelConfig, result) -> None:
+    from app.trace import insert_usage
+
+    await insert_usage(
+        tenant_id=run_config.get("tenant_id"),
+        user_id=run_config.get("user_id"),
+        chat_id=run_config.get("thread_id"),
+        agent_name=agent_name,
+        provider=config.provider,
+        model=config.model,
+        prompt_tokens=result.prompt_tokens,
+        completion_tokens=result.completion_tokens,
+        cost_usd=result.cost_usd,
+        latency_ms=result.latency_ms,
+    )
+
+
 async def _record_tool_call(
     run_config: dict, agent: str, tool: str, arguments: dict, output: str,
     status: str, started: float, writer,
@@ -133,6 +150,7 @@ async def _run_specialist(
     try:
         for _round in range(settings.specialist_max_tool_rounds):
             result = await complete(config, messages, swallow, tools=allowed)
+            await _record_usage(run_config, agent["name"], config, result)
             if not result.tool_calls:
                 output = result.content or "(especialista não retornou conteúdo)"
                 break
@@ -199,6 +217,7 @@ async def _run_specialist(
                 + [{"role": "user", "content": "Responda agora com o que você tem."}],
                 swallow,
             )
+            await _record_usage(run_config, agent["name"], config, result)
             output = result.content or "(sem resposta)"
     except Exception as exc:  # noqa: BLE001 — reported into the loop, not fatal
         logger.exception("specialist %s failed", agent["name"])
@@ -271,6 +290,7 @@ async def _supervisor_node(state: RunState) -> dict:
 
         for _step in range(max_steps):
             result = await complete(supervisor_config, messages, emit, tools=tool_defs)
+            await _record_usage(run_config, "supervisor", supervisor_config, result)
             if not result.tool_calls:
                 final_text = result.content
                 break
@@ -323,6 +343,7 @@ async def _supervisor_node(state: RunState) -> dict:
                 ],
                 emit,
             )
+            await _record_usage(run_config, "supervisor", supervisor_config, result)
             final_text = result.content
 
     return {"messages": [{"role": "assistant", "content": final_text}]}

@@ -9,8 +9,11 @@ async generator of text deltas. Two implementations:
   it and never spend a token.
 """
 
+import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -73,6 +76,12 @@ class Completion:
 
     content: str = ""
     tool_calls: list[ToolCall] = field(default_factory=list)
+    # Accounting: token counts are estimates (litellm token_counter) and cost
+    # comes from litellm's price table — good enough for tenant reporting.
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    cost_usd: float = 0.0
+    latency_ms: int = 0
 
 
 def _scripted_reply(messages: list[dict]) -> str:
@@ -149,6 +158,41 @@ async def _stream_litellm(
     return Completion(content="".join(content_parts), tool_calls=tool_calls)
 
 
+def _estimate_usage(config: ModelConfig, messages: list[dict], result: Completion) -> None:
+    """Fill token/cost estimates in place. Never raises."""
+    try:
+        if config.provider == "stub":
+            result.prompt_tokens = sum(
+                len(str(m.get("content") or "").split()) for m in messages
+            )
+            result.completion_tokens = len(result.content.split())
+            result.cost_usd = 0.0
+            return
+        import litellm
+
+        text_messages = [
+            {"role": m.get("role", "user"), "content": str(m.get("content") or "")}
+            for m in messages
+        ]
+        result.prompt_tokens = litellm.token_counter(
+            model=config.litellm_model, messages=text_messages
+        )
+        result.completion_tokens = litellm.token_counter(
+            model=config.litellm_model, text=result.content or " "
+        )
+        result.cost_usd = float(
+            litellm.completion_cost(
+                model=config.litellm_model,
+                prompt=" ",
+                completion=result.content or " ",
+                prompt_tokens=result.prompt_tokens,
+                completion_tokens=result.completion_tokens,
+            )
+        )
+    except Exception:  # noqa: BLE001 — accounting must never break a call
+        logger.debug("usage estimation failed for %s", config.litellm_model, exc_info=True)
+
+
 async def complete(
     config: ModelConfig,
     messages: list[dict],
@@ -156,10 +200,17 @@ async def complete(
     tools: list[dict] | None = None,
 ) -> Completion:
     """One model call. Text deltas go to `on_delta` as they stream; the full
-    result (content + any tool calls) is returned at the end."""
+    result (content + any tool calls + usage estimates) is returned at the end."""
+    import time as _time
+
+    started = _time.monotonic()
     if config.provider == "stub":
-        return await _stream_stub(messages, on_delta)
-    return await _stream_litellm(config, messages, on_delta, tools)
+        result = await _stream_stub(messages, on_delta)
+    else:
+        result = await _stream_litellm(config, messages, on_delta, tools)
+    result.latency_ms = int((_time.monotonic() - started) * 1000)
+    _estimate_usage(config, messages, result)
+    return result
 
 
 def stream_completion(config: ModelConfig, messages: list[dict]) -> AsyncIterator[str]:

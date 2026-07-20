@@ -20,6 +20,7 @@ from app.routes import secrets as secret_routes
 from app.routes import templates as template_routes
 from app.routes import tenants as tenant_routes
 from app.routes import toolkits as toolkit_routes
+from app.routes import usage as usage_routes
 from app.routes import users as user_routes
 
 logging.basicConfig(level=logging.INFO)
@@ -69,6 +70,7 @@ app.include_router(datasource_routes.router)
 app.include_router(artifact_routes.router)
 app.include_router(file_routes.router)
 app.include_router(memory_routes.router)
+app.include_router(usage_routes.router)
 app.include_router(toolkit_routes.router)
 
 

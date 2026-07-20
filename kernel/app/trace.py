@@ -34,6 +34,27 @@ async def close_trace_pool() -> None:
         _pool = None
 
 
+async def insert_usage(
+    *, tenant_id, user_id, chat_id, agent_name, provider, model,
+    prompt_tokens, completion_tokens, cost_usd, latency_ms,
+) -> None:
+    try:
+        pool = await _get_pool()
+        async with pool.connection() as conn:
+            await conn.execute(
+                """INSERT INTO usage_records
+                       (tenant_id, user_id, chat_id, agent_name, provider, model,
+                        prompt_tokens, completion_tokens, cost_usd, latency_ms)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                (
+                    tenant_id, user_id, chat_id, agent_name, provider, model,
+                    prompt_tokens, completion_tokens, cost_usd, latency_ms,
+                ),
+            )
+    except Exception:  # noqa: BLE001 — accounting must never break a run
+        logger.exception("failed to record usage for %s/%s", agent_name, model)
+
+
 async def insert_tool_call(
     *, tenant_id, chat_id, agent_name, tool_name, input, output, status, duration_ms
 ) -> None:

@@ -28,6 +28,7 @@ export default function Chat() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
+  const chatIdRef = useRef<string | null>(null)
 
   const [artifacts, setArtifacts] = useState<ArtifactRef[]>([])
   const [workingAgent, setWorkingAgent] = useState('')
@@ -37,6 +38,7 @@ export default function Chat() {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
+    chatIdRef.current = activeChat
     if (!activeChat) {
       setMessages([])
       setArtifacts([])
@@ -70,6 +72,7 @@ export default function Chat() {
     let acc = ''
     await sendMessage(text, activeChat, {
       onChatId: (id) => {
+        chatIdRef.current = id
         if (!activeChat) setActiveChat(id)
       },
       onToken: (t) => {
@@ -89,6 +92,11 @@ export default function Chat() {
           ...m,
           { id: `done-${Date.now()}`, role: 'assistant', content: full, created_at: '' },
         ])
+        // Reload from the API so messages get their database ids (feedback needs them).
+        const target = chatIdRef.current
+        if (target) {
+          api<ChatMessage[]>(`/chats/${target}/messages`).then(setMessages).catch(() => undefined)
+        }
       },
       onError: (detail) => {
         setStreaming('')
@@ -185,6 +193,26 @@ export default function Chat() {
               }`}
             >
               {m.content}
+              {m.role === 'assistant' && !m.id.startsWith('done-') && (
+                <span className="mt-1 flex gap-1">
+                  {[1, -1].map((rating) => (
+                    <button
+                      key={rating}
+                      type="button"
+                      title={rating > 0 ? 'Resposta boa' : 'Resposta ruim'}
+                      className="text-xs opacity-40 transition hover:opacity-100"
+                      onClick={() =>
+                        api(`/chats/${chatIdRef.current}/feedback`, {
+                          method: 'POST',
+                          body: JSON.stringify({ message_id: m.id, rating }),
+                        }).catch(() => undefined)
+                      }
+                    >
+                      {rating > 0 ? '👍' : '👎'}
+                    </button>
+                  ))}
+                </span>
+              )}
               {(m.attachments ?? []).length > 0 && (
                 <div className="mt-1 flex flex-wrap gap-1">
                   {(m.attachments ?? []).map((a, i) => (

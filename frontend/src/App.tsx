@@ -11,6 +11,7 @@ import Memories from './pages/Memories'
 import Profiles from './pages/Profiles'
 import TemplatesPage from './pages/Templates'
 import Tenants from './pages/Tenants'
+import Usage from './pages/Usage'
 import Users from './pages/Users'
 
 const queryClient = new QueryClient({
@@ -32,6 +33,7 @@ function Shell() {
     { to: '/fontes-de-dados', label: 'Fontes de dados', show: can('datasources', 'view') },
     { to: '/arquivos', label: 'Arquivos', show: can('files', 'view') },
     { to: '/memorias', label: 'Memórias', show: !(user?.is_master ?? false) },
+    { to: '/consumo', label: 'Consumo', show: can('usage', 'view') },
   ].filter((l) => l.show)
 
   return (
@@ -78,6 +80,7 @@ function Shell() {
           <Route path="/fontes-de-dados" element={<Datasources />} />
           <Route path="/arquivos" element={<Files />} />
           <Route path="/memorias" element={<Memories />} />
+          <Route path="/consumo" element={<Usage />} />
           <Route path="*" element={<Navigate to={links[0]?.to ?? '/usuarios'} replace />} />
         </Routes>
       </main>

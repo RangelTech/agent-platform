@@ -108,6 +108,7 @@ async def create_run(payload: RunRequest):
         "agents": [a.model_dump() for a in payload.agents],
         "max_steps": payload.max_steps,
         "tenant_id": payload.tenant_id,
+        "user_id": payload.user_id,
         "thread_id": payload.thread_id,
         "secrets": payload.secrets,
         "mcp_servers": [s.model_dump() for s in payload.mcp_servers],
