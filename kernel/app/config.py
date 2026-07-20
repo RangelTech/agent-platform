@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     # Default supervisor step budget per turn when the template omits it.
     max_steps_default: int = 6
     # Tool rounds a specialist may take before being forced to answer.
-    specialist_max_tool_rounds: int = 4
+    specialist_max_tool_rounds: int = 7
 
     # Web search: Serper platform key (Secret Manager) + DuckDuckGo fallback.
     serper_api_key: str = ""

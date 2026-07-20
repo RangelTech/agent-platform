@@ -232,7 +232,16 @@ async def _run_specialist(
             result = await complete(
                 config,
                 messages
-                + [{"role": "user", "content": "Responda agora com o que você tem."}],
+                + [
+                    {
+                        "role": "user",
+                        "content": (
+                            "Responda agora com o que você tem. Se alguma operação "
+                            "não foi executada, diga claramente que NÃO foi feita — "
+                            "nunca afirme sucesso de algo que você não executou."
+                        ),
+                    }
+                ],
                 swallow,
             )
             await _record_usage(run_config, agent["name"], config, result)
@@ -274,7 +283,9 @@ WRITE_CONFIRMATION_CLAUSE = (
     "(criar pedido, efetuar venda, atualizar registro — tool execute_sql_write), "
     "apresente ao usuário um resumo claro da operação e SÓ execute depois que "
     "ele confirmar explicitamente na conversa (ex.: 'sim', 'confirmo'). Se a "
-    "confirmação ainda não veio nesta conversa, pergunte e aguarde."
+    "confirmação ainda não veio nesta conversa, pergunte e aguarde. Após "
+    "executar, relate o resultado REAL retornado pela tool (affected_rows); "
+    "NUNCA afirme que uma operação foi concluída sem tê-la executado."
 )
 
 
