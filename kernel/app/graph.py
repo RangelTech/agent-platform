@@ -117,6 +117,22 @@ async def _record_tool_call(
     )
 
 
+def _find_artifact_descriptors(parsed) -> list[dict]:
+    """Artifact descriptors at the top level, one nesting level down, or in
+    an 'artifacts' list — covers every catalog tool's return shape."""
+    if not isinstance(parsed, dict):
+        return []
+    if "artifact_id" in parsed:
+        return [parsed]
+    found = []
+    for value in parsed.values():
+        if isinstance(value, dict) and "artifact_id" in value:
+            found.append(value)
+        elif isinstance(value, list):
+            found.extend(v for v in value if isinstance(v, dict) and "artifact_id" in v)
+    return found
+
+
 async def _execute_tool(
     name: str, arguments: dict, catalog_session, external: ExternalServers
 ) -> str:
@@ -193,10 +209,14 @@ async def _run_specialist(
                     status, started, writer,
                 )
                 # Materialized artifacts surface as their own stream event so
-                # the frontend can render/download them.
+                # the frontend can render/download them. Tools may return one
+                # descriptor or nest several (forecast, sandbox).
                 if status == "ok" and '"artifact_id"' in tool_output:
                     try:
-                        descriptor = json.loads(tool_output)
+                        parsed = json.loads(tool_output)
+                    except json.JSONDecodeError:
+                        parsed = None
+                    for descriptor in _find_artifact_descriptors(parsed):
                         writer(
                             {
                                 "type": "artifact",
@@ -205,8 +225,6 @@ async def _run_specialist(
                                 "title": descriptor.get("title", ""),
                             }
                         )
-                    except (json.JSONDecodeError, KeyError):
-                        pass
                 messages.append(
                     {"role": "tool", "tool_call_id": tc.id, "content": tool_output}
                 )

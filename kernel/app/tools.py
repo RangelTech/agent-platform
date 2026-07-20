@@ -189,6 +189,168 @@ async def run_sql_query(datasource: str, query: str, title: str = "") -> str:
     return json.dumps(descriptor, ensure_ascii=False, default=str)
 
 
+async def _load_dataset_for(context: dict, artifact_id: str) -> dict | None:
+    from app.storage import get_artifact, load_payload
+
+    record = await get_artifact(artifact_id)
+    if record is None or record["kind"] != "dataset":
+        return None
+    if record["tenant_id"] and context.get("tenant_id") and str(record["tenant_id"]) != str(
+        context["tenant_id"]
+    ):
+        return None
+    return json.loads(load_payload(record["storage_path"]))
+
+
+@catalog.tool()
+async def execute_python(code: str, artifact_id: str = "") -> str:
+    """Executa código Python em sandbox isolado (sem rede, com timeout).
+    Se artifact_id de um dataset for passado, o código recebe `columns`,
+    `rows` e `df` (pandas). Use publish_dataset(titulo, columns, rows) e
+    publish_document(titulo, texto) para materializar resultados. stdout é
+    retornado — use print() para responder valores."""
+    from app.sandbox import run_sandboxed
+    from app.storage import register_artifact
+
+    context = _context()
+    dataset = None
+    if artifact_id:
+        dataset = await _load_dataset_for(context, artifact_id)
+        if dataset is None:
+            return f"ERRO: artifact {artifact_id} não é um dataset acessível"
+
+    stdout, stderr, outputs, timed_out = await run_sandboxed(code, dataset)
+    if timed_out:
+        return "ERRO: tempo limite excedido — o código foi interrompido"
+
+    published = []
+    for output in outputs[:5]:
+        if output.get("kind") == "dataset":
+            descriptor = await register_artifact(
+                tenant_id=context.get("tenant_id"),
+                chat_id=context.get("chat_id"),
+                agent_name=context.get("agent", ""),
+                kind="dataset",
+                title=output.get("title", "Dataset do sandbox"),
+                schema_json=output.get("columns", []),
+                preview_json=(output.get("rows") or [])[:10],
+                row_count=len(output.get("rows") or []),
+                payload=json.dumps(
+                    {"columns": output.get("columns", []), "rows": output.get("rows", [])},
+                    ensure_ascii=False,
+                    default=str,
+                ).encode(),
+            )
+        else:
+            descriptor = await register_artifact(
+                tenant_id=context.get("tenant_id"),
+                chat_id=context.get("chat_id"),
+                agent_name=context.get("agent", ""),
+                kind="file",
+                title=(output.get("title", "documento") or "documento") + ".txt",
+                schema_json=None,
+                preview_json=None,
+                row_count=None,
+                payload=str(output.get("text", "")).encode(),
+                content_type="text/plain",
+                extension="txt",
+            )
+        published.append(descriptor)
+
+    return json.dumps(
+        {"stdout": stdout, "stderr": stderr, "artifacts": published},
+        ensure_ascii=False,
+        default=str,
+    )
+
+
+@catalog.tool()
+async def generate_forecast(
+    artifact_id: str,
+    date_column: str,
+    value_column: str,
+    horizon: int = 6,
+    freq: str = "MS",
+) -> str:
+    """Gera previsão temporal a partir de um dataset artifact (coluna de data
+    + coluna numérica). freq: MS=mensal, W=semanal, D=diário, QS=trimestral.
+    Publica o dataset de projeção e um gráfico com histórico + previsão."""
+    from app.forecast import forecast_series
+    from app.storage import register_artifact
+
+    context = _context()
+    dataset = await _load_dataset_for(context, artifact_id)
+    if dataset is None:
+        return f"ERRO: artifact {artifact_id} não é um dataset acessível"
+
+    try:
+        history, future = await forecast_series(
+            dataset["columns"], dataset["rows"], date_column, value_column,
+            horizon=min(horizon, 36), freq=freq,
+        )
+    except Exception as exc:  # noqa: BLE001 — the model needs the reason
+        return f"ERRO na previsão: {exc}"
+
+    forecast_descriptor = await register_artifact(
+        tenant_id=context.get("tenant_id"),
+        chat_id=context.get("chat_id"),
+        agent_name=context.get("agent", ""),
+        kind="dataset",
+        title=f"Previsão de {value_column} ({horizon} períodos)",
+        schema_json=[{"name": "data", "type": "date"}, {"name": "previsao", "type": "number"}],
+        preview_json=future[:10],
+        row_count=len(future),
+        payload=json.dumps(
+            {
+                "columns": [{"name": "data"}, {"name": "previsao"}],
+                "rows": future,
+            },
+            ensure_ascii=False,
+        ).encode(),
+    )
+
+    figure = {
+        "data": [
+            {
+                "type": "scatter",
+                "mode": "lines",
+                "name": "histórico",
+                "x": [p[0] for p in history],
+                "y": [p[1] for p in history],
+            },
+            {
+                "type": "scatter",
+                "mode": "lines",
+                "name": "previsão",
+                "line": {"dash": "dash"},
+                "x": [p[0] for p in future],
+                "y": [p[1] for p in future],
+            },
+        ],
+        "layout": {"title": f"Previsão de {value_column}"},
+    }
+    chart_descriptor = await register_artifact(
+        tenant_id=context.get("tenant_id"),
+        chat_id=context.get("chat_id"),
+        agent_name=context.get("agent", ""),
+        kind="chart",
+        title=f"Previsão de {value_column}",
+        schema_json=None,
+        preview_json=None,
+        row_count=None,
+        payload=json.dumps(figure, ensure_ascii=False).encode(),
+    )
+    return json.dumps(
+        {
+            "forecast": forecast_descriptor,
+            "chart": chart_descriptor,
+            "future_preview": future[: min(6, len(future))],
+        },
+        ensure_ascii=False,
+        default=str,
+    )
+
+
 @catalog.tool()
 async def web_search(query: str) -> str:
     """Busca na web e retorna resultados com título, URL e resumo. Use para

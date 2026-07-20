@@ -1,0 +1,1 @@
+{"columns": [{"name": "produto", "type": "text"}, {"name": "preco", "type": "number"}], "rows": [["parafuso", 2.5], ["porca", 1.2]]}
