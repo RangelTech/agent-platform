@@ -224,7 +224,7 @@ def validate_write(statement: str, allowed_tables: list[str]) -> str:
     return bare
 
 
-def _write_postgresql(config: dict, secret: str | None, sql: str) -> int:
+def _write_postgresql(config: dict, secret: str | None, sql: str):
     import psycopg
 
     conninfo = psycopg.conninfo.make_conninfo(
@@ -239,8 +239,11 @@ def _write_postgresql(config: dict, secret: str | None, sql: str) -> int:
         with conn.cursor() as cursor:
             cursor.execute(sql)
             count = cursor.rowcount
+            returned = None
+            if cursor.description is not None:  # RETURNING clause present
+                returned = [list(r) for r in cursor.fetchall()]
         conn.commit()
-    return count
+    return count, returned
 
 
 def _write_mysql(config: dict, secret: str | None, sql: str) -> int:
@@ -257,27 +260,33 @@ def _write_mysql(config: dict, secret: str | None, sql: str) -> int:
     try:
         with conn.cursor() as cursor:
             count = cursor.execute(sql)
+            returned = [[cursor.lastrowid]] if cursor.lastrowid else None
         conn.commit()
     finally:
         conn.close()
-    return count
+    return count, returned
 
 
-def _write_sqlite(config: dict, _secret: str | None, sql: str) -> int:
+def _write_sqlite(config: dict, _secret: str | None, sql: str):
     conn = sqlite3.connect(config.get("path", ":memory:"), timeout=10)
     try:
         cursor = conn.execute(sql)
         conn.commit()
-        return cursor.rowcount
+        returned = None
+        if cursor.description is not None:
+            returned = [list(r) for r in cursor.fetchall()]
+        elif cursor.lastrowid:
+            returned = [[cursor.lastrowid]]
+        return cursor.rowcount, returned
     finally:
         conn.close()
 
 
-def _write_bigquery(config: dict, secret: str | None, sql: str) -> int:
+def _write_bigquery(config: dict, secret: str | None, sql: str):
     client = _bigquery_client(config, secret)
     job = client.query(sql)
     job.result()
-    return job.num_dml_affected_rows or 0
+    return job.num_dml_affected_rows or 0, None
 
 
 _WRITE_ENGINES = {
@@ -288,16 +297,18 @@ _WRITE_ENGINES = {
 }
 
 
-async def execute_write(datasource: dict, sql: str, allowed_tables: list[str]) -> tuple[str, int]:
-    """(target_table, affected_rows) after all guardrails pass."""
+async def execute_write(datasource: dict, sql: str, allowed_tables: list[str]):
+    """(target_table, affected_rows, returned_rows) after all guardrails pass.
+    returned_rows carries RETURNING output (or lastrowid) so agents can chain
+    parent->child inserts without guessing ids."""
     table = validate_write(sql, allowed_tables)
     engine = _WRITE_ENGINES.get(datasource["kind"])
     if engine is None:
         raise ValueError(f"tipo de datasource não suportado: {datasource['kind']}")
-    rows = await anyio.to_thread.run_sync(
+    rows, returned = await anyio.to_thread.run_sync(
         lambda: engine(datasource.get("config", {}), datasource.get("secret"), sql)
     )
-    return table, rows
+    return table, rows, returned
 
 
 async def test_connection(datasource: dict) -> tuple[bool, str]:

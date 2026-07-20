@@ -472,7 +472,9 @@ async def execute_sql_write(datasource: str, statement: str) -> str:
     """Executa UMA escrita SQL (INSERT, UPDATE ou DELETE) na fonte de dados,
     somente em tabelas autorizadas pelo template. UPDATE/DELETE exigem WHERE.
     Use apenas após o usuário confirmar a operação quando o template exigir
-    confirmação. Retorna a tabela e o número de linhas afetadas."""
+    confirmação. Use INSERT ... RETURNING id para obter o id gerado (campo
+    'returned') e encadear inserts pai->filho. NUNCA repita um INSERT já
+    executado com sucesso. Retorna tabela, linhas afetadas e RETURNING."""
     context = _context()
     source = context.get("datasources", {}).get(datasource)
     if source is None:
@@ -482,13 +484,15 @@ async def execute_sql_write(datasource: str, statement: str) -> str:
     from app.datasources import execute_write
 
     try:
-        table, rows = await execute_write(
+        table, rows, returned = await execute_write(
             source, statement, context.get("write_tables", [])
         )
     except Exception as exc:  # noqa: BLE001 — the model needs the reason
         return f"ERRO na escrita: {exc}"
     return json.dumps(
-        {"status": "ok", "table": table, "affected_rows": rows}, ensure_ascii=False
+        {"status": "ok", "table": table, "affected_rows": rows, "returned": returned},
+        ensure_ascii=False,
+        default=str,
     )
 
 
