@@ -23,6 +23,13 @@ def me(user: dict = Depends(current_user)):
         "is_master": user["is_master"],
         "tenant_id": str(user["tenant_id"]) if user["tenant_id"] else None,
         "permissions": user["permissions"] or {},
+        "branding": {
+            "name": user.get("brand_name") or user.get("tenant_name") or "",
+            "tenant_key": user.get("tenant_key") or "",
+            "has_logo": bool(user.get("brand_logo_url")),
+            "color": user.get("brand_color") or "",
+            "theme": user.get("brand_theme") or "dark",
+        },
     }
 
 

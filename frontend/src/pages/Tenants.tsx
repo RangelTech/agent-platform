@@ -11,13 +11,26 @@ export default function Tenants() {
   })
   const [name, setName] = useState('')
   const [key, setKey] = useState('')
+  const [adminName, setAdminName] = useState('')
+  const [adminEmail, setAdminEmail] = useState('')
+  const [adminPassword, setAdminPassword] = useState('')
   const [error, setError] = useState('')
 
   const create = useMutation({
-    mutationFn: createTenant,
+    mutationFn: () =>
+      createTenant({
+        name,
+        tenant_key: key,
+        admin_name: adminName || null,
+        admin_email: adminEmail || null,
+        admin_password: adminPassword || null,
+      } as never),
     onSuccess: () => {
       setName('')
       setKey('')
+      setAdminName('')
+      setAdminEmail('')
+      setAdminPassword('')
       setError('')
       qc.invalidateQueries({ queryKey: ['tenants'] })
     },
@@ -32,7 +45,7 @@ export default function Tenants() {
 
   function onSubmit(e: FormEvent) {
     e.preventDefault()
-    create.mutate({ name, tenant_key: key })
+    create.mutate()
   }
 
   return (
@@ -54,6 +67,26 @@ export default function Tenants() {
             value={key}
             name="tenant-key"
             onChange={(e) => setKey(e.target.value)}
+          />
+          <Input
+            label="Nome do admin inicial"
+            name="admin-name"
+            value={adminName}
+            onChange={(e) => setAdminName(e.target.value)}
+          />
+          <Input
+            label="E-mail do admin"
+            type="email"
+            name="admin-email"
+            value={adminEmail}
+            onChange={(e) => setAdminEmail(e.target.value)}
+          />
+          <Input
+            label="Senha do admin (mín. 8)"
+            type="password"
+            name="admin-password"
+            value={adminPassword}
+            onChange={(e) => setAdminPassword(e.target.value)}
           />
           <Button type="submit" disabled={create.isPending}>
             Criar empresa

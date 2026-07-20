@@ -6,8 +6,8 @@ export function Button({
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'ghost' | 'danger' }) {
   const styles = {
-    primary: 'bg-indigo-600 text-white hover:bg-indigo-500 disabled:bg-indigo-900 disabled:text-slate-400',
-    ghost: 'bg-slate-800 text-slate-200 hover:bg-slate-700',
+    primary: 'bg-[var(--brand)] text-white hover:opacity-90 disabled:opacity-50',
+    ghost: 'bg-[var(--border)] text-[var(--text)] hover:opacity-80',
     danger: 'bg-rose-700 text-white hover:bg-rose-600',
   }[variant]
   return (
@@ -25,10 +25,10 @@ export function Input({
 }: InputHTMLAttributes<HTMLInputElement> & { label?: string }) {
   return (
     <label className="block">
-      {label && <span className="mb-1 block text-sm text-slate-300">{label}</span>}
+      {label && <span className="mb-1 block text-sm text-[var(--text-muted)]">{label}</span>}
       <input
         {...props}
-        className={`w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-indigo-500 ${className}`}
+        className={`w-full rounded-md border border-[var(--border)] bg-[var(--surface-solid)] px-3 py-2 text-sm text-[var(--text)] outline-none placeholder:text-[var(--text-faint)] focus:border-[var(--brand)] ${className}`}
       />
     </label>
   )
@@ -41,10 +41,10 @@ export function Select({
 }: React.SelectHTMLAttributes<HTMLSelectElement> & { label?: string }) {
   return (
     <label className="block">
-      {label && <span className="mb-1 block text-sm text-slate-300">{label}</span>}
+      {label && <span className="mb-1 block text-sm text-[var(--text-muted)]">{label}</span>}
       <select
         {...props}
-        className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-500"
+        className="w-full rounded-md border border-[var(--border)] bg-[var(--surface-solid)] px-3 py-2 text-sm text-[var(--text)] outline-none focus:border-[var(--brand)]"
       >
         {children}
       </select>
@@ -54,10 +54,10 @@ export function Select({
 
 export function Card({ title, actions, children }: { title?: string; actions?: ReactNode; children: ReactNode }) {
   return (
-    <section className="rounded-lg border border-slate-800 bg-slate-900/60">
+    <section className="rounded-lg border border-[var(--border)] bg-[var(--surface)]">
       {(title || actions) && (
-        <header className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
-          {title && <h2 className="text-sm font-semibold text-slate-200">{title}</h2>}
+        <header className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
+          {title && <h2 className="text-sm font-semibold text-[var(--text)]">{title}</h2>}
           {actions}
         </header>
       )}
@@ -71,7 +71,7 @@ export function Table({ headers, children }: { headers: string[]; children: Reac
     <div className="overflow-x-auto">
       <table className="w-full text-left text-sm">
         <thead>
-          <tr className="border-b border-slate-800 text-xs uppercase tracking-wide text-slate-400">
+          <tr className="border-b border-[var(--border)] text-xs uppercase tracking-wide text-[var(--text-muted)]">
             {headers.map((h) => (
               <th key={h} className="px-3 py-2 font-medium">
                 {h}
@@ -79,7 +79,7 @@ export function Table({ headers, children }: { headers: string[]; children: Reac
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-800/60">{children}</tbody>
+        <tbody className="divide-y divide-[var(--border)]">{children}</tbody>
       </table>
     </div>
   )

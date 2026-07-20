@@ -50,6 +50,14 @@ export async function api<T>(
   return res.status === 204 ? (undefined as T) : res.json()
 }
 
+export interface Branding {
+  name: string
+  tenant_key: string
+  has_logo: boolean
+  color: string
+  theme: 'dark' | 'light'
+}
+
 export interface Me {
   id: string
   email: string
@@ -57,6 +65,7 @@ export interface Me {
   is_master: boolean
   tenant_id: string | null
   permissions: Record<string, string[]>
+  branding: Branding
 }
 
 export interface Tenant {

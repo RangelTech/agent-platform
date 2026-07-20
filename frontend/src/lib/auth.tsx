@@ -6,6 +6,7 @@ interface AuthState {
   loading: boolean
   signIn: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
+  refresh: () => Promise<void>
   can: (resource: string, action: string) => boolean
 }
 
@@ -45,6 +46,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
   }
 
+  async function refresh() {
+    if (!getToken()) return
+    setUser(await fetchMe())
+  }
+
   function can(resource: string, action: string) {
     if (!user) return false
     if (user.is_master) return true
@@ -52,7 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, signOut, can }}>
+    <AuthContext.Provider value={{ user, loading, signIn, signOut, refresh, can }}>
       {children}
     </AuthContext.Provider>
   )
