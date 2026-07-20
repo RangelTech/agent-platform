@@ -117,6 +117,7 @@ async def create_run(payload: RunRequest):
         "mcp_servers": [s.model_dump() for s in payload.mcp_servers],
         "datasources": [d.model_dump() for d in payload.datasources],
         "embedding": payload.embedding,
+        "attachments": payload.attachments,
         "write_tables": payload.write_tables,
         "require_write_confirmation": payload.require_write_confirmation,
     }

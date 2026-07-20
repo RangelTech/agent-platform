@@ -44,9 +44,11 @@ def set_run_context(
     embedding: dict | None = None,
     agent_files: dict[str, list[str]] | None = None,
     write_tables: list[str] | None = None,
+    attachments: list[dict] | None = None,
 ) -> None:
     RUN_CONTEXT.set(
         {
+            "attachments": attachments or [],
             "secrets": secrets,
             "datasources": {d["name"]: d for d in datasources},
             "tenant_id": tenant_id,
@@ -59,11 +61,14 @@ def set_run_context(
     )
 
 
-def set_current_agent(agent_name: str) -> None:
+def set_current_agent(agent_name: str, agent_model: dict | None = None) -> None:
     # Mutate the shared dict IN PLACE: the in-memory MCP server task snapshots
     # the ContextVar when the session opens, so a later .set() would be
     # invisible to tool handlers — the shared object reference is not.
-    _context()["agent"] = agent_name
+    context = _context()
+    context["agent"] = agent_name
+    if agent_model is not None:
+        context["agent_model"] = agent_model
 
 
 def _resolve_secrets(text: str) -> str:
@@ -182,6 +187,122 @@ async def run_sql_query(datasource: str, query: str, title: str = "") -> str:
         ).encode(),
     )
     return json.dumps(descriptor, ensure_ascii=False, default=str)
+
+
+@catalog.tool()
+async def web_search(query: str) -> str:
+    """Busca na web e retorna resultados com título, URL e resumo. Use para
+    informações atuais (notícias, preços de mercado, fatos recentes)."""
+    from app.config import settings
+
+    results: list[dict] = []
+    if settings.serper_api_key:
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                response = await client.post(
+                    settings.serper_url,
+                    json={"q": query, "num": settings.web_search_max_results},
+                    headers={"X-API-KEY": settings.serper_api_key},
+                )
+                response.raise_for_status()
+                for item in response.json().get("organic", [])[: settings.web_search_max_results]:
+                    results.append(
+                        {
+                            "title": item.get("title", ""),
+                            "url": item.get("link", ""),
+                            "snippet": item.get("snippet", ""),
+                        }
+                    )
+        except Exception:  # noqa: BLE001 — fall through to DuckDuckGo
+            results = []
+
+    if not results:
+        # Fallback: DuckDuckGo via ddgs. Documented risk: scraping-based,
+        # may break without notice.
+        try:
+            from ddgs import DDGS
+
+            def _ddg():
+                with DDGS() as ddg:
+                    return list(ddg.text(query, max_results=settings.web_search_max_results))
+
+            import anyio as _anyio
+
+            for item in await _anyio.to_thread.run_sync(_ddg):
+                results.append(
+                    {
+                        "title": item.get("title", ""),
+                        "url": item.get("href", ""),
+                        "snippet": item.get("body", ""),
+                    }
+                )
+        except Exception as exc:  # noqa: BLE001
+            return f"ERRO: busca indisponível (Serper e fallback falharam): {exc}"
+
+    if not results:
+        return "Nenhum resultado encontrado."
+    return json.dumps(results, ensure_ascii=False)
+
+
+@catalog.tool()
+async def analyze_pdf_pages(attachment_name: str, instruction: str, max_pages: int = 10) -> str:
+    """Analisa um PDF anexado na conversa página a página usando visão de IA.
+    Passe o nome do anexo e a instrução de extração (ex.: 'liste os produtos
+    circulados e as quantidades escritas à mão'). Retorna JSON por página."""
+    from app.config import settings as kernel_settings
+    from app.providers import ModelConfig, complete
+    from app.storage import load_payload
+
+    context = _context()
+    attachment = next(
+        (a for a in context.get("attachments", []) if a.get("name") == attachment_name),
+        None,
+    )
+    if attachment is None:
+        names = ", ".join(a.get("name", "?") for a in context.get("attachments", []))
+        return f"ERRO: anexo '{attachment_name}' não encontrado. Anexos: {names or '(nenhum)'}"
+
+    try:
+        data = load_payload(attachment["storage_path"])
+    except Exception as exc:  # noqa: BLE001
+        return f"ERRO ao carregar o PDF: {exc}"
+
+    import base64
+
+    import fitz  # pymupdf
+
+    model = context.get("agent_model") or {"provider": "stub", "model": "stub-1"}
+    config = ModelConfig(**model)
+    limit = min(max_pages, kernel_settings.pdf_vision_max_pages)
+
+    async def swallow(_delta: str):
+        return None
+
+    pages_output: list[dict] = []
+    with fitz.open(stream=data, filetype="pdf") as document:
+        total = len(document)
+        for index in range(min(total, limit)):
+            pixmap = document[index].get_pixmap(dpi=110)
+            encoded = base64.b64encode(pixmap.tobytes("png")).decode()
+            content = [
+                {"type": "text", "text": f"[página {index + 1}] {instruction}"},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/png;base64,{encoded}"},
+                },
+            ]
+            try:
+                result = await complete(
+                    config, [{"role": "user", "content": content}], swallow
+                )
+                pages_output.append({"page": index + 1, "result": result.content})
+            except Exception as exc:  # noqa: BLE001
+                pages_output.append({"page": index + 1, "error": str(exc)[:300]})
+
+    return json.dumps(
+        {"pages_analyzed": len(pages_output), "total_pages": total, "pages": pages_output},
+        ensure_ascii=False,
+    )
 
 
 @catalog.tool()

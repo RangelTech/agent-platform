@@ -134,7 +134,7 @@ async def _run_specialist(
     """One specialist turn: its own model, its own tools, a short bounded
     tool-loop. Output goes back to the supervisor, not to the user stream."""
     writer({"type": "agent_start", "name": agent["name"]})
-    set_current_agent(agent["name"])
+    set_current_agent(agent["name"], agent.get("model"))
     config = ModelConfig(**agent["model"])
     allowed_names = {t for t in agent.get("tools", []) if t in tool_defs}
     allowed = [tool_defs[t] for t in allowed_names] or None
@@ -290,6 +290,7 @@ async def _supervisor_node(state: RunState) -> dict:
             a["name"]: a.get("file_ids", []) for a in run_config.get("agents", [])
         },
         write_tables=run_config.get("write_tables", []),
+        attachments=run_config.get("attachments", []),
     )
     tool_defs = _agent_tool_defs(list(agents.values())) or None
     supervisor_config = ModelConfig(**supervisor["model"])

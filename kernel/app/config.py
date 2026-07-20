@@ -14,6 +14,13 @@ class Settings(BaseSettings):
     # Tool rounds a specialist may take before being forced to answer.
     specialist_max_tool_rounds: int = 4
 
+    # Web search: Serper platform key (Secret Manager) + DuckDuckGo fallback.
+    serper_api_key: str = ""
+    serper_url: str = "https://google.serper.dev/search"
+    web_search_max_results: int = 6
+    # Pages a single analyze_pdf_pages call may send to the vision model.
+    pdf_vision_max_pages: int = 20
+
     # Artifact payload storage: GCS when bucket is set, local dir otherwise.
     gcs_bucket: str = ""
     gcs_prefix: str = "agent llm"
