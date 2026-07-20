@@ -157,9 +157,8 @@ def homolog_loja(client: httpx.Client, master_token: str) -> dict:
 
     exactly_one = after == before + 1
     final_reply = (confirm["reply"] or "").lower()
-    false_failure = exactly_one and any(
-        w in final_reply for w in ("não foi possível", "instabilidade", "falha", "erro ao", "não consegui")
-    )
+    failure_words = ("não foi possível", "instabilidade", "falha", "erro ao", "não consegui")
+    false_failure = exactly_one and any(w in final_reply for w in failure_words)
     return {
         "case": "loja",
         # Strict: exactly one new order (no duplication), it has items, and the

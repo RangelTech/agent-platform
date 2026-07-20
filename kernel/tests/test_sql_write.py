@@ -187,7 +187,7 @@ async def test_write_outside_allowlist_is_refused_at_runtime(client):
 def _sqlite_ds():
     path = make_temp_sqlite(
         "CREATE TABLE pedidos (id INTEGER PRIMARY KEY AUTOINCREMENT, cliente_id INT, total REAL);"
-        "CREATE TABLE itens_pedido (id INTEGER PRIMARY KEY AUTOINCREMENT, pedido_id INT, produto_id INT, quantidade INT);"
+        "CREATE TABLE itens_pedido (id INTEGER PRIMARY KEY AUTOINCREMENT, pedido_id INT, produto_id INT, quantidade INT);"  # noqa: E501
     )
     return {"kind": "sqlite", "config": {"path": path}}, path
 
@@ -199,8 +199,8 @@ async def test_transaction_creates_parent_and_children_atomically():
         ds,
         [
             "INSERT INTO pedidos (cliente_id, total) VALUES (1, 84.0) RETURNING id",
-            "INSERT INTO itens_pedido (pedido_id, produto_id, quantidade) VALUES ({{returned:0}}, 5, 2)",
-            "INSERT INTO itens_pedido (pedido_id, produto_id, quantidade) VALUES ({{returned:0}}, 7, 1)",
+            "INSERT INTO itens_pedido (pedido_id, produto_id, quantidade) VALUES ({{returned:0}}, 5, 2)",  # noqa: E501
+            "INSERT INTO itens_pedido (pedido_id, produto_id, quantidade) VALUES ({{returned:0}}, 7, 1)",  # noqa: E501
         ],
         ALLOWED,
     )
@@ -210,7 +210,7 @@ async def test_transaction_creates_parent_and_children_atomically():
     orders = conn.execute("SELECT count(*) FROM pedidos").fetchone()[0]
     items = conn.execute("SELECT count(*) FROM itens_pedido").fetchone()[0]
     order_id = conn.execute("SELECT id FROM pedidos").fetchone()[0]
-    linked = conn.execute("SELECT count(*) FROM itens_pedido WHERE pedido_id=?", (order_id,)).fetchone()[0]
+    linked = conn.execute("SELECT count(*) FROM itens_pedido WHERE pedido_id=?", (order_id,)).fetchone()[0]  # noqa: E501
     conn.close()
     assert orders == 1  # exactly one parent — no duplication
     assert items == 2
@@ -220,13 +220,13 @@ async def test_transaction_creates_parent_and_children_atomically():
 async def test_transaction_rolls_back_completely_on_failure():
     from app.datasources import execute_transaction
     ds, path = _sqlite_ds()
-    with pytest.raises(Exception):
+    with pytest.raises(Exception):  # noqa: B017 — any DB error must roll back
         await execute_transaction(
             ds,
             [
                 "INSERT INTO pedidos (cliente_id, total) VALUES (1, 10) RETURNING id",
-                "INSERT INTO itens_pedido (pedido_id, produto_id, quantidade) VALUES ({{returned:0}}, 5, 'nao_e_numero_ok')",
-                "INSERT INTO itens_pedido (pedido_id, coluna_inexistente) VALUES ({{returned:0}}, 1)",
+                "INSERT INTO itens_pedido (pedido_id, produto_id, quantidade) VALUES ({{returned:0}}, 5, 'nao_e_numero_ok')",  # noqa: E501
+                "INSERT INTO itens_pedido (pedido_id, coluna_inexistente) VALUES ({{returned:0}}, 1)",  # noqa: E501
             ],
             ALLOWED,
         )
