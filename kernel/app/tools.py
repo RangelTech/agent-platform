@@ -497,6 +497,45 @@ async def execute_sql_write(datasource: str, statement: str) -> str:
 
 
 @catalog.tool()
+async def execute_sql_transaction(datasource: str, statements_json: str) -> str:
+    """Executa VÁRIAS escritas SQL numa ÚNICA transação atômica (tudo ou nada).
+    Use SEMPRE que criar um registro com filhos — por exemplo um pedido e seus
+    itens — para não duplicar nem deixar dados pela metade. `statements_json` é
+    um array JSON de statements na ordem de execução. Para usar o id gerado por
+    um INSERT anterior, termine-o com RETURNING id e referencie com
+    {{returned:0}} (0 = primeiro statement). Exemplo:
+    ["INSERT INTO pedidos (cliente_id, total) VALUES (1, 100) RETURNING id",
+     "INSERT INTO itens_pedido (pedido_id, produto_id, quantidade) VALUES ({{returned:0}}, 5, 2)"].
+    Só tabelas autorizadas; UPDATE/DELETE exigem WHERE. Use após a confirmação
+    do usuário quando o template exigir. Se falhar, NADA é gravado."""
+    context = _context()
+    source = context.get("datasources", {}).get(datasource)
+    if source is None:
+        available = ", ".join(context.get("datasources", {})) or "(nenhuma)"
+        return f"ERRO: fonte '{datasource}' não existe. Disponíveis: {available}"
+    try:
+        statements = json.loads(statements_json)
+        if not isinstance(statements, list) or not all(isinstance(s, str) for s in statements):
+            return "ERRO: statements_json deve ser um array JSON de strings SQL"
+    except json.JSONDecodeError as exc:
+        return f"ERRO: statements_json inválido: {exc}"
+
+    from app.datasources import execute_transaction
+
+    try:
+        results = await execute_transaction(
+            source, statements, context.get("write_tables", [])
+        )
+    except Exception as exc:  # noqa: BLE001 — the model needs the reason to retry
+        return f"ERRO na transação (nada foi gravado): {exc}"
+    return json.dumps(
+        {"status": "ok", "statements": len(results), "results": results},
+        ensure_ascii=False,
+        default=str,
+    )
+
+
+@catalog.tool()
 async def query_agent_rag(question: str) -> str:
     """Busca semântica nos documentos da empresa vinculados a você. Use para
     responder perguntas sobre conteúdo de arquivos (políticas, manuais,

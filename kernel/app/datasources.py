@@ -311,6 +311,122 @@ async def execute_write(datasource: dict, sql: str, allowed_tables: list[str]):
     return table, rows, returned
 
 
+_PLACEHOLDER = re.compile(r"\{\{\s*returned:(\d+)(?::(\d+))?\s*\}\}")
+
+
+def _substitute_placeholders(statement: str, results: list[dict]) -> str:
+    """Replace {{returned:N}} / {{returned:N:C}} with the value from an earlier
+    statement's RETURNING (row 0, column N-th index / C), so a child insert can
+    reference the parent's generated id inside the same transaction."""
+
+    def repl(match: re.Match) -> str:
+        idx = int(match.group(1))
+        col = int(match.group(2)) if match.group(2) else 0
+        if idx >= len(results) or not results[idx].get("returned"):
+            raise ValueError(f"{{{{returned:{idx}}}}} não disponível (statement sem RETURNING)")
+        value = results[idx]["returned"][0][col]
+        # Numeric ids inline as-is; anything else is single-quoted safely.
+        if isinstance(value, (int, float)):
+            return str(value)
+        return "'" + str(value).replace("'", "''") + "'"
+
+    return _PLACEHOLDER.sub(repl, statement)
+
+
+def _run_transaction(kind: str, config: dict, secret: str | None, statements: list[str]):
+    """Execute all statements in ONE transaction. Placeholders are resolved
+    left to right. Any failure rolls back the whole batch."""
+    if kind == "postgresql":
+        import psycopg
+
+        conninfo = psycopg.conninfo.make_conninfo(
+            host=config.get("host", "localhost"), port=int(config.get("port", 5432)),
+            dbname=config.get("database", ""), user=config.get("user", ""),
+            password=secret or "", connect_timeout=10,
+        )
+        results: list[dict] = []
+        with psycopg.connect(conninfo) as conn:
+            try:
+                with conn.cursor() as cur:
+                    for stmt in statements:
+                        cur.execute(_substitute_placeholders(stmt, results))
+                        returned = (
+                            [list(r) for r in cur.fetchall()] if cur.description else None
+                        )
+                        results.append({"affected_rows": cur.rowcount, "returned": returned})
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return results
+
+    if kind == "sqlite":
+        conn = sqlite3.connect(config.get("path", ":memory:"), timeout=10)
+        results = []
+        try:
+            for stmt in statements:
+                cur = conn.execute(_substitute_placeholders(stmt, results))
+                if cur.description is not None:
+                    returned = [list(r) for r in cur.fetchall()]
+                elif cur.lastrowid:
+                    returned = [[cur.lastrowid]]
+                else:
+                    returned = None
+                results.append({"affected_rows": cur.rowcount, "returned": returned})
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+        return results
+
+    if kind == "mysql":
+        import pymysql
+
+        conn = pymysql.connect(
+            host=config.get("host", "localhost"), port=int(config.get("port", 3306)),
+            database=config.get("database", ""), user=config.get("user", ""),
+            password=secret or "", connect_timeout=10,
+        )
+        results = []
+        try:
+            with conn.cursor() as cur:
+                for stmt in statements:
+                    count = cur.execute(_substitute_placeholders(stmt, results))
+                    returned = [[cur.lastrowid]] if cur.lastrowid else None
+                    results.append({"affected_rows": count, "returned": returned})
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+        return results
+
+    raise ValueError(f"transações não suportadas para datasource '{kind}'")
+
+
+async def execute_transaction(
+    datasource: dict, statements: list[str], allowed_tables: list[str]
+) -> list[dict]:
+    """Guarded, atomic multi-statement write. Every statement passes the same
+    guardrails as a single write; all run in one transaction (all-or-nothing).
+    Returns per-statement {table, affected_rows, returned}."""
+    if not statements:
+        raise ValueError("nenhum statement informado")
+    if len(statements) > 50:
+        raise ValueError("máximo de 50 statements por transação")
+    tables = [validate_write(s, allowed_tables) for s in statements]
+    rows = await anyio.to_thread.run_sync(
+        lambda: _run_transaction(
+            datasource["kind"], datasource.get("config", {}),
+            datasource.get("secret"), statements,
+        )
+    )
+    return [{"table": t, **r} for t, r in zip(tables, rows, strict=True)]
+
+
 async def test_connection(datasource: dict) -> tuple[bool, str]:
     try:
         await execute_query(datasource, "SELECT 1", max_rows=1)

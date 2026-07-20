@@ -180,3 +180,79 @@ async def test_write_outside_allowlist_is_refused_at_runtime(client):
     conn = sqlite3.connect(db)
     assert conn.execute("SELECT count(*) FROM clientes").fetchone()[0] == 1
     conn.close()
+
+
+# ---------- atomic transaction (parent + children) ----------
+
+def _sqlite_ds():
+    path = make_temp_sqlite(
+        "CREATE TABLE pedidos (id INTEGER PRIMARY KEY AUTOINCREMENT, cliente_id INT, total REAL);"
+        "CREATE TABLE itens_pedido (id INTEGER PRIMARY KEY AUTOINCREMENT, pedido_id INT, produto_id INT, quantidade INT);"
+    )
+    return {"kind": "sqlite", "config": {"path": path}}, path
+
+
+async def test_transaction_creates_parent_and_children_atomically():
+    from app.datasources import execute_transaction
+    ds, path = _sqlite_ds()
+    results = await execute_transaction(
+        ds,
+        [
+            "INSERT INTO pedidos (cliente_id, total) VALUES (1, 84.0) RETURNING id",
+            "INSERT INTO itens_pedido (pedido_id, produto_id, quantidade) VALUES ({{returned:0}}, 5, 2)",
+            "INSERT INTO itens_pedido (pedido_id, produto_id, quantidade) VALUES ({{returned:0}}, 7, 1)",
+        ],
+        ALLOWED,
+    )
+    assert len(results) == 3
+    import sqlite3
+    conn = sqlite3.connect(path)
+    orders = conn.execute("SELECT count(*) FROM pedidos").fetchone()[0]
+    items = conn.execute("SELECT count(*) FROM itens_pedido").fetchone()[0]
+    order_id = conn.execute("SELECT id FROM pedidos").fetchone()[0]
+    linked = conn.execute("SELECT count(*) FROM itens_pedido WHERE pedido_id=?", (order_id,)).fetchone()[0]
+    conn.close()
+    assert orders == 1  # exactly one parent — no duplication
+    assert items == 2
+    assert linked == 2  # children correctly reference the generated id
+
+
+async def test_transaction_rolls_back_completely_on_failure():
+    from app.datasources import execute_transaction
+    ds, path = _sqlite_ds()
+    with pytest.raises(Exception):
+        await execute_transaction(
+            ds,
+            [
+                "INSERT INTO pedidos (cliente_id, total) VALUES (1, 10) RETURNING id",
+                "INSERT INTO itens_pedido (pedido_id, produto_id, quantidade) VALUES ({{returned:0}}, 5, 'nao_e_numero_ok')",
+                "INSERT INTO itens_pedido (pedido_id, coluna_inexistente) VALUES ({{returned:0}}, 1)",
+            ],
+            ALLOWED,
+        )
+    import sqlite3
+    conn = sqlite3.connect(path)
+    orders = conn.execute("SELECT count(*) FROM pedidos").fetchone()[0]
+    conn.close()
+    assert orders == 0  # the failing third statement rolled back the parent too
+
+
+async def test_transaction_enforces_guardrails_per_statement():
+    from app.datasources import execute_transaction
+    ds, _ = _sqlite_ds()
+    with pytest.raises(ValueError, match="permitida"):
+        await execute_transaction(
+            ds,
+            ["INSERT INTO pedidos (cliente_id) VALUES (1)",
+             "INSERT INTO tabela_proibida (x) VALUES (1)"],
+            ALLOWED,
+        )
+    with pytest.raises(ValueError, match="sem WHERE"):
+        await execute_transaction(ds, ["UPDATE pedidos SET total = 0"], ALLOWED)
+
+
+def test_write_confirmation_clause_mentions_atomic_transaction():
+    assert "execute_sql_transaction" in WRITE_CONFIRMATION_CLAUSE
+    assert "returned:0" in WRITE_CONFIRMATION_CLAUSE
+    prompt = build_supervisor_prompt("base", [], require_write_confirmation=True)
+    assert "atômic" in prompt.lower()

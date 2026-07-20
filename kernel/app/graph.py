@@ -280,12 +280,18 @@ async def _load_tool_defs(catalog_session, external: ExternalServers) -> dict:
 
 WRITE_CONFIRMATION_CLAUSE = (
     "\n\nREGRA DE ESCRITA: antes de qualquer operação que altere dados "
-    "(criar pedido, efetuar venda, atualizar registro — tool execute_sql_write), "
-    "apresente ao usuário um resumo claro da operação e SÓ execute depois que "
-    "ele confirmar explicitamente na conversa (ex.: 'sim', 'confirmo'). Se a "
-    "confirmação ainda não veio nesta conversa, pergunte e aguarde. Após "
+    "(criar pedido, efetuar venda, atualizar registro), apresente ao usuário um "
+    "resumo claro da operação e SÓ execute depois que ele confirmar "
+    "explicitamente na conversa (ex.: 'sim', 'confirmo'). Se a confirmação ainda "
+    "não veio nesta conversa, pergunte e aguarde. "
+    "Para criar um registro com filhos (um pedido e seus itens), use SEMPRE a "
+    "tool execute_sql_transaction com TODOS os statements de uma vez — o pedido "
+    "com RETURNING id e os itens referenciando {{returned:0}} — para que seja "
+    "atômico. NUNCA crie o pedido e os itens em chamadas separadas e NUNCA repita "
+    "um INSERT: se uma tool retornar status ok, a operação já foi gravada. Após "
     "executar, relate o resultado REAL retornado pela tool (affected_rows); "
-    "NUNCA afirme que uma operação foi concluída sem tê-la executado."
+    "NUNCA afirme que uma operação foi concluída sem tê-la executado, e NUNCA "
+    "afirme falha se a tool retornou status ok."
 )
 
 
