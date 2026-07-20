@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { Badge, Button, Card, ErrorText, Input, Select, Table } from '../components/ui'
-import { createUser, listProfiles, listTenants, listUsers, updateUser } from '../lib/api'
+import { createUser, listProfiles, listTenants, listUsers, updateUser, type User } from '../lib/api'
 import { useAuth } from '../lib/auth'
 
 export default function Users() {
@@ -54,6 +54,33 @@ export default function Users() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }),
   })
 
+  const [editing, setEditing] = useState<User | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editProfile, setEditProfile] = useState('')
+  const [editPassword, setEditPassword] = useState('')
+
+  const saveEdit = useMutation({
+    mutationFn: () =>
+      updateUser(editing!.id, {
+        name: editName,
+        profile_id: editProfile || null,
+        ...(editPassword ? { password: editPassword } : {}),
+      }),
+    onSuccess: () => {
+      setEditing(null)
+      setEditPassword('')
+      qc.invalidateQueries({ queryKey: ['users'] })
+    },
+    onError: (e: Error) => setError(e.message),
+  })
+
+  function openEdit(u: User) {
+    setEditing(u)
+    setEditName(u.name)
+    setEditProfile(u.profile_id ?? '')
+    setEditPassword('')
+  }
+
   function onSubmit(e: FormEvent) {
     e.preventDefault()
     create.mutate()
@@ -61,6 +88,60 @@ export default function Users() {
 
   const profileName = (id: string | null) =>
     profiles.find((p) => p.id === id)?.name ?? '—'
+
+  if (editing) {
+    return (
+      <Card title={`Editar usuário: ${editing.email}`}>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            saveEdit.mutate()
+          }}
+          className="grid max-w-lg gap-3"
+        >
+          <Input
+            label="Nome"
+            required
+            name="edit-name"
+            value={editName}
+            onChange={(e) => setEditName(e.target.value)}
+          />
+          <Select
+            label="Perfil de permissão"
+            name="edit-profile"
+            value={editProfile}
+            onChange={(e) => setEditProfile(e.target.value)}
+          >
+            <option value="">Sem perfil</option>
+            {profiles
+              .filter((p) => p.tenant_id === editing.tenant_id)
+              .map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+          </Select>
+          <Input
+            label="Nova senha (deixe vazio para manter)"
+            type="password"
+            name="edit-password"
+            minLength={8}
+            value={editPassword}
+            onChange={(e) => setEditPassword(e.target.value)}
+          />
+          <div className="flex items-center gap-3">
+            <Button type="submit" disabled={saveEdit.isPending}>
+              Salvar
+            </Button>
+            <Button type="button" variant="ghost" onClick={() => setEditing(null)}>
+              Cancelar
+            </Button>
+            <ErrorText>{error}</ErrorText>
+          </div>
+        </form>
+      </Card>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -145,12 +226,17 @@ export default function Users() {
                 </td>
                 <td className="px-3 py-2 text-right">
                   {!u.is_master && (
-                    <Button
-                      variant="ghost"
-                      onClick={() => toggle.mutate({ id: u.id, is_active: !u.is_active })}
-                    >
-                      {u.is_active ? 'Desativar' : 'Ativar'}
-                    </Button>
+                    <div className="flex justify-end gap-2">
+                      <Button variant="ghost" onClick={() => openEdit(u)}>
+                        Editar
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        onClick={() => toggle.mutate({ id: u.id, is_active: !u.is_active })}
+                      >
+                        {u.is_active ? 'Desativar' : 'Ativar'}
+                      </Button>
+                    </div>
                   )}
                 </td>
               </tr>
