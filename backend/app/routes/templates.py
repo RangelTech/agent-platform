@@ -341,3 +341,16 @@ def deploy_version(
             (version_id, template_id),
         )
     return {"status": "ok", "active_version_id": version_id}
+
+
+@router.delete("/{template_id}")
+def archive_template(template_id: str, user: dict = Depends(require("templates", "delete"))):
+    """Soft-delete: hides the template; existing conversations pinned to it
+    fall back to the tenant default on their next turn."""
+    with get_connection() as conn:
+        _template_scoped(conn, template_id, user)
+        conn.execute(
+            "UPDATE templates SET is_deleted = TRUE, updated_at = now() WHERE id = %s",
+            (template_id,),
+        )
+    return {"status": "ok"}

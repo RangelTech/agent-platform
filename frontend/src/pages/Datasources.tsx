@@ -106,6 +106,11 @@ export default function Datasources() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['datasources'] }),
   })
 
+  const archive = useMutation({
+    mutationFn: (id: string) => api(`/datasources/${id}`, { method: 'DELETE' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['datasources'] }),
+  })
+
   function onSubmit(e: FormEvent) {
     e.preventDefault()
     create.mutate()
@@ -216,9 +221,14 @@ export default function Datasources() {
                   <Badge ok={s.is_active}>{s.is_active ? 'Ativa' : 'Inativa'}</Badge>
                 </td>
                 <td className="px-3 py-2 text-right">
-                  <Button variant="ghost" onClick={() => toggle.mutate({ id: s.id, is_active: !s.is_active })}>
-                    {s.is_active ? 'Desativar' : 'Ativar'}
-                  </Button>
+                  <div className="flex justify-end gap-2">
+                    <Button variant="ghost" onClick={() => toggle.mutate({ id: s.id, is_active: !s.is_active })}>
+                      {s.is_active ? 'Desativar' : 'Ativar'}
+                    </Button>
+                    <Button variant="ghost" onClick={() => archive.mutate(s.id)}>
+                      Arquivar
+                    </Button>
+                  </div>
                 </td>
               </tr>
             ))}

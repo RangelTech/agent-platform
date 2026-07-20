@@ -279,6 +279,11 @@ export default function Templates() {
     onError: (e: Error) => setError(e.message),
   })
 
+  const archiveTemplate = useMutation({
+    mutationFn: (id: string) => api(`/templates/${id}`, { method: 'DELETE' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['templates'] }),
+  })
+
   const deploy = useMutation({
     mutationFn: (versionId: string) => deployVersion(selected!.id, versionId),
     onSuccess: (_result, versionId) => {
@@ -331,9 +336,14 @@ export default function Templates() {
                   )}
                 </td>
                 <td className="px-3 py-2 text-right">
-                  <Button variant="ghost" onClick={() => setSelected(t)}>
-                    Editar
-                  </Button>
+                  <div className="flex justify-end gap-2">
+                    <Button variant="ghost" onClick={() => setSelected(t)}>
+                      Editar
+                    </Button>
+                    <Button variant="ghost" onClick={() => archiveTemplate.mutate(t.id)}>
+                      Arquivar
+                    </Button>
+                  </div>
                 </td>
               </tr>
             ))}

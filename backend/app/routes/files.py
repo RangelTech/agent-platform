@@ -92,7 +92,7 @@ def _enqueue_ingestion(background: BackgroundTasks, file_id: str, embedding: dic
 @router.get("")
 def list_files(user: dict = Depends(require("files", "view"))):
     with get_connection() as conn:
-        scope = "" if user["is_master"] else " WHERE tenant_id = %s"
+        scope = " WHERE NOT is_deleted" if user["is_master"] else " WHERE NOT is_deleted AND tenant_id = %s"
         params = () if user["is_master"] else (user["tenant_id"],)
         rows = conn.execute(
             f"SELECT * FROM files{scope} ORDER BY created_at DESC", params
@@ -154,4 +154,21 @@ async def reprocess(
             (file_id,),
         )
     _enqueue_ingestion(background, file_id, embedding_spec_for_tenant(row["tenant_id"]))
+    return {"status": "ok"}
+
+
+@router.delete("/{file_id}")
+def archive_file(file_id: str, user: dict = Depends(require("files", "delete"))):
+    """Soft-delete: hides the file from listings; template versions that
+    already reference it keep working (versions are immutable)."""
+    with get_connection() as conn:
+        row = conn.execute("SELECT tenant_id FROM files WHERE id = %s", (file_id,)).fetchone()
+        if row is None or (
+            not user["is_master"] and str(row["tenant_id"]) != str(user["tenant_id"])
+        ):
+            raise HTTPException(status_code=404, detail="Arquivo não encontrado")
+        conn.execute(
+            "UPDATE files SET is_deleted = TRUE, updated_at = now() WHERE id = %s",
+            (file_id,),
+        )
     return {"status": "ok"}

@@ -74,6 +74,11 @@ export default function Files() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['files'] }),
   })
 
+  const archive = useMutation({
+    mutationFn: (id: string) => api(`/files/${id}`, { method: 'DELETE' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['files'] }),
+  })
+
   return (
     <div className="space-y-6">
       <Card title="Enviar arquivo (PDF, DOCX, TXT, XLSX, CSV)">
@@ -132,11 +137,16 @@ export default function Files() {
                   )}
                 </td>
                 <td className="px-3 py-2 text-right">
-                  {f.status === 'error' && (
-                    <Button variant="ghost" onClick={() => reprocess.mutate(f.id)}>
-                      Reprocessar
+                  <div className="flex justify-end gap-2">
+                    {f.status === 'error' && (
+                      <Button variant="ghost" onClick={() => reprocess.mutate(f.id)}>
+                        Reprocessar
+                      </Button>
+                    )}
+                    <Button variant="ghost" onClick={() => archive.mutate(f.id)}>
+                      Arquivar
                     </Button>
-                  )}
+                  </div>
                 </td>
               </tr>
             ))}

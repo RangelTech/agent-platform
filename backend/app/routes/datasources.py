@@ -62,7 +62,7 @@ def _scoped(conn, datasource_id: str, user: dict) -> dict:
 @router.get("")
 def list_datasources(user: dict = Depends(require("datasources", "view"))):
     with get_connection() as conn:
-        scope = "" if user["is_master"] else " WHERE tenant_id = %s"
+        scope = " WHERE NOT is_deleted" if user["is_master"] else " WHERE NOT is_deleted AND tenant_id = %s"
         params = () if user["is_master"] else (user["tenant_id"],)
         rows = conn.execute(
             f"SELECT * FROM datasources{scope} ORDER BY name", params
@@ -168,3 +168,16 @@ async def test_datasource(
             (ok, datasource_id),
         )
     return {"ok": ok, "detail": detail}
+
+
+@router.delete("/{datasource_id}")
+def archive_datasource(
+    datasource_id: str, user: dict = Depends(require("datasources", "delete"))
+):
+    with get_connection() as conn:
+        _scoped(conn, datasource_id, user)
+        conn.execute(
+            "UPDATE datasources SET is_deleted = TRUE, updated_at = now() WHERE id = %s",
+            (datasource_id,),
+        )
+    return {"status": "ok"}

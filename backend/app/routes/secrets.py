@@ -41,7 +41,7 @@ def _serialize(row: dict) -> dict:
 @router.get("")
 def list_secrets(user: dict = Depends(require("secrets", "view"))):
     with get_connection() as conn:
-        scope = "" if user["is_master"] else " WHERE tenant_id = %s"
+        scope = " WHERE NOT is_deleted" if user["is_master"] else " WHERE NOT is_deleted AND tenant_id = %s"
         params = () if user["is_master"] else (user["tenant_id"],)
         rows = conn.execute(f"SELECT * FROM secrets{scope} ORDER BY name", params).fetchall()
     return [_serialize(r) for r in rows]
@@ -92,3 +92,18 @@ def update_secret(
     if row is None:
         raise HTTPException(status_code=404, detail="Segredo não encontrado")
     return _serialize(row)
+
+
+@router.delete("/{secret_id}")
+def archive_secret(secret_id: str, user: dict = Depends(require("secrets", "delete"))):
+    scope = "" if user["is_master"] else " AND tenant_id = %s"
+    params = [secret_id] + ([] if user["is_master"] else [user["tenant_id"]])
+    with get_connection() as conn:
+        row = conn.execute(
+            f"UPDATE secrets SET is_deleted = TRUE, updated_at = now()"
+            f" WHERE id = %s{scope} RETURNING id",
+            tuple(params),
+        ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Segredo não encontrado")
+    return {"status": "ok"}

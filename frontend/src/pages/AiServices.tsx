@@ -95,6 +95,11 @@ export default function AiServices() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['ai-services'] }),
   })
 
+  const archive = useMutation({
+    mutationFn: (id: string) => api(`/ai-services/${id}`, { method: 'DELETE' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['ai-services'] }),
+  })
+
   function pickProvider(value: string) {
     const p = PROVIDERS.find((p) => p.value === value)
     setForm({ ...form, provider: value, model: p?.model ?? '' })
@@ -206,12 +211,17 @@ export default function AiServices() {
                   <Badge ok={s.is_active}>{s.is_active ? 'Ativo' : 'Inativo'}</Badge>
                 </td>
                 <td className="px-3 py-2 text-right">
-                  <Button
-                    variant="ghost"
-                    onClick={() => toggle.mutate({ id: s.id, is_active: !s.is_active })}
-                  >
-                    {s.is_active ? 'Desativar' : 'Ativar'}
-                  </Button>
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="ghost"
+                      onClick={() => toggle.mutate({ id: s.id, is_active: !s.is_active })}
+                    >
+                      {s.is_active ? 'Desativar' : 'Ativar'}
+                    </Button>
+                    <Button variant="ghost" onClick={() => archive.mutate(s.id)}>
+                      Arquivar
+                    </Button>
+                  </div>
                 </td>
               </tr>
             ))}

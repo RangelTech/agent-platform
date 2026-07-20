@@ -56,10 +56,12 @@ def _serialize(row: dict) -> dict:
 def list_services(user: dict = Depends(require("ai_services", "view"))):
     with get_connection() as conn:
         if user["is_master"]:
-            rows = conn.execute("SELECT * FROM ai_services ORDER BY name").fetchall()
+            rows = conn.execute(
+                "SELECT * FROM ai_services WHERE NOT is_deleted ORDER BY name"
+            ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM ai_services WHERE tenant_id = %s ORDER BY name",
+                "SELECT * FROM ai_services WHERE NOT is_deleted AND tenant_id = %s ORDER BY name",
                 (user["tenant_id"],),
             ).fetchall()
     return [_serialize(r) for r in rows]
@@ -187,3 +189,14 @@ async def test_service(
             (ok, service_id),
         )
     return {"ok": ok, "detail": detail}
+
+
+@router.delete("/{service_id}")
+def archive_service(service_id: str, user: dict = Depends(require("ai_services", "delete"))):
+    with get_connection() as conn:
+        _get_scoped(conn, service_id, user)
+        conn.execute(
+            "UPDATE ai_services SET is_deleted = TRUE, updated_at = now() WHERE id = %s",
+            (service_id,),
+        )
+    return {"status": "ok"}
