@@ -14,6 +14,9 @@ test('admin creates a template with agents, deploys it and chats through it', as
   page,
   request,
 }) => {
+  await request.post('http://localhost:8080/stub/script', {
+    data: { rules: [], default: 'Resposta simulada do stub.' },
+  })
   const suffix = Date.now().toString(36)
 
   // Arrange tenant + admin via API.

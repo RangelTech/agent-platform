@@ -11,6 +11,9 @@ async function signIn(page: import('@playwright/test').Page, email: string, pass
 }
 
 test('tenant user chats and receives a streamed reply', async ({ page, request }) => {
+  await request.post('http://localhost:8080/stub/script', {
+    data: { rules: [], default: 'Resposta simulada do stub.' },
+  })
   const suffix = Date.now().toString(36)
 
   // Arrange a tenant + user through the API (master credentials).

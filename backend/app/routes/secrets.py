@@ -41,7 +41,11 @@ def _serialize(row: dict) -> dict:
 @router.get("")
 def list_secrets(user: dict = Depends(require("secrets", "view"))):
     with get_connection() as conn:
-        scope = " WHERE NOT is_deleted" if user["is_master"] else " WHERE NOT is_deleted AND tenant_id = %s"
+        scope = (
+            " WHERE NOT is_deleted"
+            if user["is_master"]
+            else " WHERE NOT is_deleted AND tenant_id = %s"
+        )
         params = () if user["is_master"] else (user["tenant_id"],)
         rows = conn.execute(f"SELECT * FROM secrets{scope} ORDER BY name", params).fetchall()
     return [_serialize(r) for r in rows]

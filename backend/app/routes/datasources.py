@@ -62,7 +62,11 @@ def _scoped(conn, datasource_id: str, user: dict) -> dict:
 @router.get("")
 def list_datasources(user: dict = Depends(require("datasources", "view"))):
     with get_connection() as conn:
-        scope = " WHERE NOT is_deleted" if user["is_master"] else " WHERE NOT is_deleted AND tenant_id = %s"
+        scope = (
+            " WHERE NOT is_deleted"
+            if user["is_master"]
+            else " WHERE NOT is_deleted AND tenant_id = %s"
+        )
         params = () if user["is_master"] else (user["tenant_id"],)
         rows = conn.execute(
             f"SELECT * FROM datasources{scope} ORDER BY name", params

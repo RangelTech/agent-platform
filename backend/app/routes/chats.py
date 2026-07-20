@@ -177,7 +177,8 @@ def _transcription_spec(tenant_id) -> dict:
     with get_connection() as conn:
         rows = conn.execute(
             """SELECT provider, api_key_encrypted FROM ai_services
-                WHERE tenant_id = %s AND is_active AND api_key_encrypted IS NOT NULL
+                WHERE tenant_id = %s AND is_active AND NOT is_deleted
+                      AND api_key_encrypted IS NOT NULL
                 ORDER BY created_at""",
             (tenant_id,),
         ).fetchall()

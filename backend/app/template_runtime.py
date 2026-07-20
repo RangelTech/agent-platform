@@ -42,7 +42,8 @@ def _embedding_spec(conn, tenant_id) -> dict:
     embed natively); stub otherwise (dev)."""
     rows = conn.execute(
         """SELECT provider, api_key_encrypted FROM ai_services
-            WHERE tenant_id = %s AND is_active AND api_key_encrypted IS NOT NULL
+            WHERE tenant_id = %s AND is_active AND NOT is_deleted
+                      AND api_key_encrypted IS NOT NULL
             ORDER BY created_at""",
         (tenant_id,),
     ).fetchall()
@@ -65,7 +66,7 @@ def _embedding_spec(conn, tenant_id) -> dict:
 def _default_service(conn, tenant_id) -> dict | None:
     return conn.execute(
         """SELECT * FROM ai_services
-            WHERE tenant_id = %s AND is_active AND auth_type = 'api_key'
+            WHERE tenant_id = %s AND is_active AND NOT is_deleted AND auth_type = 'api_key'
                   AND api_key_encrypted IS NOT NULL
             ORDER BY created_at LIMIT 1""",
         (tenant_id,),

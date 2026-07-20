@@ -22,6 +22,10 @@ services:
     environment:
       DATABASE_URL: postgresql://agent:agent@postgres:5432/agent_llm
       PORT: "8080"
+      # Dev only: both services share one volume standing in for GCS.
+      ARTIFACTS_LOCAL_DIR: /srv/shared-storage
+    volumes:
+      - shared_storage:/srv/shared-storage
     ports:
       - "8080:8080"
     depends_on:
@@ -36,6 +40,9 @@ services:
       DATABASE_URL: postgresql://agent:agent@postgres:5432/agent_llm
       KERNEL_URL: http://kernel:8080
       PORT: "8090"
+      STORAGE_LOCAL_DIR: /srv/shared-storage
+    volumes:
+      - shared_storage:/srv/shared-storage
     ports:
       - "8090:8090"
     depends_on:
@@ -46,3 +53,4 @@ services:
 
 volumes:
   pg_data:
+  shared_storage:

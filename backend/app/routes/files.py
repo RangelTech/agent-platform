@@ -92,7 +92,11 @@ def _enqueue_ingestion(background: BackgroundTasks, file_id: str, embedding: dic
 @router.get("")
 def list_files(user: dict = Depends(require("files", "view"))):
     with get_connection() as conn:
-        scope = " WHERE NOT is_deleted" if user["is_master"] else " WHERE NOT is_deleted AND tenant_id = %s"
+        scope = (
+            " WHERE NOT is_deleted"
+            if user["is_master"]
+            else " WHERE NOT is_deleted AND tenant_id = %s"
+        )
         params = () if user["is_master"] else (user["tenant_id"],)
         rows = conn.execute(
             f"SELECT * FROM files{scope} ORDER BY created_at DESC", params
