@@ -27,7 +27,8 @@ deploy_kernel() {
     --image=$REPO/teste_ia-kernel:$SHORT_SHA \
     --service-account=$RUNTIME_SA \
     --add-cloudsql-instances=$SQL_CONNECTION \
-    --set-secrets=DATABASE_URL=teste-ia-database-url:latest,SERPER_API_KEY=teste-ia-serper-key:latest \n    --set-env-vars="ENABLE_STUB_CONTROL=false,GCS_BUCKET=eduk-prd-lake,GCS_PREFIX=agent llm" \
+    --set-secrets=DATABASE_URL=teste-ia-database-url:latest,SERPER_API_KEY=teste-ia-serper-key:latest \
+    --set-env-vars="ENABLE_STUB_CONTROL=false,GCS_BUCKET=eduk-prd-lake,GCS_PREFIX=agent llm" \
     --no-allow-unauthenticated \
     --memory=1Gi --cpu=1 --min-instances=0 --max-instances=3 \
     --timeout=600
