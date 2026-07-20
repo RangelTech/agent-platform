@@ -1,0 +1,1 @@
+{"data": [{"type": "bar", "x": ["fev", "jan", "mar"], "y": [1500.0, 1000.0, 900.0], "name": "total"}], "layout": {"title": {"text": "Vendas"}, "template": "plotly_dark", "height": 420}}

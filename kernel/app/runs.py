@@ -79,6 +79,9 @@ class RunRequest(BaseModel):
     datasources: list[DatasourceSpec] = Field(default_factory=list)
     # Embedding provider for RAG lookups: {provider, model, api_key}.
     embedding: dict = Field(default_factory=dict)
+    # SQL write allowlist + conversational confirmation flag.
+    write_tables: list[str] = Field(default_factory=list)
+    require_write_confirmation: bool = True
     # Uploaded attachments already in object storage.
     attachments: list[dict] = Field(default_factory=list)
     # Whisper provider for audio attachments: {provider, model, api_key}.
@@ -114,6 +117,8 @@ async def create_run(payload: RunRequest):
         "mcp_servers": [s.model_dump() for s in payload.mcp_servers],
         "datasources": [d.model_dump() for d in payload.datasources],
         "embedding": payload.embedding,
+        "write_tables": payload.write_tables,
+        "require_write_confirmation": payload.require_write_confirmation,
     }
 
     async def event_stream():

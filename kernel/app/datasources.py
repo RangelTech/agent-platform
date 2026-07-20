@@ -188,6 +188,118 @@ async def list_tables(datasource: dict) -> list[dict]:
     raise ValueError(f"tipo de datasource não suportado: {kind}")
 
 
+_WRITE_FIRST = re.compile(r"^\s*(insert|update|delete)\b", re.IGNORECASE)
+_FORBIDDEN_WRITE = re.compile(
+    r"\b(drop|alter|create|truncate|grant|revoke|vacuum|attach|pragma)\b", re.IGNORECASE
+)
+_TARGET_TABLE = re.compile(
+    r"^\s*(?:insert\s+into|update|delete\s+from)\s+([\"'`]?[\w.]+[\"'`]?)",
+    re.IGNORECASE,
+)
+
+
+def validate_write(statement: str, allowed_tables: list[str]) -> str:
+    """Guardrails for write statements. Returns the target table or raises."""
+    body = statement.strip().rstrip(";")
+    if ";" in body:
+        raise ValueError("apenas um statement por chamada")
+    if not _WRITE_FIRST.match(body):
+        raise ValueError("apenas INSERT, UPDATE ou DELETE são permitidos")
+    if _FORBIDDEN_WRITE.search(body):
+        raise ValueError("DDL/estruturais são proibidos nesta tool")
+    first_word = body.split(None, 1)[0].lower()
+    if first_word in ("update", "delete") and not re.search(r"\bwhere\b", body, re.IGNORECASE):
+        raise ValueError(f"{first_word.upper()} sem WHERE é proibido")
+    match = _TARGET_TABLE.match(body)
+    if not match:
+        raise ValueError("não foi possível identificar a tabela alvo")
+    table = match.group(1).strip("\"'`").lower()
+    normalized = {t.lower() for t in allowed_tables}
+    # Accept both bare and schema-qualified declarations.
+    bare = table.split(".")[-1]
+    if table not in normalized and bare not in normalized:
+        raise ValueError(
+            f"tabela '{table}' não está na lista de escrita permitida deste template"
+        )
+    return bare
+
+
+def _write_postgresql(config: dict, secret: str | None, sql: str) -> int:
+    import psycopg
+
+    conninfo = psycopg.conninfo.make_conninfo(
+        host=config.get("host", "localhost"),
+        port=int(config.get("port", 5432)),
+        dbname=config.get("database", ""),
+        user=config.get("user", ""),
+        password=secret or "",
+        connect_timeout=10,
+    )
+    with psycopg.connect(conninfo) as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(sql)
+            count = cursor.rowcount
+        conn.commit()
+    return count
+
+
+def _write_mysql(config: dict, secret: str | None, sql: str) -> int:
+    import pymysql
+
+    conn = pymysql.connect(
+        host=config.get("host", "localhost"),
+        port=int(config.get("port", 3306)),
+        database=config.get("database", ""),
+        user=config.get("user", ""),
+        password=secret or "",
+        connect_timeout=10,
+    )
+    try:
+        with conn.cursor() as cursor:
+            count = cursor.execute(sql)
+        conn.commit()
+    finally:
+        conn.close()
+    return count
+
+
+def _write_sqlite(config: dict, _secret: str | None, sql: str) -> int:
+    conn = sqlite3.connect(config.get("path", ":memory:"), timeout=10)
+    try:
+        cursor = conn.execute(sql)
+        conn.commit()
+        return cursor.rowcount
+    finally:
+        conn.close()
+
+
+def _write_bigquery(config: dict, secret: str | None, sql: str) -> int:
+    client = _bigquery_client(config, secret)
+    job = client.query(sql)
+    job.result()
+    return job.num_dml_affected_rows or 0
+
+
+_WRITE_ENGINES = {
+    "postgresql": _write_postgresql,
+    "mysql": _write_mysql,
+    "sqlite": _write_sqlite,
+    "bigquery": _write_bigquery,
+}
+
+
+async def execute_write(datasource: dict, sql: str, allowed_tables: list[str]) -> tuple[str, int]:
+    """(target_table, affected_rows) after all guardrails pass."""
+    table = validate_write(sql, allowed_tables)
+    engine = _WRITE_ENGINES.get(datasource["kind"])
+    if engine is None:
+        raise ValueError(f"tipo de datasource não suportado: {datasource['kind']}")
+    rows = await anyio.to_thread.run_sync(
+        lambda: engine(datasource.get("config", {}), datasource.get("secret"), sql)
+    )
+    return table, rows
+
+
 async def test_connection(datasource: dict) -> tuple[bool, str]:
     try:
         await execute_query(datasource, "SELECT 1", max_rows=1)

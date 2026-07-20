@@ -35,6 +35,8 @@ export interface VersionDetail {
   supervisor_model_override: string | null
   supervisor_reasoning_effort: string | null
   max_steps: number
+  write_tables: string[]
+  require_write_confirmation: boolean
   notes: string
   agents: AgentDraft[]
   datasource_ids: string[]

@@ -43,6 +43,7 @@ def set_run_context(
     chat_id,
     embedding: dict | None = None,
     agent_files: dict[str, list[str]] | None = None,
+    write_tables: list[str] | None = None,
 ) -> None:
     RUN_CONTEXT.set(
         {
@@ -53,6 +54,7 @@ def set_run_context(
             "agent": "",
             "embedding": embedding or {"provider": "stub"},
             "agent_files": agent_files or {},
+            "write_tables": write_tables or [],
         }
     )
 
@@ -180,6 +182,31 @@ async def run_sql_query(datasource: str, query: str, title: str = "") -> str:
         ).encode(),
     )
     return json.dumps(descriptor, ensure_ascii=False, default=str)
+
+
+@catalog.tool()
+async def execute_sql_write(datasource: str, statement: str) -> str:
+    """Executa UMA escrita SQL (INSERT, UPDATE ou DELETE) na fonte de dados,
+    somente em tabelas autorizadas pelo template. UPDATE/DELETE exigem WHERE.
+    Use apenas após o usuário confirmar a operação quando o template exigir
+    confirmação. Retorna a tabela e o número de linhas afetadas."""
+    context = _context()
+    source = context.get("datasources", {}).get(datasource)
+    if source is None:
+        available = ", ".join(context.get("datasources", {})) or "(nenhuma)"
+        return f"ERRO: fonte '{datasource}' não existe. Disponíveis: {available}"
+
+    from app.datasources import execute_write
+
+    try:
+        table, rows = await execute_write(
+            source, statement, context.get("write_tables", [])
+        )
+    except Exception as exc:  # noqa: BLE001 — the model needs the reason
+        return f"ERRO na escrita: {exc}"
+    return json.dumps(
+        {"status": "ok", "table": table, "affected_rows": rows}, ensure_ascii=False
+    )
 
 
 @catalog.tool()

@@ -251,6 +251,28 @@ async def _load_tool_defs(catalog_session, external: ExternalServers) -> dict:
     return defs
 
 
+WRITE_CONFIRMATION_CLAUSE = (
+    "\n\nREGRA DE ESCRITA: antes de qualquer operação que altere dados "
+    "(criar pedido, efetuar venda, atualizar registro — tool execute_sql_write), "
+    "apresente ao usuário um resumo claro da operação e SÓ execute depois que "
+    "ele confirmar explicitamente na conversa (ex.: 'sim', 'confirmo'). Se a "
+    "confirmação ainda não veio nesta conversa, pergunte e aguarde."
+)
+
+
+def build_supervisor_prompt(
+    base_prompt: str, memories: list[str], require_write_confirmation: bool
+) -> str:
+    prompt = base_prompt
+    if memories:
+        prompt += "\n\nO que você sabe sobre este usuário (memórias):\n" + "\n".join(
+            f"- {m}" for m in memories
+        )
+    if require_write_confirmation:
+        prompt += WRITE_CONFIRMATION_CLAUSE
+    return prompt
+
+
 async def _supervisor_node(state: RunState) -> dict:
     run_config = state["run_config"]
     supervisor = run_config["supervisor"]
@@ -267,15 +289,16 @@ async def _supervisor_node(state: RunState) -> dict:
         agent_files={
             a["name"]: a.get("file_ids", []) for a in run_config.get("agents", [])
         },
+        write_tables=run_config.get("write_tables", []),
     )
     tool_defs = _agent_tool_defs(list(agents.values())) or None
     supervisor_config = ModelConfig(**supervisor["model"])
-    system_prompt = supervisor.get("prompt", "")
-    memories = run_config.get("memories") or []
-    if memories:
-        system_prompt += "\n\nO que você sabe sobre este usuário (memórias):\n" + "\n".join(
-            f"- {m}" for m in memories
-        )
+    system_prompt = build_supervisor_prompt(
+        supervisor.get("prompt", ""),
+        run_config.get("memories") or [],
+        bool(run_config.get("require_write_confirmation"))
+        and bool(run_config.get("write_tables")),
+    )
     messages = _history_messages(state, system_prompt)
 
     async def emit(delta: str):

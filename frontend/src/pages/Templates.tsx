@@ -208,6 +208,8 @@ export default function Templates() {
   const [maxSteps, setMaxSteps] = useState(6)
   const [agents, setAgents] = useState<AgentDraft[]>([])
   const [datasourceIds, setDatasourceIds] = useState<string[]>([])
+  const [writeTables, setWriteTables] = useState('')
+  const [requireConfirm, setRequireConfirm] = useState(true)
 
   const { data: businessFiles = [] } = useQuery({
     queryKey: ['files'],
@@ -243,6 +245,8 @@ export default function Templates() {
       setSupervisorEffort(v.supervisor_reasoning_effort ?? '')
       setMaxSteps(v.max_steps)
       setAgents(v.agents)
+      setWriteTables((v.write_tables ?? []).join(', '))
+      setRequireConfirm(v.require_write_confirmation ?? true)
       setDatasourceIds(v.datasource_ids ?? [])
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -268,6 +272,8 @@ export default function Templates() {
         supervisor_reasoning_effort: supervisorEffort || null,
         max_steps: maxSteps,
         agents,
+        write_tables: writeTables.split(',').map((t) => t.trim()).filter(Boolean),
+        require_write_confirmation: requireConfirm,
         datasource_ids: datasourceIds,
       })
       return v
@@ -414,6 +420,25 @@ export default function Templates() {
               value={maxSteps}
               onChange={(e) => setMaxSteps(Number(e.target.value))}
             />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Input
+              label="Tabelas com escrita permitida (separe por vírgula)"
+              name="write-tables"
+              placeholder="pedidos, itens_pedido"
+              value={writeTables}
+              onChange={(e) => setWriteTables(e.target.value)}
+            />
+            <label className="flex items-end gap-2 pb-2 text-sm text-[var(--text-muted)]">
+              <input
+                type="checkbox"
+                name="require-confirm"
+                checked={requireConfirm}
+                onChange={(e) => setRequireConfirm(e.target.checked)}
+                className="h-4 w-4 accent-[var(--brand)]"
+              />
+              Exigir confirmação do usuário antes de escrever no banco
+            </label>
           </div>
         </div>
       </Card>

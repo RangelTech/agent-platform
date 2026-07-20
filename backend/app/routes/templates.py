@@ -47,6 +47,8 @@ class VersionIn(BaseModel):
     agents: list[AgentIn] = Field(default_factory=list)
     mcp_servers: list[McpServerIn] = Field(default_factory=list)
     datasource_ids: list[str] = Field(default_factory=list)
+    write_tables: list[str] = Field(default_factory=list)
+    require_write_confirmation: bool = True
     notes: str = ""
 
 
@@ -171,8 +173,9 @@ def create_version(
             """INSERT INTO template_versions
                    (template_id, version_number, supervisor_prompt,
                     supervisor_ai_service_id, supervisor_model_override,
-                    supervisor_reasoning_effort, max_steps, created_by, notes)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *""",
+                    supervisor_reasoning_effort, max_steps, created_by, notes,
+                    write_tables, require_write_confirmation)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *""",
             (
                 template_id,
                 number,
@@ -183,6 +186,8 @@ def create_version(
                 payload.max_steps,
                 user["id"],
                 payload.notes,
+                Json(payload.write_tables),
+                payload.require_write_confirmation,
             ),
         ).fetchone()
         for order, agent in enumerate(payload.agents):
@@ -295,6 +300,8 @@ def get_version(
         "supervisor_model_override": version["supervisor_model_override"],
         "supervisor_reasoning_effort": version["supervisor_reasoning_effort"],
         "max_steps": version["max_steps"],
+        "write_tables": version.get("write_tables") or [],
+        "require_write_confirmation": version.get("require_write_confirmation", True),
         "notes": version["notes"],
         "agents": [
             {

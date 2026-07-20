@@ -195,4 +195,6 @@ def build_run_payload(tenant_id, template_id: str | None) -> dict:
             "mcp_servers": mcp_servers,
             "datasources": datasources,
             "embedding": _embedding_spec(conn, tenant_id),
+            "write_tables": version.get("write_tables") or [],
+            "require_write_confirmation": version.get("require_write_confirmation", True),
         }
