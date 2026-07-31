@@ -52,6 +52,15 @@ deploy_backend() {
     --allow-unauthenticated \
     --memory=512Mi --cpu=1 --min-instances=0 --max-instances=5 \
     --timeout=600
+
+  # PUBLIC_BASE_URL só é conhecida depois que o serviço existe; é ela que monta
+  # a notification_url que o gateway de pagamento chama de volta (Fase D).
+  local backend_url
+  backend_url=$(gcloud run services describe teste-ia-backend \
+    --project=$PROJECT --region=$REGION --format='value(status.url)')
+  gcloud run services update teste-ia-backend \
+    --project=$PROJECT --region=$REGION \
+    --update-env-vars="PUBLIC_BASE_URL=$backend_url"
 }
 
 case $target in
