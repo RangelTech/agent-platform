@@ -220,7 +220,12 @@ async def send_message(request: Request, user: dict = Depends(current_user)):
         )
         attachments = await _store_uploads(user, form.getlist("files"))
     else:
-        payload = SendRequest(**(await request.json()))
+        try:
+            body = await request.json()
+        except ValueError as exc:
+            # Corpo inválido é erro do cliente, não falha do servidor.
+            raise HTTPException(status_code=400, detail="Corpo da requisição inválido") from exc
+        payload = SendRequest(**body)
         attachments = []
 
     chat = _ensure_chat(user, payload, attachments)

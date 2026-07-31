@@ -1,6 +1,6 @@
 {
-  "backend": "http://localhost:8090",
-  "executed_at": "2026-07-31T03:48:52.936070+00:00",
+  "backend": "https://teste-ia-backend-x27vtpiida-uc.a.run.app",
+  "executed_at": "2026-07-31T04:18:12.359856+00:00",
   "passed": true,
   "checks": [
     {
@@ -13,19 +13,19 @@
       "phase": "fase-0",
       "check": "login do master",
       "ok": true,
-      "detail": "{\"token\":\"e9ldajADEBQBdshI8Ax1j3k8K8YrZW8mFeDxOuxQbqs\"}"
+      "detail": "{\"token\":\"cuE-6VIsV5Nq0hH3_xgiQle_8bgC88f6ZZFHOlupBPQ\"}"
     },
     {
       "phase": "fase-0",
       "check": "criação de empresa",
       "ok": true,
-      "detail": "{\"id\":\"2eac773c-1812-4cde-be7c-6179cbb7639a\",\"tenant_key\":\"regressao-e09e2591\",\"name\":\"Regressão e09e2591\",\"brand_name\":\"\",\"brand_color\":\"\",\"brand_theme\":\"dark\",\"has_logo\":false,\"is_active\":true}"
+      "detail": "{\"id\":\"3d26ed6b-03ad-47bc-8e1d-2c8d878e1ee4\",\"tenant_key\":\"regressao-e723f98f\",\"name\":\"Regressão e723f98f\",\"brand_name\":\"\",\"brand_color\":\"\",\"brand_theme\":\"dark\",\"has_logo\":false,\"is_active\":true}"
     },
     {
       "phase": "fase-0",
       "check": "criação de usuário admin",
       "ok": true,
-      "detail": "{\"id\":\"70ac3f6b-e934-4ba4-a8b1-866aa82ffb2f\",\"tenant_id\":\"2eac773c-1812-4cde-be7c-6179cbb7639a\",\"profile_id\":\"023d06aa-123a-4530-980f-a49813a22ee4\",\"email\":\"regressao-e09e2591@example.com\",\"name\":\"Admin Regressão\",\"is_master\":false,\"is_active\":true}"
+      "detail": "{\"id\":\"13892f80-e057-4e48-8688-3b2e67b8f558\",\"tenant_id\":\"3d26ed6b-03ad-47bc-8e1d-2c8d878e1ee4\",\"profile_id\":\"79aaf0fe-5bb6-4bcd-80d3-d91ddd552b84\",\"email\":\"regressao-e723f98f@example.com\",\"name\":\"Admin Regressão\",\"is_master\":false,\"is_active\":true}"
     },
     {
       "phase": "fase-b",
@@ -55,7 +55,7 @@
       "phase": "fase-e",
       "check": "catálogo do MCP Store disponível",
       "ok": true,
-      "detail": "slugs: ['crm_0c472c75', 'crm_1146426d', 'crm_241a3140', 'crm_625aff2e', 'crm_7c855f60', 'crm_a8f1cf96', 'crm_b9baf963', 'crm_bd3c418c', 'crm_dad2ad13', 'crm_isolado', 'crm_off', 'crm_teste', 'item_1649a4ee', 'item_1ace5643', 'item_21300e76', 'item_23e45a90', 'item_383f60f5', 'item_3e422457', 'item_62d9f9ca', 'item_6df621d7', 'item_7ba3822b', 'item_b54f4fb1', 'item_b7cba6b2', 'item_bb704a86', 'item_d901cc30', 'item_f82930ed', 'item_f861f0bd', 'pagamentos_pix']"
+      "detail": "slugs: ['pagamentos_pix']"
     },
     {
       "phase": "fase-e",
