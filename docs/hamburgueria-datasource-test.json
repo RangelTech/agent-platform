@@ -1,0 +1,24 @@
+{
+  "datasource": {
+    "id": "be560306-fe4d-4d2d-90f3-78b4d7536451",
+    "tenant_id": "43c51cd3-ccd2-4c15-8ebf-5cc782a17e0d",
+    "name": "hamburgueria",
+    "kind": "postgresql",
+    "config": {
+      "host": "127.0.0.1",
+      "port": 5433,
+      "user": "agent",
+      "schema": "hamburgueria",
+      "database": "agent_homolog"
+    },
+    "has_secret": true,
+    "is_active": true,
+    "last_test_at": null,
+    "last_test_ok": null
+  },
+  "test_status": 200,
+  "test_body": {
+    "ok": false,
+    "detail": "connection failed: connection to server at \"127.0.0.1\", port 5433 failed: Connection refused\n\tIs the server running on that host and accepting TCP/IP connections?"
+  }
+}

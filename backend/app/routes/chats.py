@@ -36,6 +36,8 @@ def _serialize_chat(row: dict) -> dict:
         "id": str(row["id"]),
         "title": row["title"],
         "template_id": str(row["template_id"]) if row.get("template_id") else None,
+        "channel": row.get("channel") or "web",
+        "external_contact": row.get("external_contact"),
         "created_at": row["created_at"].isoformat(),
         "updated_at": row["updated_at"].isoformat(),
     }
@@ -46,9 +48,11 @@ def list_chats(user: dict = Depends(current_user)):
     with get_connection() as conn:
         rows = conn.execute(
             """SELECT * FROM chats
-                WHERE user_id = %s AND NOT is_hidden
+                WHERE NOT is_hidden
+                  AND (user_id = %s
+                       OR (channel <> 'web' AND tenant_id = %s))
                 ORDER BY updated_at DESC""",
-            (user["id"],),
+            (user["id"], user["tenant_id"]),
         ).fetchall()
     return [_serialize_chat(r) for r in rows]
 
@@ -56,9 +60,13 @@ def list_chats(user: dict = Depends(current_user)):
 @router.get("/chats/{chat_id}/messages")
 def list_messages(chat_id: str, user: dict = Depends(current_user)):
     with get_connection() as conn:
+        # Conversas de canal externo (WhatsApp) não têm dono na plataforma:
+        # quem enxerga é a empresa inteira, em modo leitura.
         chat = conn.execute(
-            "SELECT id FROM chats WHERE id = %s AND user_id = %s",
-            (chat_id, user["id"]),
+            """SELECT id FROM chats
+                WHERE id = %s
+                  AND (user_id = %s OR (channel <> 'web' AND tenant_id = %s))""",
+            (chat_id, user["id"], user["tenant_id"]),
         ).fetchone()
         if chat is None:
             raise HTTPException(status_code=404, detail="Conversa não encontrada")

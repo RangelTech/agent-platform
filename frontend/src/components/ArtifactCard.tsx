@@ -38,7 +38,7 @@ function ChartView({ artifactId }: { artifactId: string }) {
     }
   }, [artifactId])
 
-  if (error) return <p className="text-sm text-rose-400">{error}</p>
+  if (error) return <p className="text-sm text-[var(--danger)]">{error}</p>
   return <div ref={container} data-testid="chart-container" className="min-h-[420px] w-full" />
 }
 
@@ -60,8 +60,8 @@ async function downloadArtifact(artifactId: string, title: string) {
 export function ArtifactCard({ artifact }: { artifact: ArtifactRef }) {
   if (artifact.kind === 'chart') {
     return (
-      <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3" data-testid="artifact-chart">
-        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">
+      <div className="rounded-[20px] border border-[var(--border)] bg-[var(--surface-solid)] p-3" data-testid="artifact-chart">
+        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-[var(--text-muted)]">
           {artifact.title}
         </p>
         <ChartView artifactId={artifact.artifact_id} />
@@ -73,7 +73,7 @@ export function ArtifactCard({ artifact }: { artifact: ArtifactRef }) {
       <button
         onClick={() => downloadArtifact(artifact.artifact_id, artifact.title)}
         data-testid="artifact-file"
-        className="flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 text-sm text-slate-200 transition hover:border-indigo-500"
+        className="flex min-h-11 items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-solid)] px-4 py-2 text-sm text-[var(--text)] transition hover:border-[var(--brand)]"
       >
         <span aria-hidden>⬇</span> {artifact.title}
       </button>
@@ -82,7 +82,7 @@ export function ArtifactCard({ artifact }: { artifact: ArtifactRef }) {
   return (
     <span
       data-testid="artifact-dataset"
-      className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-xs text-slate-400"
+      className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-solid)] px-3 py-1 text-xs text-[var(--text-muted)]"
     >
       dataset · {artifact.title}
     </span>

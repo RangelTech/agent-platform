@@ -18,6 +18,8 @@ router = APIRouter(prefix="/api/integrations", tags=["integrations"])
 
 class IntegrationIn(BaseModel):
     name: str = Field(min_length=1, max_length=100)
+    # 'api' = máquina-a-máquina; 'whatsapp' = canal servido pela W-API.
+    channel: str = Field(default="api", pattern="^(api|whatsapp)$")
     template_id: str | None = None
     webhook_url: str | None = None
     rate_limit_per_minute: int = Field(default=60, ge=1, le=6000)
@@ -85,12 +87,13 @@ def create_integration(
         try:
             row = conn.execute(
                 """INSERT INTO integrations
-                       (tenant_id, name, template_id, api_key_hash, key_prefix,
+                       (tenant_id, name, channel, template_id, api_key_hash, key_prefix,
                         webhook_url, webhook_secret_encrypted, rate_limit_per_minute)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING *""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *""",
                 (
                     tenant_id,
                     payload.name,
+                    payload.channel,
                     payload.template_id,
                     key_hash,
                     prefix,

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
-import { Badge, Button, Card, ErrorText, Input, Select, Table } from '../components/ui'
+import { Badge, Button, Card, EmptyState, ErrorText, Input, PageHeader, SectionIntro, Select, StatCard, Table, TableSkeleton } from '../components/ui'
 import { api, listTenants } from '../lib/api'
 import { useAuth } from '../lib/auth'
 
@@ -32,7 +32,7 @@ export default function AiServices() {
   const qc = useQueryClient()
   const isMaster = user?.is_master ?? false
 
-  const { data: services = [], isLoading } = useQuery({
+  const { data: services = [], isLoading, error: loadError } = useQuery({
     queryKey: ['ai-services'],
     queryFn: () => api<AiService[]>('/ai-services'),
   })
@@ -110,96 +110,137 @@ export default function AiServices() {
     create.mutate()
   }
 
+  const activeCount = services.filter((service) => service.is_active).length
+  const healthyCount = services.filter((service) => service.last_test_ok).length
+
   return (
     <div className="space-y-6">
-      <Card title="Novo serviço de IA (traga sua chave)">
-        <form onSubmit={onSubmit} className="grid gap-3 sm:grid-cols-2">
-          <Input
-            label="Nome"
-            required
-            name="svc-name"
-            value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
+      <PageHeader
+        title="Serviços de IA"
+        description="Conecte provedores por tenant, mantenha chaves sob seu controle e monitore rapidamente disponibilidade e saúde operacional."
+        actions={
+          <Button type="submit" form="ai-service-form" disabled={create.isPending}>
+            {create.isPending ? 'Salvando…' : 'Novo serviço'}
+          </Button>
+        }
+      />
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <StatCard label="Serviços totais" value={String(services.length)} meta="Catálogo consolidado por tenant e provider." />
+        <StatCard label="Serviços ativos" value={String(activeCount)} meta="Prontos para uso em supervisores e especialistas." />
+        <StatCard label="Últimos testes OK" value={String(healthyCount)} meta="Resultado mais recente persistido no backend." />
+      </div>
+
+      <Card title="Cadastrar serviço BYOK">
+        <div className="space-y-6">
+          <SectionIntro
+            eyebrow="Model providers"
+            title="Configure o provider, modelo e escopo do tenant"
+            description="Cada serviço pode abastecer templates diferentes. Prefira nomes claros para facilitar seleção em supervisores, especialistas e homologações."
           />
-          <Select
-            label="Provider"
-            name="svc-provider"
-            value={form.provider}
-            onChange={(e) => pickProvider(e.target.value)}
-          >
-            {PROVIDERS.map((p) => (
-              <option key={p.value} value={p.value}>
-                {p.label}
-              </option>
-            ))}
-          </Select>
-          <Input
-            label="Modelo"
-            required
-            name="svc-model"
-            value={form.model}
-            onChange={(e) => setForm({ ...form, model: e.target.value })}
-          />
-          <Input
-            label="API key"
-            type="password"
-            required
-            name="svc-key"
-            value={form.api_key}
-            onChange={(e) => setForm({ ...form, api_key: e.target.value })}
-          />
-          {form.provider === 'openai-compatible' && (
+          <form id="ai-service-form" onSubmit={onSubmit} className="grid gap-4 lg:grid-cols-2">
             <Input
-              label="Base URL"
+              label="Nome interno"
+              hint="Ex.: Gemini produção, Claude homolog ou OpenAI financeiro."
               required
-              name="svc-base"
-              placeholder="https://minha-api.com/v1"
-              value={form.api_base}
-              onChange={(e) => setForm({ ...form, api_base: e.target.value })}
+              name="svc-name"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
             />
-          )}
-          {isMaster && (
             <Select
-              label="Empresa"
-              required
-              name="svc-tenant"
-              value={form.tenant_id}
-              onChange={(e) => setForm({ ...form, tenant_id: e.target.value })}
+              label="Provider"
+              hint="Escolha o vendor compatível com a chave que será usada."
+              name="svc-provider"
+              value={form.provider}
+              onChange={(e) => pickProvider(e.target.value)}
             >
-              <option value="">Selecione…</option>
-              {tenants.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
+              {PROVIDERS.map((p) => (
+                <option key={p.value} value={p.value}>
+                  {p.label}
                 </option>
               ))}
             </Select>
-          )}
-          <div className="sm:col-span-2 flex items-center gap-3">
-            <Button type="submit" disabled={create.isPending}>
-              Cadastrar serviço
-            </Button>
-            <ErrorText>{error}</ErrorText>
-          </div>
-        </form>
+            <Input
+              label="Modelo padrão"
+              hint="Esse modelo aparecerá como default na criação de templates."
+              required
+              name="svc-model"
+              value={form.model}
+              onChange={(e) => setForm({ ...form, model: e.target.value })}
+            />
+            <Input
+              label="API key"
+              hint="A chave é enviada criptografada ao backend e não volta em listagens."
+              type="password"
+              required
+              name="svc-key"
+              value={form.api_key}
+              onChange={(e) => setForm({ ...form, api_key: e.target.value })}
+            />
+            {form.provider === 'openai-compatible' && (
+              <Input
+                label="Base URL"
+                hint="Obrigatório para gateways compatíveis com OpenAI."
+                required
+                name="svc-base"
+                placeholder="https://minha-api.com/v1"
+                value={form.api_base}
+                onChange={(e) => setForm({ ...form, api_base: e.target.value })}
+              />
+            )}
+            {isMaster && (
+              <Select
+                label="Empresa"
+                hint="Defina o tenant proprietário desse serviço."
+                required
+                name="svc-tenant"
+                value={form.tenant_id}
+                onChange={(e) => setForm({ ...form, tenant_id: e.target.value })}
+              >
+                <option value="">Selecione…</option>
+                {tenants.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </Select>
+            )}
+            <div className="lg:col-span-2">
+              <ErrorText>{error}</ErrorText>
+            </div>
+          </form>
+        </div>
       </Card>
 
-      <Card title="Serviços de IA">
+      <Card title="Serviços cadastrados" actions={<Badge ok={activeCount > 0}>{activeCount} ativos</Badge>}>
         {isLoading ? (
-          <p className="text-sm text-slate-400">Carregando…</p>
+          <TableSkeleton columns={6} />
+        ) : loadError ? (
+          <ErrorText>Não foi possível carregar os dados. Recarregue a página ou tente novamente.</ErrorText>
+        ) : services.length === 0 ? (
+          <EmptyState
+            title="Nenhum serviço de IA cadastrado"
+            description="Cadastre uma chave BYOK acima para que os templates deste tenant possam chamar um modelo."
+          />
         ) : (
-          <Table headers={['Nome', 'Provider', 'Modelo', 'Teste', 'Status', '']}>
+          <Table headers={['Serviço', 'Provider', 'Modelo', 'Teste', 'Status', 'Ações']}>
             {services.map((s) => (
-              <tr key={s.id} data-testid="service-row">
-                <td className="px-3 py-2 text-slate-200">{s.name}</td>
-                <td className="px-3 py-2 text-slate-400">{s.provider}</td>
-                <td className="px-3 py-2 font-mono text-xs text-slate-400">{s.model}</td>
-                <td className="px-3 py-2">
-                  <div className="flex items-center gap-2">
+              <tr key={s.id} data-testid="service-row" className="transition hover:bg-[var(--brand-soft)]/40">
+                <td className="px-4 py-4 text-[var(--text)]">
+                  <div>
+                    <p className="font-medium">{s.name}</p>
+                    <p className="mt-1 text-sm text-[var(--text-muted)]">{s.has_key ? 'Chave configurada e pronta para uso.' : 'Sem chave salva.'}</p>
+                  </div>
+                </td>
+                <td className="px-4 py-4 text-[var(--text-muted)]">{s.provider}</td>
+                <td className="px-4 py-4 font-mono text-xs text-[var(--text-muted)]">{s.model}</td>
+                <td className="px-4 py-4">
+                  <div className="flex flex-wrap items-center gap-2">
                     <Button variant="ghost" onClick={() => test.mutate(s.id)} disabled={test.isPending}>
                       Testar
                     </Button>
                     {testResult[s.id] ? (
-                      <span className="text-xs text-slate-400">{testResult[s.id]}</span>
+                      <span className="text-xs text-[var(--text-muted)]">{testResult[s.id]}</span>
                     ) : (
                       s.last_test_ok !== null && (
                         <Badge ok={s.last_test_ok}>{s.last_test_ok ? 'OK' : 'Falhou'}</Badge>
@@ -207,10 +248,10 @@ export default function AiServices() {
                     )}
                   </div>
                 </td>
-                <td className="px-3 py-2">
+                <td className="px-4 py-4">
                   <Badge ok={s.is_active}>{s.is_active ? 'Ativo' : 'Inativo'}</Badge>
                 </td>
-                <td className="px-3 py-2 text-right">
+                <td className="px-4 py-4 text-right">
                   <div className="flex justify-end gap-2">
                     <Button
                       variant="ghost"

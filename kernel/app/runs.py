@@ -82,6 +82,9 @@ class RunRequest(BaseModel):
     # SQL write allowlist + conversational confirmation flag.
     write_tables: list[str] = Field(default_factory=list)
     require_write_confirmation: bool = True
+    # Credencial de gateway de pagamento do tenant: {provider, access_token,
+    # sandbox}. Igual aos secrets, nunca entra no contexto do modelo.
+    payment: dict = Field(default_factory=dict)
     # Uploaded attachments already in object storage.
     attachments: list[dict] = Field(default_factory=list)
     # Whisper provider for audio attachments: {provider, model, api_key}.
@@ -117,6 +120,7 @@ async def create_run(payload: RunRequest):
         "mcp_servers": [s.model_dump() for s in payload.mcp_servers],
         "datasources": [d.model_dump() for d in payload.datasources],
         "embedding": payload.embedding,
+        "payment": payload.payment,
         "attachments": payload.attachments,
         "write_tables": payload.write_tables,
         "require_write_confirmation": payload.require_write_confirmation,

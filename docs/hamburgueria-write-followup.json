@@ -1,0 +1,628 @@
+{
+  "templates": [
+    {
+      "id": "e3e57c50-ea67-49da-8b25-c232233e90ac",
+      "tenant_id": "43c51cd3-ccd2-4c15-8ebf-5cc782a17e0d",
+      "name": "Admin Hamburgueria",
+      "description": "Template administrativo da Hamburgueria Demo",
+      "active_version_id": "3045384c-76f7-4d28-981d-224c79d716e5",
+      "active_version_number": 5
+    },
+    {
+      "id": "e7a176c1-cc88-4c81-9c87-0aa17f0db766",
+      "tenant_id": "43c51cd3-ccd2-4c15-8ebf-5cc782a17e0d",
+      "name": "Atendimento Hamburgueria",
+      "description": "Template de atendimento da Hamburgueria Demo",
+      "active_version_id": "112cc33f-eac0-49c6-ba31-e00e6fd1d2b6",
+      "active_version_number": 5
+    }
+  ],
+  "chosen_template": {
+    "id": "e7a176c1-cc88-4c81-9c87-0aa17f0db766",
+    "name": "Atendimento Hamburgueria"
+  },
+  "name_reply": {
+    "message": "Lucas Rangel",
+    "reply": "Seu pedido foi gravado com sucesso no sistema! 🎉\n\n---\n\n### 📋 **Detalhes do Pedido Confirmado**\n* **ID do Pedido:** `58bbf2e7-4f28-458c-b444-87780730e369`\n* **Cliente:** Lucas Rangel\n* **Status:** Aberto\n* **Valor Total:** **R$ 48,90**\n\n---\n\n### 🍔 **Itens do Pedido:**\n1. **1x Burger Clássico** — R$ 29,90\n2. **1x Batata Frita P** — R$ 12,00\n3. **1x Refrigerante Lata** — R$ 7,00\n\nObrigado por comprar na Hamburgueria Demo! Se precisar de algo mais, estou à disposição.",
+    "chat_id": "a11a5781-628d-4c3b-89f5-9c28d187cf5d",
+    "tools": [
+      {
+        "agent": "operador_pedidos",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 13
+      },
+      {
+        "agent": "operador_pedidos",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 23
+      },
+      {
+        "agent": "operador_pedidos",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 13
+      },
+      {
+        "agent": "operador_pedidos",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 15
+      },
+      {
+        "agent": "operador_pedidos",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 10
+      },
+      {
+        "agent": "operador_pedidos",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 12
+      },
+      {
+        "agent": "operador_pedidos",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 12
+      },
+      {
+        "agent": "operador_pedidos",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 15
+      },
+      {
+        "agent": "operador_pedidos",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 16
+      },
+      {
+        "agent": "operador_pedidos",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 13
+      },
+      {
+        "agent": "operador_pedidos",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 11
+      },
+      {
+        "agent": "operador_pedidos",
+        "tool": "calculate",
+        "status": "ok",
+        "duration_ms": 2
+      },
+      {
+        "agent": "operador_pedidos",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 22
+      },
+      {
+        "agent": "operador_pedidos",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 13
+      },
+      {
+        "agent": "operador_pedidos",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 18
+      },
+      {
+        "agent": "operador_pedidos",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 16
+      },
+      {
+        "agent": "operador_pedidos",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 11
+      },
+      {
+        "agent": "operador_pedidos",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 10
+      },
+      {
+        "agent": "operador_pedidos",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 10
+      },
+      {
+        "agent": "operador_pedidos",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 11
+      },
+      {
+        "agent": "operador_pedidos",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 13
+      },
+      {
+        "agent": "operador_pedidos",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 13
+      },
+      {
+        "agent": "operador_pedidos",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 12
+      },
+      {
+        "agent": "operador_pedidos",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 13
+      },
+      {
+        "agent": "operador_pedidos",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 17
+      },
+      {
+        "agent": "operador_pedidos",
+        "tool": "calculate",
+        "status": "ok",
+        "duration_ms": 2
+      },
+      {
+        "agent": "operador_pedidos",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 15
+      },
+      {
+        "agent": "operador_pedidos",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 10
+      },
+      {
+        "agent": "operador_pedidos",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 10
+      },
+      {
+        "agent": "operador_pedidos",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 10
+      },
+      {
+        "agent": "operador_pedidos",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 19
+      },
+      {
+        "agent": "operador_pedidos",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 19
+      },
+      {
+        "agent": "operador_pedidos",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 15
+      },
+      {
+        "agent": "operador_pedidos",
+        "tool": "execute_sql_transaction",
+        "status": "ok",
+        "duration_ms": 12
+      },
+      {
+        "agent": "operador_pedidos",
+        "tool": "execute_sql_transaction",
+        "status": "ok",
+        "duration_ms": 13
+      }
+    ],
+    "artifacts": [
+      {
+        "artifact_id": "2aa9e47f-fd2e-4470-a498-fac3479b32d6",
+        "kind": "dataset",
+        "title": "Listar tabelas"
+      },
+      {
+        "artifact_id": "3b93aaf7-5582-43ec-8118-56dbb95942e2",
+        "kind": "dataset",
+        "title": "Estrutura das tabelas"
+      },
+      {
+        "artifact_id": "bb40e4cf-5b8c-44f7-a325-28f521e0b416",
+        "kind": "dataset",
+        "title": "Detalhes das colunas"
+      },
+      {
+        "artifact_id": "80717bc9-13da-4307-8297-1597bece6e78",
+        "kind": "dataset",
+        "title": "Todas as colunas"
+      },
+      {
+        "artifact_id": "7fe77c2c-5062-4d2f-a60e-5aadb4ae69c5",
+        "kind": "dataset",
+        "title": "Listar produtos"
+      },
+      {
+        "artifact_id": "e6f40688-4899-4102-9484-77073af68e2a",
+        "kind": "dataset",
+        "title": "Colunas de pedidos"
+      },
+      {
+        "artifact_id": "68daca42-b3d2-47ea-a079-acfcce367294",
+        "kind": "dataset",
+        "title": "Colunas de itens_pedido"
+      },
+      {
+        "artifact_id": "0761d6b9-f607-4903-8b54-b1b5e17b6c1d",
+        "kind": "dataset",
+        "title": "Verificar colunas das tabelas do pedido"
+      },
+      {
+        "artifact_id": "73393c39-92b1-44d3-b25c-44218e31101e",
+        "kind": "dataset",
+        "title": "Verificar esquema detalhado"
+      },
+      {
+        "artifact_id": "132a643a-c04e-4a4c-930e-f4ee3ac2a9e5",
+        "kind": "dataset",
+        "title": "Listar colunas de todas as tabelas"
+      },
+      {
+        "artifact_id": "6e990179-7cac-4788-9dce-3957d9d11955",
+        "kind": "dataset",
+        "title": "Buscar produtos por nome"
+      },
+      {
+        "artifact_id": "0988db64-bc2f-47d9-a1fa-f86a69f861cc",
+        "kind": "dataset",
+        "title": "Consulta em hamburgueria"
+      },
+      {
+        "artifact_id": "23a2b302-22e9-4da4-b272-5e7f43ae88ef",
+        "kind": "dataset",
+        "title": "Consulta em hamburgueria"
+      },
+      {
+        "artifact_id": "893cd1c5-707e-4b94-9e37-8b0fa033690c",
+        "kind": "dataset",
+        "title": "Consulta em hamburgueria"
+      },
+      {
+        "artifact_id": "645dcd2a-0b2e-415e-9ce6-441004a7b474",
+        "kind": "dataset",
+        "title": "Consulta em hamburgueria"
+      },
+      {
+        "artifact_id": "ffa93a0e-4120-44da-83a1-b265fb8f7cf1",
+        "kind": "dataset",
+        "title": "Consulta em hamburgueria"
+      },
+      {
+        "artifact_id": "d08cdfd6-02a3-48bb-95e6-a92e25100bae",
+        "kind": "dataset",
+        "title": "Consulta em hamburgueria"
+      },
+      {
+        "artifact_id": "64a4279e-50c3-4090-8a60-d9e7b7c59078",
+        "kind": "dataset",
+        "title": "Listar Tabelas"
+      },
+      {
+        "artifact_id": "4ea6c85e-637f-4818-988a-044a25c16512",
+        "kind": "dataset",
+        "title": "Verificar Colunas das Tabelas"
+      },
+      {
+        "artifact_id": "3127a6c6-f89d-42c2-9dc9-50477c377490",
+        "kind": "dataset",
+        "title": "Detalhes das Colunas"
+      },
+      {
+        "artifact_id": "8dac3348-b984-4ba1-a8a8-46444d2cf18b",
+        "kind": "dataset",
+        "title": "Listar Produtos"
+      },
+      {
+        "artifact_id": "5c4a0e1b-e7a5-4f44-bdfd-850a65c93245",
+        "kind": "dataset",
+        "title": "Colunas de Pedidos"
+      },
+      {
+        "artifact_id": "db2c1716-060a-4f69-8593-4f0dde29dbd1",
+        "kind": "dataset",
+        "title": "Colunas de Itens Pedido"
+      },
+      {
+        "artifact_id": "ba8ad29c-34c7-487b-aca4-fd765215483f",
+        "kind": "dataset",
+        "title": "Buscar pedidos do cliente Lucas Rangel"
+      },
+      {
+        "artifact_id": "c115b12e-0310-4fff-a52d-f6d5d107bf1e",
+        "kind": "dataset",
+        "title": "Últimos pedidos cadastrados"
+      },
+      {
+        "artifact_id": "1379a02d-d6d2-41cd-8446-d404a7c41a1a",
+        "kind": "dataset",
+        "title": "Listar tabelas no banco de dados"
+      },
+      {
+        "artifact_id": "25e767ec-0f99-454d-bb39-fff0d77b8f31",
+        "kind": "dataset",
+        "title": "Contar pedidos na tabela hamburgueria.pedidos"
+      },
+      {
+        "artifact_id": "b5080936-6cf1-44ef-b7a1-dfcb8647a3ff",
+        "kind": "dataset",
+        "title": "Verificar schema das tabelas de pedidos"
+      },
+      {
+        "artifact_id": "c440a3f1-54c5-4757-8f01-677ab2105f2c",
+        "kind": "dataset",
+        "title": "Colunas detalhadas"
+      },
+      {
+        "artifact_id": "98307292-fd9f-434a-bac9-2070528fc1a7",
+        "kind": "dataset",
+        "title": "Colunas da tabela pedidos"
+      }
+    ],
+    "agents": [
+      {
+        "name": "operador_pedidos",
+        "status": "start"
+      },
+      {
+        "name": "operador_pedidos",
+        "status": "done"
+      },
+      {
+        "name": "operador_pedidos",
+        "status": "start"
+      },
+      {
+        "name": "operador_pedidos",
+        "status": "done"
+      },
+      {
+        "name": "operador_pedidos",
+        "status": "start"
+      },
+      {
+        "name": "operador_pedidos",
+        "status": "done"
+      },
+      {
+        "name": "operador_pedidos",
+        "status": "start"
+      },
+      {
+        "name": "operador_pedidos",
+        "status": "done"
+      },
+      {
+        "name": "operador_pedidos",
+        "status": "start"
+      },
+      {
+        "name": "operador_pedidos",
+        "status": "done"
+      },
+      {
+        "name": "operador_pedidos",
+        "status": "start"
+      },
+      {
+        "name": "operador_pedidos",
+        "status": "done"
+      }
+    ],
+    "error": null,
+    "latency_ms": 94781
+  },
+  "same_template_report": {
+    "message": "me mostre o relatório de pedidos de hoje",
+    "reply": "Aqui está o relatório dos pedidos realizados hoje:\n\n---\n\n### **Relatório de Pedidos de Hoje**\n\n* **ID do Pedido:** `58bbf2e7-4f28-458c-b444-87780730e369`\n* **Cliente:** Lucas Rangel\n* **Status:** Aberto\n* **Data/Hora:** 29/07/2026 às 01:12:51 UTC\n* **Valor Total:** R$ 48,90\n\n#### **Itens do Pedido:**\n1. **Burger Clássico**  \n   * **Quantidade:** 1  \n   * **Preço Unitário:** R$ 29,90  \n   * **Subtotal:** R$ 29,90  \n\n2. **Batata Frita P**  \n   * **Quantidade:** 1  \n   * **Preço Unitário:** R$ 12,00  \n   * **Subtotal:** R$ 12,00  \n\n3. **Refrigerante Lata**  \n   * **Quantidade:** 1  \n   * **Preço Unitário:** R$ 7,00  \n   * **Subtotal:** R$ 7,00  \n\n---\n\nSe precisar de mais alguma informação ou desejar realizar alguma ação referente ao pedido, é só me avisar!",
+    "chat_id": "14d43b39-f26c-4c34-8448-b4bb875ca7fe",
+    "tools": [
+      {
+        "agent": "atendente_cardapio",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 17
+      },
+      {
+        "agent": "atendente_cardapio",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 44
+      },
+      {
+        "agent": "atendente_cardapio",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 16
+      },
+      {
+        "agent": "atendente_cardapio",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 16
+      },
+      {
+        "agent": "atendente_cardapio",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 17
+      },
+      {
+        "agent": "atendente_cardapio",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 9
+      },
+      {
+        "agent": "atendente_cardapio",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 20
+      },
+      {
+        "agent": "atendente_cardapio",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 12
+      },
+      {
+        "agent": "atendente_cardapio",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 13
+      },
+      {
+        "agent": "atendente_cardapio",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 12
+      },
+      {
+        "agent": "atendente_cardapio",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 15
+      },
+      {
+        "agent": "atendente_cardapio",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 13
+      },
+      {
+        "agent": "atendente_cardapio",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 14
+      },
+      {
+        "agent": "atendente_cardapio",
+        "tool": "run_sql_query",
+        "status": "ok",
+        "duration_ms": 13
+      }
+    ],
+    "artifacts": [
+      {
+        "artifact_id": "06979708-54bd-4eff-b7a5-9168981d144c",
+        "kind": "dataset",
+        "title": "Listar tabelas"
+      },
+      {
+        "artifact_id": "e1f51960-1956-44ad-9d88-d7ecb93d017a",
+        "kind": "dataset",
+        "title": "Listar todas as tabelas"
+      },
+      {
+        "artifact_id": "e29fd9fa-4585-495b-9246-18f8bc8b3476",
+        "kind": "dataset",
+        "title": "Colunas do schema hamburgueria"
+      },
+      {
+        "artifact_id": "7516f65b-2ad7-44f1-a5ff-313b4c048e20",
+        "kind": "dataset",
+        "title": "Estrutura das tabelas da hamburgueria"
+      },
+      {
+        "artifact_id": "83582da4-9cfd-4c88-88dc-f417ee987e56",
+        "kind": "dataset",
+        "title": "Todas as colunas"
+      },
+      {
+        "artifact_id": "24107ac0-91a5-4ea5-a691-5cf90843490e",
+        "kind": "dataset",
+        "title": "Data atual do servidor"
+      },
+      {
+        "artifact_id": "36a26184-db24-40c8-935b-26dea444f8c0",
+        "kind": "dataset",
+        "title": "Pedidos por data"
+      },
+      {
+        "artifact_id": "c3a89271-3a9d-437a-90f5-cb9518d5df47",
+        "kind": "dataset",
+        "title": "Listar tabelas do datasource hamburgueria"
+      },
+      {
+        "artifact_id": "9680e0ff-9ef4-490b-ad45-1fde7fc29491",
+        "kind": "dataset",
+        "title": "Listar todas as tabelas e schemas"
+      },
+      {
+        "artifact_id": "71db597d-6083-4096-9925-f51cdb4cb1c7",
+        "kind": "dataset",
+        "title": "Listar colunas do schema hamburgueria"
+      },
+      {
+        "artifact_id": "fa1bc877-0f69-4b27-b02a-2283c4d2ab29",
+        "kind": "dataset",
+        "title": "Listar todas as colunas"
+      },
+      {
+        "artifact_id": "9a4bd89e-4b41-4221-b1f3-d410bd0cb2e2",
+        "kind": "dataset",
+        "title": "Verificar datas de pedidos"
+      },
+      {
+        "artifact_id": "6af9f4fa-1567-4103-8477-7d0ca88e6bcb",
+        "kind": "dataset",
+        "title": "Buscar pedidos realizados hoje e seus detalhes"
+      },
+      {
+        "artifact_id": "604958b7-510c-4f64-8b07-eae5dbb68d13",
+        "kind": "dataset",
+        "title": "Todos os pedidos no banco"
+      }
+    ],
+    "agents": [
+      {
+        "name": "atendente_cardapio",
+        "status": "start"
+      },
+      {
+        "name": "atendente_cardapio",
+        "status": "done"
+      },
+      {
+        "name": "atendente_cardapio",
+        "status": "start"
+      },
+      {
+        "name": "atendente_cardapio",
+        "status": "done"
+      }
+    ],
+    "error": null,
+    "latency_ms": 31514
+  }
+}

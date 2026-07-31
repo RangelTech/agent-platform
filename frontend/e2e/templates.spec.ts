@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { gotoSection } from './helpers'
 
 const MASTER_EMAIL = process.env.E2E_MASTER_EMAIL ?? 'master@example.com'
 const MASTER_PASSWORD = process.env.E2E_MASTER_PASSWORD ?? 'admin123'
@@ -56,7 +57,7 @@ test('admin creates a template with agents, deploys it and chats through it', as
   await signIn(page, email, 'senha-forte-123')
 
   // Create the template.
-  await page.getByRole('link', { name: 'Templates' }).click()
+  await gotoSection(page, 'Templates')
   await page.fill('input[name="tpl-name"]', `Atendimento ${suffix}`)
   await page.fill('input[name="tpl-desc"]', 'Assistente de testes E2E')
   await page.getByRole('button', { name: 'Criar template' }).click()
@@ -83,10 +84,10 @@ test('admin creates a template with agents, deploys it and chats through it', as
   await expect(page.getByText('em produção').first()).toBeVisible()
 
   // Chat: pick the template and talk through it (stub answers).
-  await page.getByRole('link', { name: 'Chat' }).click()
+  await gotoSection(page, 'Chat')
   await page.selectOption('select[name="template-picker"]', { label: `Atendimento ${suffix}` })
-  await page.fill('input[name="chat-input"]', 'olá, template!')
-  await page.getByRole('button', { name: 'Enviar' }).click()
+  await page.fill('[name="chat-input"]', 'olá, template!')
+  await page.getByRole('button', { name: /Enviar/ }).click()
   await expect(page.getByTestId('message-list')).toContainText('Resposta simulada do stub.', {
     timeout: 15_000,
   })

@@ -37,9 +37,24 @@ class Settings(BaseSettings):
     kernel_audience: str = ""
     # Fernet master key for secrets at rest (Secret Manager in production).
     encryption_key: str = ""
+    # URL pública do backend (https://...). Só é necessária para montar o
+    # notification_url que o gateway de pagamento chama de volta; vazio em dev
+    # apenas desliga a confirmação por webhook, o polling continua funcionando.
+    public_base_url: str = ""
+    # Base da API do Mercado Pago; só muda em teste.
+    mercado_pago_api: str = "https://api.mercadopago.com"
 
-    # Object storage (uploads). GCS when bucket set, local dir otherwise —
-    # must match the kernel's settings so both sides read the same paths.
+    # Object storage (uploads). Priority: S3-compatible (MinIO) -> GCS -> local
+    # dir. Must match the kernel's settings so both sides read the same paths.
+    storage_backend: str = ""
+    s3_endpoint_url: str = ""
+    s3_region: str = "us-east-1"
+    s3_bucket: str = ""
+    s3_access_key_id: str = ""
+    s3_secret_access_key: str = ""
+    s3_prefix: str = "agent-llm"
+    s3_public_base_url: str = ""
+    s3_presign_expires_seconds: int = 3600
     gcs_bucket: str = ""
     gcs_prefix: str = "agent llm"
     storage_local_dir: str = "../kernel/artifacts"

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { gotoSection } from './helpers'
 
 const MASTER_EMAIL = process.env.E2E_MASTER_EMAIL ?? 'master@example.com'
 const MASTER_PASSWORD = process.env.E2E_MASTER_PASSWORD ?? 'admin123'
@@ -43,9 +44,9 @@ test('tenant user chats and receives a streamed reply', async ({ page, request }
 
   // Act: sign in and send a message.
   await signIn(page, email, 'senha-forte-123')
-  await page.getByRole('link', { name: 'Chat' }).click()
-  await page.fill('input[name="chat-input"]', 'olá, tudo bem?')
-  await page.getByRole('button', { name: 'Enviar' }).click()
+  await gotoSection(page, 'Chat')
+  await page.fill('[name="chat-input"]', 'olá, tudo bem?')
+  await page.getByRole('button', { name: /Enviar/ }).click()
 
   // Assert: user bubble + assistant reply (stub answers deterministically).
   await expect(page.getByText('olá, tudo bem?')).toBeVisible()

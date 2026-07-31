@@ -45,6 +45,7 @@ def set_run_context(
     agent_files: dict[str, list[str]] | None = None,
     write_tables: list[str] | None = None,
     attachments: list[dict] | None = None,
+    payment: dict | None = None,
 ) -> None:
     RUN_CONTEXT.set(
         {
@@ -57,6 +58,7 @@ def set_run_context(
             "embedding": embedding or {"provider": "stub"},
             "agent_files": agent_files or {},
             "write_tables": write_tables or [],
+            "payment": payment or {},
         }
     )
 
@@ -226,17 +228,28 @@ async def execute_python(code: str, artifact_id: str = "") -> str:
     published = []
     for output in outputs[:5]:
         if output.get("kind") == "dataset":
+            # publish_dataset() is called by model-generated code, which
+            # commonly passes a bare list of column-name strings (e.g. from
+            # df.columns.tolist()) instead of the platform's canonical
+            # [{"name": ..., "type": ...}] shape. Normalize here so every
+            # downstream consumer (generate_chart, export_xlsx, further
+            # execute_python calls) can rely on a single consistent format
+            # instead of crashing with "string indices must be integers".
+            raw_columns = output.get("columns", []) or []
+            normalized_columns = [
+                {"name": col} if isinstance(col, str) else col for col in raw_columns
+            ]
             descriptor = await register_artifact(
                 tenant_id=context.get("tenant_id"),
                 chat_id=context.get("chat_id"),
                 agent_name=context.get("agent", ""),
                 kind="dataset",
                 title=output.get("title", "Dataset do sandbox"),
-                schema_json=output.get("columns", []),
+                schema_json=normalized_columns,
                 preview_json=(output.get("rows") or [])[:10],
                 row_count=len(output.get("rows") or []),
                 payload=json.dumps(
-                    {"columns": output.get("columns", []), "rows": output.get("rows", [])},
+                    {"columns": normalized_columns, "rows": output.get("rows", [])},
                     ensure_ascii=False,
                     default=str,
                 ).encode(),
@@ -560,6 +573,115 @@ async def query_agent_rag(question: str) -> str:
         for r in results
     ]
     return "\n\n".join(parts)
+
+
+@catalog.tool()
+async def generate_pix_charge(
+    amount: str,
+    description: str = "",
+    reference_id: str = "",
+    payer_email: str = "",
+) -> str:
+    """Gera uma cobrança PIX real para o cliente pagar (Mercado Pago).
+
+    `amount` é o valor a cobrar em reais (ex.: "48.90") e deve vir do total do
+    pedido — NUNCA invente nem arredonde. `reference_id` é o identificador do
+    pedido no sistema, para conseguir consultar o pagamento depois.
+    Retorna o código copia-e-cola do PIX e o payment_id da cobrança. Entregue o
+    copia-e-cola ao cliente e use check_payment_status para saber se caiu."""
+    context = _context()
+    credential = context.get("payment") or {}
+    if not credential.get("access_token"):
+        return (
+            "ERRO: esta empresa ainda não configurou a credencial de pagamento. "
+            "Peça ao administrador para cadastrá-la em Pagamentos."
+        )
+
+    from app.payments import create_pix_charge, parse_amount
+
+    try:
+        value = parse_amount(amount)
+    except ValueError as exc:
+        return f"ERRO: {exc}"
+
+    try:
+        charge = await create_pix_charge(
+            credential=credential,
+            tenant_id=context.get("tenant_id"),
+            chat_id=context.get("chat_id"),
+            amount=value,
+            description=description or "Cobrança PIX",
+            reference_id=reference_id,
+            payer_email=payer_email or "comprador@example.com",
+            notification_url=credential.get("notification_url"),
+        )
+    except httpx.HTTPStatusError as exc:
+        return f"ERRO do gateway ({exc.response.status_code}): {exc.response.text[:500]}"
+    except Exception as exc:  # noqa: BLE001 — o modelo precisa do motivo
+        return f"ERRO ao gerar cobrança: {exc}"
+
+    return json.dumps(
+        {
+            "status": "ok",
+            "payment_id": charge["external_id"],
+            "amount": str(charge["amount"]),
+            "payment_status": charge["status"],
+            "pix_copia_e_cola": charge["qr_code"],
+            "ticket_url": charge["ticket_url"],
+            "sandbox": bool(credential.get("sandbox", True)),
+        },
+        ensure_ascii=False,
+    )
+
+
+@catalog.tool()
+async def check_payment_status(payment_id: str = "", reference_id: str = "") -> str:
+    """Consulta se uma cobrança PIX já foi paga. Informe o `payment_id`
+    devolvido por generate_pix_charge ou o `reference_id` do pedido. Use quando
+    o cliente perguntar se o pagamento caiu — a confirmação automática pode
+    demorar alguns segundos."""
+    context = _context()
+    credential = context.get("payment") or {}
+    if not credential.get("access_token"):
+        return "ERRO: esta empresa ainda não configurou a credencial de pagamento."
+
+    from app.payments import STATUS_MAP, fetch_payment, lookup_charge, sync_charge_status
+
+    external_id = payment_id.strip()
+    if not external_id and reference_id.strip():
+        row = await lookup_charge(
+            tenant_id=context.get("tenant_id"), reference_id=reference_id.strip()
+        )
+        if row is None:
+            return f"Nenhuma cobrança encontrada para a referência '{reference_id}'."
+        external_id = row["external_id"]
+    if not external_id:
+        return "ERRO: informe payment_id ou reference_id."
+
+    try:
+        payment = await fetch_payment(credential=credential, external_id=external_id)
+    except httpx.HTTPStatusError as exc:
+        return f"ERRO do gateway ({exc.response.status_code}): {exc.response.text[:500]}"
+    except Exception as exc:  # noqa: BLE001
+        return f"ERRO ao consultar cobrança: {exc}"
+
+    status = STATUS_MAP.get(payment.get("status", ""), "pending")
+    await sync_charge_status(
+        tenant_id=context.get("tenant_id"),
+        external_id=external_id,
+        status=status,
+        payment=payment,
+    )
+    return json.dumps(
+        {
+            "payment_id": external_id,
+            "status": status,
+            "gateway_status": payment.get("status"),
+            "amount": payment.get("transaction_amount"),
+            "paid": status == "paid",
+        },
+        ensure_ascii=False,
+    )
 
 
 def open_catalog_session():

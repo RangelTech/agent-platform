@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { expectSectionAvailable, gotoSection } from './helpers'
 
 const MASTER_EMAIL = process.env.E2E_MASTER_EMAIL ?? 'master@example.com'
 const MASTER_PASSWORD = process.env.E2E_MASTER_PASSWORD ?? 'admin123'
@@ -16,13 +17,13 @@ test('wizard creates company+admin; admin brands it; users see the brand', async
 
   // Master: one-step wizard.
   await signIn(page, MASTER_EMAIL, MASTER_PASSWORD)
-  await page.getByRole('link', { name: 'Empresas' }).click()
+  await gotoSection(page, 'Empresas')
   await page.fill('input[name="tenant-name"]', `Brand ${suffix}`)
   await page.fill('input[name="tenant-key"]', `brand-${suffix}`)
   await page.fill('input[name="admin-name"]', 'Admin Brand')
   await page.fill('input[name="admin-email"]', adminEmail)
   await page.fill('input[name="admin-password"]', 'senha-forte-123')
-  await page.getByRole('button', { name: 'Criar empresa' }).click()
+  await page.getByRole('button', { name: /Criar empresa|Nova empresa/ }).click()
   await expect(page.getByText(`brand-${suffix}`)).toBeVisible()
   await page.getByRole('button', { name: 'Sair' }).click()
 
@@ -30,7 +31,7 @@ test('wizard creates company+admin; admin brands it; users see the brand', async
   await signIn(page, adminEmail, 'senha-forte-123')
   await expect(page.getByTestId('current-user')).toHaveText('Admin Brand')
 
-  await page.getByRole('link', { name: 'Personalizar' }).click()
+  await gotoSection(page, 'Personalizar')
   await page.fill('input[name="brand-name"]', 'ACME Espacial')
   await page.getByRole('button', { name: 'Salvar personalização' }).click()
   await expect(page.getByText('Salvo ✓')).toBeVisible()
@@ -39,19 +40,21 @@ test('wizard creates company+admin; admin brands it; users see the brand', async
 
   // A regular user of the company lands on the chat and sees the brand.
   const userEmail = `user-${suffix}@brand.com`
-  await page.getByRole('link', { name: 'Usuários' }).click()
+  await gotoSection(page, 'Usuários')
   await page.fill('input[name="user-name"]', 'Usuária Comum')
   await page.fill('input[name="user-email"]', userEmail)
   await page.fill('input[name="user-password"]', 'senha-forte-123')
   await page.selectOption('select[name="user-profile"]', { label: 'Usuário' })
-  await page.getByRole('button', { name: 'Criar usuário' }).click()
+  await page.getByRole('button', { name: /Criar usuário|Novo usuário/ }).click()
   await expect(page.getByText(userEmail)).toBeVisible()
   await page.getByRole('button', { name: 'Sair' }).click()
 
   await signIn(page, userEmail, 'senha-forte-123')
-  // Chat-home: the plain user lands on the conversation screen.
-  await expect(page.locator('input[name="chat-input"]')).toBeVisible()
+  // Home is the dashboard (Fase A); the chat is one click away and branded.
+  await expect(page.getByText(/live workspace/i)).toBeVisible()
   await expect(page.getByRole('banner')).toContainText('ACME Espacial')
+  await gotoSection(page, 'Chat')
+  await expect(page.locator('[name="chat-input"]')).toBeVisible()
   // And has no management links.
-  await expect(page.getByRole('link', { name: 'Usuários' })).toHaveCount(0)
+  await expectSectionAvailable(page, 'Usuários', false)
 })

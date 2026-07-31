@@ -209,9 +209,9 @@ def test_multipart_send_stores_attachment_and_forwards_descriptor(
     assert len(captured["attachments"]) == 1
     att = captured["attachments"][0]
     assert att["kind"] == "file" and att["name"] == "nota.txt"
-    from pathlib import Path
+    from app.artifacts_io import load_bytes
 
-    assert Path(att["storage_path"]).read_bytes() == b"conteudo da nota"
+    assert load_bytes(att["storage_path"]) == b"conteudo da nota"
 
     chats = client.get("/api/chats", headers=auth(utoken)).json()
     messages = client.get(f"/api/chats/{chats[0]['id']}/messages", headers=auth(utoken)).json()

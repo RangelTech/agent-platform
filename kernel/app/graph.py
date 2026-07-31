@@ -326,6 +326,7 @@ async def _supervisor_node(state: RunState) -> dict:
         },
         write_tables=run_config.get("write_tables", []),
         attachments=run_config.get("attachments", []),
+        payment=run_config.get("payment") or {},
     )
     tool_defs = _agent_tool_defs(list(agents.values())) or None
     supervisor_config = ModelConfig(**supervisor["model"])

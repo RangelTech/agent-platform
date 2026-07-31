@@ -15,6 +15,8 @@ RESOURCES = (
     "integrations",
     "chats",
     "usage",
+    "payments",
+    "mcp_store",
 )
 
 ACTIONS = ("view", "create", "edit", "delete")

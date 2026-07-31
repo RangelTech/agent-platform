@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # Deploy agent-platform to Cloud Run (project eduk-prd-lake).
+# Production runtime is Cloud Run + external PostgreSQL + S3-compatible object
+# storage. Docker Compose is only a local development/testing convenience.
 # Usage: ./infra/deploy.sh [kernel|backend|all]
 set -euo pipefail
 
 PROJECT=eduk-prd-lake
 REGION=us-central1
 REPO=us-central1-docker.pkg.dev/$PROJECT/cloud-run-source-deploy
-SQL_CONNECTION=eduk-prd:us-central1:shared-eduk
 RUNTIME_SA=devlake@eduk-prd-lake.iam.gserviceaccount.com
 SHORT_SHA=$(git rev-parse --short HEAD)
 
@@ -26,9 +27,8 @@ deploy_kernel() {
     --project=$PROJECT --region=$REGION \
     --image=$REPO/teste_ia-kernel:$SHORT_SHA \
     --service-account=$RUNTIME_SA \
-    --add-cloudsql-instances=$SQL_CONNECTION \
-    --set-secrets=DATABASE_URL=teste-ia-database-url:latest,SERPER_API_KEY=teste-ia-serper-key:latest \
-    --set-env-vars="ENABLE_STUB_CONTROL=false,GCS_BUCKET=eduk-prd-lake,GCS_PREFIX=agent llm" \
+    --set-secrets=DATABASE_URL=teste-ia-database-url:latest,SERPER_API_KEY=teste-ia-serper-key:latest,S3_ACCESS_KEY_ID=teste-ia-s3-access-key:latest,S3_SECRET_ACCESS_KEY=teste-ia-s3-secret-key:latest \
+    --set-env-vars="ENABLE_STUB_CONTROL=false,STORAGE_BACKEND=s3,S3_BUCKET=teste-ia,S3_ENDPOINT_URL=https://storage.rangeltech.net,S3_PUBLIC_BASE_URL=https://storage.rangeltech.net/teste-ia,S3_REGION=us-east-1,S3_PREFIX=agent-llm" \
     --no-allow-unauthenticated \
     --memory=1Gi --cpu=1 --min-instances=0 --max-instances=3 \
     --timeout=600
@@ -47,9 +47,8 @@ deploy_backend() {
     --project=$PROJECT --region=$REGION \
     --image=$REPO/teste_ia-backend:$SHORT_SHA \
     --service-account=$RUNTIME_SA \
-    --add-cloudsql-instances=$SQL_CONNECTION \
-    --set-secrets=DATABASE_URL=teste-ia-database-url:latest,ENCRYPTION_KEY=teste-ia-encryption-key:latest \
-    --set-env-vars=KERNEL_URL=$kernel_url,KERNEL_AUDIENCE=$kernel_url \
+    --set-secrets=DATABASE_URL=teste-ia-database-url:latest,ENCRYPTION_KEY=teste-ia-encryption-key:latest,S3_ACCESS_KEY_ID=teste-ia-s3-access-key:latest,S3_SECRET_ACCESS_KEY=teste-ia-s3-secret-key:latest \
+    --set-env-vars="KERNEL_URL=$kernel_url,KERNEL_AUDIENCE=$kernel_url,STORAGE_BACKEND=s3,S3_BUCKET=teste-ia,S3_ENDPOINT_URL=https://storage.rangeltech.net,S3_REGION=us-east-1,S3_PREFIX=agent-llm" \
     --allow-unauthenticated \
     --memory=512Mi --cpu=1 --min-instances=0 --max-instances=5 \
     --timeout=600

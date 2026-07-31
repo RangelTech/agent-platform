@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { gotoSection } from './helpers'
 
 const MASTER_EMAIL = process.env.E2E_MASTER_EMAIL ?? 'master@example.com'
 const MASTER_PASSWORD = process.env.E2E_MASTER_PASSWORD ?? 'admin123'
@@ -43,10 +44,10 @@ test('full company-admin journey: keys, Excel catalog, seller template, chat sal
 
   // 1. Registers their own AI key (BYOK), sees it listed, archives it so the
   //    chat exercises the deterministic stub instead of a real provider.
-  await page.getByRole('link', { name: 'Serviços de IA' }).click()
+  await gotoSection(page, 'Serviços de IA')
   await page.fill('input[name="svc-name"]', 'Minha chave Gemini')
   await page.fill('input[name="svc-key"]', 'chave-de-mentira-para-e2e')
-  await page.getByRole('button', { name: 'Cadastrar serviço' }).click()
+  await page.getByRole('button', { name: /Cadastrar serviço|Novo serviço/ }).click()
   await expect(page.getByText('Minha chave Gemini')).toBeVisible()
   await page
     .getByTestId('service-row')
@@ -56,7 +57,7 @@ test('full company-admin journey: keys, Excel catalog, seller template, chat sal
   await expect(page.getByText('Minha chave Gemini')).toHaveCount(0)
 
   // 2. Uploads the product spreadsheet and waits for ingestion.
-  await page.getByRole('link', { name: 'Arquivos' }).click()
+  await gotoSection(page, 'Arquivos')
   await page
     .getByTestId('file-input')
     .setInputFiles('e2e/fixtures/produtos.xlsx')
@@ -66,7 +67,7 @@ test('full company-admin journey: keys, Excel catalog, seller template, chat sal
   )
 
   // 3. Builds the seller template: one specialist with RAG over the sheet.
-  await page.getByRole('link', { name: 'Templates' }).click()
+  await gotoSection(page, 'Templates')
   await page.fill('input[name="tpl-name"]', 'Vendedor')
   await page.fill('input[name="tpl-desc"]', 'Vende os produtos do catálogo')
   await page.getByRole('button', { name: 'Criar template' }).click()
@@ -102,9 +103,9 @@ test('full company-admin journey: keys, Excel catalog, seller template, chat sal
   })
 
   // 5. Sells through the chat using the sheet's data.
-  await page.getByRole('link', { name: 'Chat' }).click()
+  await gotoSection(page, 'Chat')
   await page.selectOption('select[name="template-picker"]', { label: 'Vendedor' })
-  await page.fill('input[name="chat-input"]', 'quanto custa o parafuso M8?')
-  await page.getByRole('button', { name: 'Enviar' }).click()
+  await page.fill('[name="chat-input"]', 'quanto custa o parafuso M8?')
+  await page.getByRole('button', { name: /Enviar/ }).click()
   await expect(page.getByTestId('message-list')).toContainText('R$ 2,50', { timeout: 30_000 })
 })

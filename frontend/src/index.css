@@ -4,24 +4,56 @@
    surfaces; --brand is overridden per tenant at runtime. */
 :root {
   --brand: #4f46e5;
-  --brand-soft: color-mix(in srgb, var(--brand) 25%, transparent);
+  --brand-soft: color-mix(in srgb, var(--brand) 22%, transparent);
   --bg: #020617;
-  --surface: rgba(15, 23, 42, 0.6);
+  --bg-elevated: #081120;
+  --surface: rgba(15, 23, 42, 0.72);
   --surface-solid: #0f172a;
-  --border: #1e293b;
+  --surface-elevated: rgba(30, 41, 59, 0.72);
+  --surface-soft: rgba(148, 163, 184, 0.1);
+  --surface-strong: rgba(2, 6, 23, 0.7);
+  --border: rgba(148, 163, 184, 0.16);
+  --border-strong: rgba(148, 163, 184, 0.24);
   --text: #f1f5f9;
   --text-muted: #94a3b8;
   --text-faint: #64748b;
+  --success: #34d399;
+  --success-soft: rgba(52, 211, 153, 0.14);
+  --info: #818cf8;
+  --info-soft: rgba(129, 140, 248, 0.14);
+  --danger: #fb7185;
+  --danger-soft: rgba(251, 113, 133, 0.14);
+  --shell-gradient: radial-gradient(circle at top, color-mix(in srgb, var(--brand) 22%, transparent), transparent 28%), linear-gradient(180deg, rgba(15, 23, 42, 0.74), rgba(2, 6, 23, 0.98));
+  --panel-gradient: linear-gradient(180deg, rgba(15, 23, 42, 0.35), rgba(2, 6, 23, 0.8));
 }
 
 [data-theme="light"] {
-  --bg: #f8fafc;
-  --surface: #ffffff;
+  --bg: #f3f7fb;
+  --bg-elevated: #ffffff;
+  --surface: rgba(255, 255, 255, 0.88);
   --surface-solid: #ffffff;
-  --border: #e2e8f0;
+  --surface-elevated: rgba(255, 255, 255, 0.96);
+  --surface-soft: rgba(148, 163, 184, 0.12);
+  --surface-strong: rgba(226, 232, 240, 0.74);
+  --border: rgba(148, 163, 184, 0.28);
+  --border-strong: rgba(100, 116, 139, 0.24);
   --text: #0f172a;
-  --text-muted: #475569;
-  --text-faint: #94a3b8;
+  --text-muted: #334155;
+  --text-faint: #64748b;
+  --success: #059669;
+  --success-soft: rgba(5, 150, 105, 0.12);
+  --info: #4f46e5;
+  --info-soft: rgba(79, 70, 229, 0.12);
+  --danger: #e11d48;
+  --danger-soft: rgba(225, 29, 72, 0.12);
+  --shell-gradient: radial-gradient(circle at top, color-mix(in srgb, var(--brand) 12%, white 88%), transparent 30%), linear-gradient(180deg, #ffffff, #eef4fb);
+  --panel-gradient: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(241, 245, 249, 0.96));
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
 }
 
 body {

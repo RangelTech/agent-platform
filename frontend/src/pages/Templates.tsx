@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState, type FormEvent } from 'react'
-import { Badge, Button, Card, ErrorText, Input, Select, Table } from '../components/ui'
+import { Badge, Button, Card, ErrorText, Input, PageHeader, Select, Table } from '../components/ui'
 import { api } from '../lib/api'
 import {
   createTemplate,
@@ -68,7 +68,7 @@ function AgentEditor({
     onChange({ ...agent, tools })
   }
   return (
-    <div className="space-y-3 rounded-lg border border-slate-800 bg-slate-950/60 p-4" data-testid="agent-editor">
+    <div className="space-y-3 rounded-[16px] border border-[var(--border)] bg-[var(--surface-solid)] p-4" data-testid="agent-editor">
       <div className="grid gap-3 sm:grid-cols-2">
         <Input
           label="Nome (snake_case, ex: financeiro_agent)"
@@ -114,17 +114,17 @@ function AgentEditor({
         onChange={(e) => onChange({ ...agent, description: e.target.value })}
       />
       <label className="block">
-        <span className="mb-1 block text-sm text-slate-300">Prompt do agente</span>
+        <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-[var(--text-muted)]">Prompt do agente</span>
         <textarea
           required
           rows={4}
           value={agent.prompt}
           onChange={(e) => onChange({ ...agent, prompt: e.target.value })}
-          className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-500"
+          className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface-solid)] px-3.5 py-2.5 text-sm text-[var(--text)] outline-none transition focus:border-[var(--brand)] focus:ring-2 focus:ring-[var(--brand-soft)]"
         />
       </label>
       <div>
-        <span className="mb-1 block text-sm text-slate-300">Ferramentas</span>
+        <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-[var(--text-muted)]">Ferramentas</span>
         <div className="flex flex-wrap gap-2">
           {toolkits.map((tool) => (
             <label
@@ -132,8 +132,8 @@ function AgentEditor({
               title={tool.description}
               className={`cursor-pointer rounded-full border px-3 py-1 text-xs transition ${
                 agent.tools.includes(tool.name)
-                  ? 'border-indigo-500 bg-indigo-950 text-indigo-200'
-                  : 'border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-500'
+                  ? 'border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--text)]'
+                  : 'border-[var(--border)] bg-[var(--surface-solid)] text-[var(--text-muted)] hover:border-[var(--brand)]'
               }`}
             >
               <input
@@ -146,20 +146,20 @@ function AgentEditor({
             </label>
           ))}
           {toolkits.length === 0 && (
-            <span className="text-xs text-slate-500">catálogo indisponível</span>
+            <span className="text-xs text-[var(--text-faint)]">catálogo indisponível</span>
           )}
         </div>
       </div>
       <div>
-        <span className="mb-1 block text-sm text-slate-300">Documentos (RAG)</span>
+        <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-[var(--text-muted)]">Documentos (RAG)</span>
         <div className="flex flex-wrap gap-2">
           {files.filter((f) => f.status === 'ready').map((f) => (
             <label
               key={f.id}
               className={`cursor-pointer rounded-full border px-3 py-1 text-xs transition ${
                 agent.file_ids.includes(f.id)
-                  ? 'border-amber-500 bg-amber-950 text-amber-200'
-                  : 'border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-500'
+                  ? 'border-[var(--info)] bg-[var(--info-soft)] text-[var(--info)]'
+                  : 'border-[var(--border)] bg-[var(--surface-solid)] text-[var(--text-muted)] hover:border-[var(--brand)]'
               }`}
             >
               <input
@@ -172,7 +172,7 @@ function AgentEditor({
             </label>
           ))}
           {files.filter((f) => f.status === 'ready').length === 0 && (
-            <span className="text-xs text-slate-500">nenhum arquivo pronto — envie em "Arquivos"</span>
+            <span className="text-xs text-[var(--text-faint)]">nenhum arquivo pronto — envie em "Arquivos"</span>
           )}
         </div>
       </div>
@@ -310,6 +310,8 @@ export default function Templates() {
   if (!selected) {
     return (
       <div className="space-y-6">
+        <PageHeader title="Templates" description="Monte supervisores e agentes especialistas versionados para o chat." />
+
         <Card title="Novo template">
           <form onSubmit={onCreate} className="grid gap-3 sm:grid-cols-3 sm:items-end">
             <Input label="Nome" required name="tpl-name" value={newName} onChange={(e) => setNewName(e.target.value)} />
@@ -328,12 +330,12 @@ export default function Templates() {
           </form>
         </Card>
 
-        <Card title="Templates">
+        <Card title="Todos os templates">
           <Table headers={['Nome', 'Descrição', 'Versão ativa', '']}>
             {templates.map((t) => (
-              <tr key={t.id} data-testid="template-row">
-                <td className="px-3 py-2 text-slate-200">{t.name}</td>
-                <td className="px-3 py-2 text-slate-400">{t.description}</td>
+              <tr key={t.id} data-testid="template-row" className="transition hover:bg-[var(--brand-soft)]">
+                <td className="px-3 py-2 text-[var(--text)]">{t.name}</td>
+                <td className="px-3 py-2 text-[var(--text-muted)]">{t.description}</td>
                 <td className="px-3 py-2">
                   {t.active_version_number ? (
                     <Badge ok>v{t.active_version_number}</Badge>
@@ -361,30 +363,30 @@ export default function Templates() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-slate-100">
-          {selected.name}
-          {selected.active_version_number && (
-            <span className="ml-2 text-sm font-normal text-emerald-400">
-              v{selected.active_version_number} em produção
-            </span>
-          )}
-        </h1>
-        <Button variant="ghost" onClick={() => setSelected(null)}>
-          ← Voltar
-        </Button>
-      </div>
+      <PageHeader
+        title={selected.name}
+        description={
+          selected.active_version_number
+            ? `v${selected.active_version_number} em produção`
+            : 'Ainda sem versão publicada'
+        }
+        actions={
+          <Button variant="ghost" onClick={() => setSelected(null)}>
+            ← Voltar
+          </Button>
+        }
+      />
 
       <Card title="Supervisor">
         <div className="space-y-3">
           <label className="block">
-            <span className="mb-1 block text-sm text-slate-300">Prompt do supervisor</span>
+            <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-[var(--text-muted)]">Prompt do supervisor</span>
             <textarea
               required
               rows={4}
               value={supervisorPrompt}
               onChange={(e) => setSupervisorPrompt(e.target.value)}
-              className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-500"
+              className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface-solid)] px-3.5 py-2.5 text-sm text-[var(--text)] outline-none transition focus:border-[var(--brand)] focus:ring-2 focus:ring-[var(--brand-soft)]"
               placeholder="Você coordena os especialistas da empresa X…"
             />
           </label>
@@ -453,7 +455,7 @@ export default function Templates() {
       >
         <div className="space-y-4">
           {agents.length === 0 && (
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-[var(--text-faint)]">
               Sem especialistas: o supervisor responde sozinho. Adicione agentes para
               dividir o trabalho por especialidade, cada um com seu modelo e prompt.
             </p>
@@ -479,8 +481,8 @@ export default function Templates() {
               key={ds.id}
               className={`cursor-pointer rounded-full border px-3 py-1 text-xs transition ${
                 datasourceIds.includes(ds.id)
-                  ? 'border-emerald-500 bg-emerald-950 text-emerald-200'
-                  : 'border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-500'
+                  ? 'border-[color-mix(in_srgb,var(--success)_60%,transparent)] bg-[var(--success-soft)] text-[var(--success)]'
+                  : 'border-[var(--border)] bg-[var(--surface-solid)] text-[var(--text-muted)] hover:border-[var(--brand)]'
               }`}
             >
               <input
@@ -499,7 +501,7 @@ export default function Templates() {
             </label>
           ))}
           {datasources.length === 0 && (
-            <span className="text-xs text-slate-500">
+            <span className="text-xs text-[var(--text-faint)]">
               Nenhuma fonte cadastrada — crie em "Fontes de dados".
             </span>
           )}
@@ -516,9 +518,9 @@ export default function Templates() {
       <Card title="Versões">
         <Table headers={['Versão', 'Criada em', 'Status', '']}>
           {versions.map((v) => (
-            <tr key={v.id} data-testid="version-row">
-              <td className="px-3 py-2 text-slate-200">v{v.version_number}</td>
-              <td className="px-3 py-2 text-slate-400">
+            <tr key={v.id} data-testid="version-row" className="transition hover:bg-[var(--brand-soft)]">
+              <td className="px-3 py-2 text-[var(--text)]">v{v.version_number}</td>
+              <td className="px-3 py-2 text-[var(--text-muted)]">
                 {new Date(v.created_at).toLocaleString('pt-BR')}
               </td>
               <td className="px-3 py-2">

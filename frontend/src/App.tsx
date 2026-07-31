@@ -1,5 +1,6 @@
-import { useEffect } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { AnimatePresence, motion } from 'framer-motion'
 import {
   NavLink,
   Navigate,
@@ -10,13 +11,17 @@ import {
 } from 'react-router-dom'
 import { Button } from './components/ui'
 import { AuthProvider, useAuth } from './lib/auth'
+import { fadeIn, pageVariants } from './lib/motion'
 import AiServices from './pages/AiServices'
 import Chat from './pages/Chat'
+import Dashboard from './pages/Dashboard'
 import Datasources from './pages/Datasources'
 import Files from './pages/Files'
 import Integrations from './pages/Integrations'
 import Login from './pages/Login'
+import McpStore from './pages/McpStore'
 import Memories from './pages/Memories'
+import Payments from './pages/Payments'
 import Customize from './pages/Customize'
 import Profiles from './pages/Profiles'
 import TemplatesPage from './pages/Templates'
@@ -30,6 +35,7 @@ const queryClient = new QueryClient({
 
 function Shell() {
   const { user, signOut, can } = useAuth()
+  const [navOpen, setNavOpen] = useState(false)
 
   // Apply per-tenant branding to the whole shell.
   const brand = user?.branding
@@ -38,10 +44,13 @@ function Shell() {
     root.dataset.theme = brand?.theme === 'light' ? 'light' : 'dark'
     root.style.setProperty('--brand', brand?.color || '#4f46e5')
   }, [brand?.theme, brand?.color])
-  const isChat = useLocation().pathname === '/chat'
+  const location = useLocation()
+  const isChat = location.pathname === '/chat'
+  const isDashboard = location.pathname === '/dashboard'
 
   const links = [
     // The master administers the platform and has no tenant to chat in.
+    { to: '/dashboard', label: 'Início', show: !(user?.is_master ?? false) },
     { to: '/chat', label: 'Chat', show: !(user?.is_master ?? false) },
     { to: '/empresas', label: 'Empresas', show: user?.is_master ?? false },
     { to: '/usuarios', label: 'Usuários', show: can('users', 'view') },
@@ -53,44 +62,97 @@ function Shell() {
     { to: '/memorias', label: 'Memórias', show: !(user?.is_master ?? false) },
     { to: '/consumo', label: 'Consumo', show: can('usage', 'view') },
     { to: '/integracoes', label: 'Integrações', show: can('integrations', 'view') },
+    { to: '/pagamentos', label: 'Pagamentos', show: can('payments', 'view') },
+    { to: '/mcp-store', label: 'MCP Store', show: can('mcp_store', 'view') },
     { to: '/personalizar', label: 'Personalizar', show: !(user?.is_master ?? false) && can('users', 'edit') },
   ].filter((l) => l.show)
 
+  const navLinks = useMemo(
+    () =>
+      links.map((l) => (
+        <NavLink
+          key={l.to}
+          to={l.to}
+          onClick={() => setNavOpen(false)}
+          className={({ isActive }) =>
+            `group flex items-center justify-between rounded-2xl px-4 py-3 text-sm font-medium transition ${
+              isActive
+                ? 'bg-[var(--brand-soft)] text-[var(--text)] shadow-[0_18px_48px_-28px_rgba(15,23,42,0.4)]'
+                : 'text-[var(--text-muted)] hover:bg-[var(--surface-elevated)] hover:text-[var(--text)]'
+            }`
+          }
+        >
+          <span>{l.label}</span>
+        </NavLink>
+      )),
+    [links],
+  )
+
   return (
     <div className="min-h-screen bg-[var(--bg)] text-[var(--text)]">
-      <header className="border-b border-[var(--border)]">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-          <div className="flex items-center gap-6">
-            <span className="flex items-center gap-2 text-sm font-semibold">
-              {brand?.has_logo && (
-                <img
-                  src={`/api/tenants/branding/logo/${brand.tenant_key}`}
-                  alt=""
-                  className="h-6 w-6 rounded object-contain"
-                />
-              )}
-              {brand?.name || 'agent-platform'}
+      <header className="sticky top-0 z-40 border-b border-[var(--border)] bg-[color-mix(in_srgb,var(--bg)_82%,transparent)] backdrop-blur-xl">
+        <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3 sm:px-6">
+          <Button
+            type="button"
+            variant="ghost"
+            className="h-11 w-11 rounded-2xl px-0"
+            onClick={() => setNavOpen((open) => !open)}
+            aria-label={navOpen ? 'Fechar navegação' : 'Abrir navegação'}
+            aria-expanded={navOpen}
+          >
+            <span className="flex flex-col gap-1.5">
+              <span className="h-0.5 w-4 rounded-full bg-current" />
+              <span className="h-0.5 w-4 rounded-full bg-current" />
+              <span className="h-0.5 w-4 rounded-full bg-current" />
             </span>
-            <nav className="flex gap-1">
-              {links.map((l) => (
-                <NavLink
-                  key={l.to}
-                  to={l.to}
-                  className={({ isActive }) =>
-                    `rounded-md px-3 py-1.5 text-sm ${
-                      isActive ? 'bg-[var(--brand-soft)] text-[var(--text)]' : 'text-[var(--text-muted)] hover:text-[var(--text)]'
-                    }`
-                  }
-                >
-                  {l.label}
-                </NavLink>
-              ))}
-            </nav>
+          </Button>
+
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-3">
+              <span className="flex min-w-0 items-center gap-3 text-sm font-semibold text-[var(--text)]">
+                {brand?.has_logo && (
+                  <img
+                    src={`/api/tenants/branding/logo/${brand.tenant_key}`}
+                    alt=""
+                    className="h-9 w-9 rounded-2xl border border-[var(--border)] bg-[var(--surface-solid)] object-contain p-1"
+                  />
+                )}
+                <span className="min-w-0">
+                  <span className="block truncate">{brand?.name || 'agent-platform'}</span>
+                  <span className="block text-xs font-normal text-[var(--text-faint)]">
+                    {isChat ? 'Workspace conversacional' : 'Painel operacional'}
+                  </span>
+                </span>
+              </span>
+              <div className="hidden min-w-0 flex-1 xl:flex">
+                <div data-testid="nav-top" className="flex flex-wrap gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] px-2 py-2">
+                  {links.slice(0, 5).map((l) => (
+                    <NavLink
+                      key={l.to}
+                      to={l.to}
+                      className={({ isActive }) =>
+                        `rounded-full px-4 py-2 text-sm transition ${
+                          isActive
+                            ? 'bg-[var(--brand-soft)] text-[var(--text)]'
+                            : 'text-[var(--text-muted)] hover:text-[var(--text)]'
+                        }`
+                      }
+                    >
+                      {l.label}
+                    </NavLink>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
-          <div className="flex items-center gap-3">
-            <span data-testid="current-user" className="text-sm text-[var(--text-muted)]">
-              {user?.name}
-            </span>
+
+          <div className="hidden items-center gap-3 sm:flex">
+            <div className="text-right">
+              <span data-testid="current-user" className="block text-sm font-medium text-[var(--text)]">
+                {user?.name}
+              </span>
+              <span className="block text-xs text-[var(--text-faint)]">Sessão autenticada</span>
+            </div>
             <Button variant="ghost" onClick={signOut}>
               Sair
             </Button>
@@ -98,22 +160,75 @@ function Shell() {
         </div>
       </header>
 
-      <main className={isChat ? '' : 'mx-auto max-w-6xl px-4 py-6'}>
-        <Routes>
-          <Route path="/chat" element={<Chat />} />
-          <Route path="/empresas" element={user?.is_master ? <Tenants /> : <Navigate to="/usuarios" />} />
-          <Route path="/usuarios" element={<Users />} />
-          <Route path="/perfis" element={<Profiles />} />
-          <Route path="/servicos-ia" element={<AiServices />} />
-          <Route path="/templates" element={<TemplatesPage />} />
-          <Route path="/fontes-de-dados" element={<Datasources />} />
-          <Route path="/arquivos" element={<Files />} />
-          <Route path="/memorias" element={<Memories />} />
-          <Route path="/consumo" element={<Usage />} />
-          <Route path="/integracoes" element={<Integrations />} />
-          <Route path="/personalizar" element={<Customize />} />
-          <Route path="*" element={<Navigate to={links[0]?.to ?? '/usuarios'} replace />} />
-        </Routes>
+      {navOpen && (
+        <div className="fixed inset-0 z-50 flex bg-[rgba(2,6,23,0.52)] backdrop-blur-sm">
+          <button
+            type="button"
+            className="hidden flex-1 lg:block"
+            aria-label="Fechar navegação"
+            onClick={() => setNavOpen(false)}
+          />
+          <aside className="ml-auto flex h-full w-full max-w-sm flex-col border-l border-[var(--border)] bg-[var(--surface-solid)]/96 p-4 shadow-[0_40px_120px_-52px_rgba(15,23,42,0.72)] backdrop-blur-2xl">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-faint)]">Navegação</p>
+                <h2 className="mt-2 text-xl font-semibold text-[var(--text)]">Menu principal</h2>
+                <p className="mt-1 text-sm leading-6 text-[var(--text-muted)]">Acesso compacto às rotas disponíveis neste tenant.</p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                data-testid="nav-close"
+                aria-label="Fechar navegação"
+                className="h-11 w-11 rounded-2xl px-0"
+                onClick={() => setNavOpen(false)}
+              >
+                ✕
+              </Button>
+            </div>
+            <nav data-testid="nav-drawer" className="flex-1 space-y-2 overflow-y-auto">{navLinks}</nav>
+            <div className="mt-4 rounded-[24px] border border-[var(--border)] bg-[var(--surface)] p-4 sm:hidden">
+              <p data-testid="current-user-drawer" className="text-sm font-medium text-[var(--text)]">
+                {user?.name}
+              </p>
+              <p className="mt-1 text-xs text-[var(--text-faint)]">Sessão autenticada</p>
+              <Button variant="ghost" onClick={signOut} className="mt-4 w-full">
+                Sair
+              </Button>
+            </div>
+          </aside>
+        </div>
+      )}
+
+      <main className={isChat ? 'mx-auto flex min-h-[calc(100vh-73px)] w-full max-w-[1680px] px-0 sm:px-4 sm:py-4' : `mx-auto px-4 py-6 ${isDashboard ? 'max-w-7xl' : 'max-w-6xl'}`}>
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={location.pathname}
+            variants={pageVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+          >
+            <Routes location={location}>
+              <Route path="/dashboard" element={user?.is_master ? <Navigate to="/empresas" /> : <Dashboard />} />
+              <Route path="/chat" element={<Chat />} />
+              <Route path="/empresas" element={user?.is_master ? <Tenants /> : <Navigate to="/usuarios" />} />
+              <Route path="/usuarios" element={<Users />} />
+              <Route path="/perfis" element={<Profiles />} />
+              <Route path="/servicos-ia" element={<AiServices />} />
+              <Route path="/templates" element={<TemplatesPage />} />
+              <Route path="/fontes-de-dados" element={<Datasources />} />
+              <Route path="/arquivos" element={<Files />} />
+              <Route path="/memorias" element={<Memories />} />
+              <Route path="/consumo" element={<Usage />} />
+              <Route path="/integracoes" element={<Integrations />} />
+              <Route path="/pagamentos" element={<Payments />} />
+              <Route path="/mcp-store" element={<McpStore />} />
+              <Route path="/personalizar" element={<Customize />} />
+              <Route path="*" element={<Navigate to={links[0]?.to ?? '/usuarios'} replace />} />
+            </Routes>
+          </motion.div>
+        </AnimatePresence>
       </main>
     </div>
   )
@@ -123,9 +238,14 @@ function Gate() {
   const { user, loading } = useAuth()
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-400">
+      <motion.div
+        variants={fadeIn}
+        initial="initial"
+        animate="animate"
+        className="flex min-h-screen items-center justify-center bg-[var(--bg)] text-[var(--text-muted)]"
+      >
         Carregando…
-      </div>
+      </motion.div>
     )
   }
   return user ? <Shell /> : <Login />

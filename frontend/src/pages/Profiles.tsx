@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
-import { Badge, Button, Card, ErrorText, Input, Table } from '../components/ui'
+import { Badge, Button, Card, EmptyState, ErrorText, Input, PageHeader, Table, TableSkeleton } from '../components/ui'
 import { api, listProfiles, type Profile } from '../lib/api'
 
 const RESOURCES: { key: string; label: string }[] = [
@@ -74,7 +74,7 @@ function PermissionGrid({
 
 export default function Profiles() {
   const qc = useQueryClient()
-  const { data: profiles = [], isLoading } = useQuery({
+  const { data: profiles = [], isLoading, error: loadError } = useQuery({
     queryKey: ['profiles'],
     queryFn: listProfiles,
   })
@@ -128,7 +128,9 @@ export default function Profiles() {
 
   if (creating || editing) {
     return (
-      <Card title={creating ? 'Novo perfil' : `Editar perfil: ${editing?.name}`}>
+      <div className="space-y-6">
+        <PageHeader title={creating ? 'Novo perfil' : `Editar perfil: ${editing?.name}`} />
+        <Card>
         <form onSubmit={onSubmit} className="space-y-4">
           <div className="max-w-sm">
             <Input
@@ -150,25 +152,34 @@ export default function Profiles() {
             <ErrorText>{error}</ErrorText>
           </div>
         </form>
-      </Card>
+        </Card>
+      </div>
     )
   }
 
   return (
-    <Card
-      title="Perfis de permissão"
-      actions={
-        <Button variant="ghost" onClick={openCreate}>
-          + Novo perfil
-        </Button>
-      }
-    >
+    <div className="space-y-6">
+      <PageHeader title="Perfis de permissão" description="Defina o que cada perfil pode ver, criar, editar ou excluir." />
+      <Card
+        actions={
+          <Button variant="ghost" onClick={openCreate}>
+            + Novo perfil
+          </Button>
+        }
+      >
       {isLoading ? (
-        <p className="text-sm text-[var(--text-muted)]">Carregando…</p>
+        <TableSkeleton columns={4} />
+      ) : loadError ? (
+        <ErrorText>Não foi possível carregar os dados. Recarregue a página ou tente novamente.</ErrorText>
+      ) : profiles.length === 0 ? (
+        <EmptyState
+          title="Nenhum perfil de permissão"
+          description="Crie um perfil para definir o que cada grupo de usuários pode ver e editar."
+        />
       ) : (
         <Table headers={['Perfil', 'Permissões', 'Status', '']}>
           {profiles.map((p) => (
-            <tr key={p.id} data-testid="profile-row">
+            <tr key={p.id} data-testid="profile-row" className="transition hover:bg-[var(--brand-soft)]">
               <td className="px-3 py-2 text-[var(--text)]">{p.name}</td>
               <td className="px-3 py-2">
                 <div className="flex flex-wrap gap-1">
@@ -198,6 +209,7 @@ export default function Profiles() {
           ))}
         </Table>
       )}
-    </Card>
+      </Card>
+    </div>
   )
 }

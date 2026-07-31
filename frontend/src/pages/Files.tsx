@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRef, useState } from 'react'
-import { Badge, Button, Card, ErrorText, Select, Table } from '../components/ui'
+import { Badge, Button, Card, EmptyState, ErrorText, PageHeader, Select, Table, TableSkeleton } from '../components/ui'
 import { api, getToken, listTenants } from '../lib/api'
 import { useAuth } from '../lib/auth'
 
@@ -31,7 +31,7 @@ export default function Files() {
   const [tenantId, setTenantId] = useState('')
   const [error, setError] = useState('')
 
-  const { data: files = [], isLoading } = useQuery({
+  const { data: files = [], isLoading, error: loadError } = useQuery({
     queryKey: ['files'],
     queryFn: () => api<BusinessFile[]>('/files'),
     refetchInterval: (query) =>
@@ -81,6 +81,8 @@ export default function Files() {
 
   return (
     <div className="space-y-6">
+      <PageHeader title="Arquivos" description="Envie documentos para os agentes consultarem via RAG." />
+
       <Card title="Enviar arquivo (PDF, DOCX, TXT, XLSX, CSV)">
         <div className="flex flex-wrap items-end gap-3">
           {isMaster && (
@@ -112,28 +114,35 @@ export default function Files() {
           </Button>
           <ErrorText>{error}</ErrorText>
         </div>
-        <p className="mt-2 text-xs text-slate-500">
+        <p className="mt-2 text-xs text-[var(--text-faint)]">
           Após o envio o arquivo é processado (extração + indexação) e fica disponível
           para vincular aos agentes nos templates.
         </p>
       </Card>
 
-      <Card title="Arquivos">
+      <Card title="Todos os arquivos">
         {isLoading ? (
-          <p className="text-sm text-slate-400">Carregando…</p>
+          <TableSkeleton columns={5} />
+        ) : loadError ? (
+          <ErrorText>Não foi possível carregar os dados. Recarregue a página ou tente novamente.</ErrorText>
+        ) : files.length === 0 ? (
+          <EmptyState
+            title="Nenhum arquivo enviado"
+            description="Envie um PDF ou documento para indexá-lo e vinculá-lo a um agente nos templates."
+          />
         ) : (
           <Table headers={['Nome', 'Tamanho', 'Trechos', 'Status', '']}>
             {files.map((f) => (
-              <tr key={f.id} data-testid="file-row">
-                <td className="px-3 py-2 text-slate-200">{f.name}</td>
-                <td className="px-3 py-2 text-slate-400">
+              <tr key={f.id} data-testid="file-row" className="transition hover:bg-[var(--brand-soft)]">
+                <td className="px-3 py-2 text-[var(--text)]">{f.name}</td>
+                <td className="px-3 py-2 text-[var(--text-muted)]">
                   {(f.size_bytes / 1024).toFixed(0)} KB
                 </td>
-                <td className="px-3 py-2 text-slate-400">{f.chunk_count ?? '—'}</td>
+                <td className="px-3 py-2 text-[var(--text-muted)]">{f.chunk_count ?? '—'}</td>
                 <td className="px-3 py-2">
                   <Badge ok={f.status === 'ready'}>{STATUS_LABEL[f.status]}</Badge>
                   {f.status === 'error' && (
-                    <span className="ml-2 text-xs text-rose-400">{f.error_detail}</span>
+                    <span className="ml-2 text-xs text-[var(--danger)]">{f.error_detail}</span>
                   )}
                 </td>
                 <td className="px-3 py-2 text-right">

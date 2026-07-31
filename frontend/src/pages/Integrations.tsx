@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState, type FormEvent } from 'react'
-import { Badge, Button, Card, ErrorText, Input, Select, Table } from '../components/ui'
+import { useEffect, useState, type FormEvent } from 'react'
+import { Badge, Button, Card, ErrorText, Input, PageHeader, Select, Table } from '../components/ui'
 import { api, listTenants } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { listTemplates } from '../lib/templates'
@@ -36,9 +36,16 @@ export default function Integrations() {
     enabled: isMaster,
   })
 
-  const [form, setForm] = useState({ name: '', template_id: '', webhook_url: '', tenant_id: '' })
+  const [form, setForm] = useState({
+    name: '',
+    channel: 'api',
+    template_id: '',
+    webhook_url: '',
+    tenant_id: '',
+  })
   const [error, setError] = useState('')
   const [revealed, setRevealed] = useState<Integration | null>(null)
+  const [whatsapp, setWhatsapp] = useState<Integration | null>(null)
 
   const create = useMutation({
     mutationFn: () =>
@@ -46,6 +53,7 @@ export default function Integrations() {
         method: 'POST',
         body: JSON.stringify({
           name: form.name,
+          channel: form.channel,
           template_id: form.template_id || null,
           webhook_url: form.webhook_url || null,
           tenant_id: isMaster ? form.tenant_id || null : null,
@@ -53,7 +61,7 @@ export default function Integrations() {
       }),
     onSuccess: (created) => {
       setRevealed(created)
-      setForm({ name: '', template_id: '', webhook_url: '', tenant_id: '' })
+      setForm({ name: '', channel: 'api', template_id: '', webhook_url: '', tenant_id: '' })
       setError('')
       qc.invalidateQueries({ queryKey: ['integrations'] })
     },
@@ -81,17 +89,19 @@ export default function Integrations() {
 
   return (
     <div className="space-y-6">
+      <PageHeader title="Integrações" description="Gere credenciais de API para uso externo (webhooks, apps)." />
+
       {revealed?.api_key && (
         <Card title="Guarde estas credenciais — não serão mostradas de novo">
           <div className="space-y-2 font-mono text-sm">
-            <p className="text-emerald-300" data-testid="revealed-key">
+            <p className="text-[var(--success)]" data-testid="revealed-key">
               API key: {revealed.api_key}
             </p>
             {revealed.webhook_secret && (
-              <p className="text-amber-300">Webhook secret: {revealed.webhook_secret}</p>
+              <p className="text-[var(--info)]">Webhook secret: {revealed.webhook_secret}</p>
             )}
           </div>
-          <p className="mt-3 text-xs text-slate-400">
+          <p className="mt-3 text-xs text-[var(--text-muted)]">
             Use no header: <code>Authorization: Bearer &lt;API key&gt;</code> em{' '}
             <code>POST /v1/messages</code> — modos sync, stream (SSE) ou webhook.
           </p>
@@ -101,7 +111,7 @@ export default function Integrations() {
         </Card>
       )}
 
-      <Card title="Nova integração (API)">
+      <Card title="Nova integração">
         <form onSubmit={onSubmit} className="grid gap-3 sm:grid-cols-2">
           <Input
             label="Nome do sistema consumidor"
@@ -110,6 +120,16 @@ export default function Integrations() {
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
           />
+          <Select
+            label="Canal"
+            hint="API para integrar outro sistema; WhatsApp para atender pelo número da empresa."
+            name="int-channel"
+            value={form.channel}
+            onChange={(e) => setForm({ ...form, channel: e.target.value })}
+          >
+            <option value="api">API (máquina a máquina)</option>
+            <option value="whatsapp">WhatsApp (W-API)</option>
+          </Select>
           <Select
             label="Template padrão"
             name="int-template"
@@ -156,18 +176,26 @@ export default function Integrations() {
         </form>
       </Card>
 
-      <Card title="Integrações">
-        <Table headers={['Nome', 'Chave', 'Webhook', 'Status', '']}>
+      <Card title="Todas as integrações">
+        <Table headers={['Nome', 'Canal', 'Chave', 'Webhook', 'Status', '']}>
           {integrations.map((i) => (
-            <tr key={i.id} data-testid="integration-row">
-              <td className="px-3 py-2 text-slate-200">{i.name}</td>
-              <td className="px-3 py-2 font-mono text-xs text-slate-400">{i.key_prefix}</td>
-              <td className="px-3 py-2 text-xs text-slate-400">{i.webhook_url ?? '—'}</td>
+            <tr key={i.id} data-testid="integration-row" className="transition hover:bg-[var(--brand-soft)]">
+              <td className="px-3 py-2 text-[var(--text)]">{i.name}</td>
+              <td className="px-3 py-2 text-[var(--text-muted)]">
+                {i.channel === 'whatsapp' ? 'WhatsApp' : 'API'}
+              </td>
+              <td className="px-3 py-2 font-mono text-xs text-[var(--text-muted)]">{i.key_prefix}</td>
+              <td className="px-3 py-2 text-xs text-[var(--text-muted)]">{i.webhook_url ?? '—'}</td>
               <td className="px-3 py-2">
                 <Badge ok={i.is_active}>{i.is_active ? 'Ativa' : 'Revogada'}</Badge>
               </td>
               <td className="px-3 py-2 text-right">
                 <div className="flex justify-end gap-2">
+                  {i.channel === 'whatsapp' && (
+                    <Button variant="ghost" onClick={() => setWhatsapp(i)}>
+                      Conexão WhatsApp
+                    </Button>
+                  )}
                   <Button variant="ghost" onClick={() => rotate.mutate(i.id)}>
                     Rotacionar chave
                   </Button>
@@ -182,6 +210,146 @@ export default function Integrations() {
           ))}
         </Table>
       </Card>
+
+      {whatsapp && <WhatsappPanel integration={whatsapp} onClose={() => setWhatsapp(null)} />}
     </div>
+  )
+}
+
+interface WhatsappConnection {
+  id: string
+  instance_id: string
+  api_base: string
+  has_token: boolean
+  is_active: boolean
+  last_test_ok: boolean | null
+  webhook_path: string
+}
+
+/** Conexão da instância W-API que atende esta integração. */
+function WhatsappPanel({ integration, onClose }: { integration: Integration; onClose: () => void }) {
+  const qc = useQueryClient()
+  const { data: connection } = useQuery({
+    queryKey: ['whatsapp', integration.id],
+    queryFn: async () => {
+      try {
+        return await api<WhatsappConnection>(`/integrations/${integration.id}/whatsapp`)
+      } catch {
+        // 404 = ainda não configurada; o formulário abre em branco.
+        return null
+      }
+    },
+  })
+
+  const [instanceId, setInstanceId] = useState('')
+  const [token, setToken] = useState('')
+  const [apiBase, setApiBase] = useState('https://api.w-api.app/v1')
+  const [error, setError] = useState('')
+  const [testResult, setTestResult] = useState('')
+
+  useEffect(() => {
+    if (connection) {
+      setInstanceId(connection.instance_id)
+      setApiBase(connection.api_base)
+    }
+  }, [connection])
+
+  const save = useMutation({
+    mutationFn: () =>
+      api<WhatsappConnection>(`/integrations/${integration.id}/whatsapp`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          instance_id: instanceId,
+          token: token || undefined,
+          api_base: apiBase,
+          is_active: true,
+        }),
+      }),
+    onSuccess: () => {
+      setToken('')
+      setError('')
+      qc.invalidateQueries({ queryKey: ['whatsapp', integration.id] })
+    },
+    onError: (e: Error) => setError(e.message),
+  })
+
+  const test = useMutation({
+    mutationFn: () =>
+      api<{ ok: boolean; detail: string }>(`/integrations/${integration.id}/whatsapp/test`, {
+        method: 'POST',
+      }),
+    onSuccess: (r) => setTestResult(r.ok ? 'Conexão OK' : `Falhou: ${r.detail}`),
+    onError: (e: Error) => setTestResult(`Falhou: ${e.message}`),
+  })
+
+  const webhookUrl = `${window.location.origin}/webhooks/whatsapp/${integration.id}`
+
+  return (
+    <Card
+      title={`Conexão WhatsApp — ${integration.name}`}
+      actions={
+        <Button variant="ghost" onClick={onClose}>
+          Fechar
+        </Button>
+      }
+    >
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          save.mutate()
+        }}
+        className="grid gap-3 sm:grid-cols-2"
+      >
+        <Input
+          label="Instance ID"
+          required
+          name="wa-instance"
+          value={instanceId}
+          onChange={(e) => setInstanceId(e.target.value)}
+        />
+        <Input
+          label="Token da instância"
+          hint={connection?.has_token ? 'Já salvo. Preencha só para substituir.' : 'Token da W-API.'}
+          type="password"
+          name="wa-token"
+          autoComplete="off"
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+        />
+        <Input
+          label="URL base da W-API"
+          name="wa-base"
+          value={apiBase}
+          onChange={(e) => setApiBase(e.target.value)}
+        />
+        <div className="flex items-end gap-3">
+          <Button type="submit" disabled={save.isPending}>
+            {save.isPending ? 'Salvando…' : 'Salvar conexão'}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={!connection || test.isPending}
+            onClick={() => test.mutate()}
+          >
+            Testar conexão
+          </Button>
+        </div>
+        <div className="sm:col-span-2 space-y-3">
+          {testResult && <p className="text-sm text-[var(--text-muted)]">{testResult}</p>}
+          <ErrorText>{error}</ErrorText>
+          <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-faint)]">
+              URL de webhook
+            </p>
+            <p className="mt-2 break-all font-mono text-xs text-[var(--text-muted)]">{webhookUrl}</p>
+            <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">
+              Cadastre esta URL no painel da W-API. As conversas recebidas aparecem no Chat com o
+              selo WhatsApp, em modo leitura.
+            </p>
+          </div>
+        </div>
+      </form>
+    </Card>
   )
 }

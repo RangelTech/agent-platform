@@ -1,12 +1,12 @@
 """Artifact access for the frontend: metadata, JSON payload (charts) and
-file download (signed GCS URL in production, streamed file in dev)."""
+file download (signed object-storage URL in production, streamed file in dev)."""
 
 import json
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import RedirectResponse, Response
 
+from app.artifacts_io import load_bytes, signed_download_url
 from app.auth import current_user
 from app.db import get_connection
 
@@ -31,16 +31,6 @@ def _scoped(artifact_id: str, user: dict) -> dict:
     return row
 
 
-def _load_bytes(storage_path: str) -> bytes:
-    if storage_path.startswith("gs://"):
-        from google.cloud import storage as gcs
-
-        _, _, rest = storage_path.partition("gs://")
-        bucket_name, _, blob_name = rest.partition("/")
-        return gcs.Client().bucket(bucket_name).blob(blob_name).download_as_bytes()
-    return Path(storage_path).read_bytes()
-
-
 @router.get("/artifacts/{artifact_id}")
 def get_artifact(artifact_id: str, user: dict = Depends(current_user)):
     row = _scoped(artifact_id, user)
@@ -62,7 +52,7 @@ def get_payload(artifact_id: str, user: dict = Depends(current_user)):
     row = _scoped(artifact_id, user)
     if row["content_type"] != "application/json":
         raise HTTPException(status_code=400, detail="Artifact não é JSON — use /download")
-    data = _load_bytes(row["storage_path"])
+    data = load_bytes(row["storage_path"])
     if len(data) > _PAYLOAD_CAP_BYTES:
         raise HTTPException(status_code=413, detail="Payload grande demais — use /download")
     return json.loads(data)
@@ -71,25 +61,13 @@ def get_payload(artifact_id: str, user: dict = Depends(current_user)):
 @router.get("/artifacts/{artifact_id}/download")
 def download(artifact_id: str, user: dict = Depends(current_user)):
     row = _scoped(artifact_id, user)
-    if row["storage_path"].startswith("gs://"):
-        from datetime import timedelta
-
-        from google.cloud import storage as gcs
-
-        _, _, rest = row["storage_path"].partition("gs://")
-        bucket_name, _, blob_name = rest.partition("/")
-        try:
-            url = (
-                gcs.Client()
-                .bucket(bucket_name)
-                .blob(blob_name)
-                .generate_signed_url(expiration=timedelta(hours=1))
-            )
+    try:
+        url = signed_download_url(row["storage_path"], expires_seconds=3600)
+        if url:
             return RedirectResponse(url)
-        except Exception:  # noqa: BLE001 — sign can fail without SA key; stream instead
-            data = _load_bytes(row["storage_path"])
-    else:
-        data = _load_bytes(row["storage_path"])
+    except Exception:  # noqa: BLE001 — sign can fail without credentials; stream instead
+        pass
+    data = load_bytes(row["storage_path"])
     filename = row["title"].replace('"', "") or "arquivo"
     return Response(
         content=data,

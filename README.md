@@ -20,6 +20,11 @@ docker compose up --build
 # kernel:  http://localhost:8080/health
 ```
 
+Docker here is a local developer convenience only. Production does **not** depend
+on a local Docker daemon: the target runtime is Cloud Run for compute, VPS
+PostgreSQL for the database, and S3-compatible object storage (for example
+MinIO) for uploads/artifacts.
+
 Local (no docker) — Python 3.12, Node 20+:
 
 ```bash
@@ -33,11 +38,11 @@ cd kernel && py -3.12 -m venv .venv && .venv/Scripts/pip install -r requirements
 cd frontend && npm install && npm run build   # backend serves frontend/dist
 ```
 
-Postgres dev: `docker compose up postgres` (pgvector/pg16, db `agent_llm`, user/pass `agent/agent`).
+Postgres dev: `docker compose up postgres` (pgvector/pg16, db `agent_llm`, user/pass `agent/agent`). This is only for local integration tests and local development.
 
 ## Conventions
 
 - Code, identifiers and comments: **English**. UI copy and agent prompts: **PT-BR**.
-- All state in Postgres. No Redis. Files/artifacts in GCS (prod) or local dir (dev).
+- All state in Postgres. No Redis. Files/artifacts in S3-compatible storage or GCS in production, and local dir in dev.
 - Migrations: SQL files in `backend/migrations/`, applied automatically on backend boot.
 - Tests: black-box at the HTTP seam (`pytest`), LLM faked via deterministic stub provider. `-m integration` requires a running Postgres.

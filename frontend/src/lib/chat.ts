@@ -4,6 +4,9 @@ export interface ChatSummary {
   id: string
   title: string
   template_id: string | null
+  /** 'web' para conversas da UI; 'whatsapp' para conversas vindas do canal. */
+  channel?: string
+  external_contact?: string | null
   created_at: string
   updated_at: string
 }

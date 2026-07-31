@@ -1,6 +1,6 @@
 import { useMutation } from '@tanstack/react-query'
 import { useRef, useState, type FormEvent } from 'react'
-import { Button, Card, ErrorText, Input, Select } from '../components/ui'
+import { Button, Card, ErrorText, Input, PageHeader, Select } from '../components/ui'
 import { api, getToken } from '../lib/api'
 import { useAuth } from '../lib/auth'
 
@@ -55,7 +55,9 @@ export default function Customize() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
-      <Card title="Personalizar a plataforma da sua empresa">
+      <PageHeader title="Personalizar" description="Ajuste marca, cor e tema para seus usuários." />
+
+      <Card title="Identidade visual">
         <form onSubmit={onSubmit} className="space-y-4">
           <Input
             label="Nome exibido (marca)"
@@ -118,7 +120,7 @@ export default function Customize() {
             <Button type="submit" disabled={save.isPending}>
               Salvar personalização
             </Button>
-            {saved && <span className="text-sm text-emerald-400">Salvo ✓</span>}
+            {saved && <span className="text-sm text-[var(--success)]">Salvo ✓</span>}
             <ErrorText>{error}</ErrorText>
           </div>
         </form>

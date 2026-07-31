@@ -6,6 +6,9 @@ degrades to the tenant's default service, then env config, then the stub —
 a missing setup never breaks the chat.
 """
 
+import json
+import re
+
 from app.config import settings
 from app.crypto import decrypt
 from app.db import get_connection
@@ -63,6 +66,79 @@ def _embedding_spec(conn, tenant_id) -> dict:
     return {"provider": "stub"}
 
 
+def _payment_spec(conn, tenant_id) -> dict:
+    """Credencial de gateway do tenant (Fase D).
+
+    Segue o mesmo contrato dos secrets: descriptografada só aqui, atravessa o
+    link interno e é usada dentro da tool — nunca entra no contexto do modelo.
+    """
+    row = conn.execute(
+        """SELECT provider, access_token_encrypted, sandbox, webhook_token
+             FROM payment_credentials
+            WHERE tenant_id = %s AND is_active AND access_token_encrypted IS NOT NULL
+            ORDER BY updated_at DESC LIMIT 1""",
+        (tenant_id,),
+    ).fetchone()
+    if row is None:
+        return {}
+    webhook_path = f"/api/payments/webhooks/mercado-pago/{row['webhook_token']}"
+    base = settings.public_base_url.rstrip("/")
+    return {
+        "provider": row["provider"],
+        "access_token": decrypt(row["access_token_encrypted"]),
+        "sandbox": row["sandbox"],
+        # Sem base pública configurada não há webhook: o agente ainda confirma
+        # o pagamento por check_payment_status.
+        "notification_url": f"{base}{webhook_path}" if base else None,
+    }
+
+
+_CREDENTIAL_REF = re.compile(r"\{\{credential:([A-Za-z0-9_.-]+)\}\}")
+
+
+def _store_servers(conn, tenant_id, template_id) -> list[dict]:
+    """Servidores MCP vindos do MCP Store (Fase E).
+
+    Versão de template é imutável, então uma ativação não reescreve
+    `template_mcp_servers`: ela é resolvida aqui, na montagem do payload, do
+    mesmo jeito que os secrets do tenant. `template_ids` vazio = vale para
+    todos os templates da empresa.
+    """
+    rows = conn.execute(
+        """SELECT a.credentials_encrypted, a.template_ids,
+                  i.slug, i.server_url, i.auth_token_template
+             FROM tenant_mcp_activations a
+             JOIN mcp_catalog_items i ON i.id = a.item_id
+            WHERE a.tenant_id = %s AND a.is_active AND i.is_active AND NOT i.is_native""",
+        (tenant_id,),
+    ).fetchall()
+
+    servers = []
+    for row in rows:
+        targets = [str(t) for t in (row["template_ids"] or [])]
+        if targets and str(template_id) not in targets:
+            continue
+        credentials = (
+            json.loads(decrypt(row["credentials_encrypted"]) or "{}")
+            if row["credentials_encrypted"]
+            else {}
+        )
+
+        def fill(text: str, values: dict = credentials) -> str:
+            # `values` como default liga a credencial desta iteração à função;
+            # sem isso a closure enxergaria a última do laço.
+            return _CREDENTIAL_REF.sub(lambda m: values.get(m.group(1), ""), text or "")
+
+        servers.append(
+            {
+                "name": row["slug"],
+                "url": fill(row["server_url"]),
+                "auth_token": fill(row["auth_token_template"]) or None,
+            }
+        )
+    return servers
+
+
 def _default_service(conn, tenant_id) -> dict | None:
     return conn.execute(
         """SELECT * FROM ai_services
@@ -97,7 +173,8 @@ def build_run_payload(tenant_id, template_id: str | None) -> dict:
                 "max_steps": 4,
                 "tenant_id": str(tenant_id),
                 "secrets": {},
-                "mcp_servers": [],
+                "mcp_servers": _store_servers(conn, tenant_id, None),
+                "payment": _payment_spec(conn, tenant_id),
             }
 
         def service_by_id(service_id):
@@ -164,6 +241,12 @@ def build_run_payload(tenant_id, template_id: str | None) -> dict:
             }
             for s in server_rows
         ]
+        # Itens ativados no MCP Store entram sem sobrescrever o que a versão
+        # do template já declara explicitamente.
+        declared = {s["name"] for s in mcp_servers}
+        mcp_servers += [
+            s for s in _store_servers(conn, tenant_id, template_id) if s["name"] not in declared
+        ]
 
         return {
             "supervisor": {
@@ -195,6 +278,7 @@ def build_run_payload(tenant_id, template_id: str | None) -> dict:
             "mcp_servers": mcp_servers,
             "datasources": datasources,
             "embedding": _embedding_spec(conn, tenant_id),
+            "payment": _payment_spec(conn, tenant_id),
             "write_tables": version.get("write_tables") or [],
             "require_write_confirmation": version.get("require_write_confirmation", True),
         }

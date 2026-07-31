@@ -7,6 +7,9 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql://agent:agent@localhost:5433/agent_llm"
     port: int = 8080
+    # Base da API do gateway de pagamento. Só muda em teste, para apontar para
+    # um servidor falso em vez do Mercado Pago real.
+    mercado_pago_api: str = "https://api.mercadopago.com"
     # Hard ceiling for one conversation turn, model call included.
     turn_timeout_seconds: float = 120.0
     # Default supervisor step budget per turn when the template omits it.
@@ -21,7 +24,17 @@ class Settings(BaseSettings):
     # Pages a single analyze_pdf_pages call may send to the vision model.
     pdf_vision_max_pages: int = 20
 
-    # Artifact payload storage: GCS when bucket is set, local dir otherwise.
+    # Artifact payload storage. Priority: S3-compatible (MinIO) -> GCS -> local
+    # dir. Must match the backend's settings so both sides read the same paths.
+    storage_backend: str = ""
+    s3_endpoint_url: str = ""
+    s3_region: str = "us-east-1"
+    s3_bucket: str = ""
+    s3_access_key_id: str = ""
+    s3_secret_access_key: str = ""
+    s3_prefix: str = "agent-llm"
+    s3_public_base_url: str = ""
+    s3_presign_expires_seconds: int = 3600
     gcs_bucket: str = ""
     gcs_prefix: str = "agent llm"
     artifacts_local_dir: str = "./artifacts"

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { expectSectionAvailable, gotoSection } from './helpers'
 
 const MASTER_EMAIL = process.env.E2E_MASTER_EMAIL ?? 'master@example.com'
 const MASTER_PASSWORD = process.env.E2E_MASTER_PASSWORD ?? 'admin123'
@@ -39,7 +40,7 @@ test('admin creates a custom profile, edits a user, permissions apply', async ({
   await signIn(page, adminEmail, 'senha-forte-123')
 
   // Create the custom profile: only usage.view (plus chat implicitly free).
-  await page.getByRole('link', { name: 'Perfis' }).click()
+  await gotoSection(page, 'Perfis')
   await page.getByRole('button', { name: '+ Novo perfil' }).click()
   await page.fill('input[name="profile-name"]', 'Somente Consumo')
   await page.getByTestId('perm-usage-view').check()
@@ -48,12 +49,12 @@ test('admin creates a custom profile, edits a user, permissions apply', async ({
 
   // Create a user with that profile.
   const userEmail = `viewer-${suffix}@perf.com`
-  await page.getByRole('link', { name: 'Usuários' }).click()
+  await gotoSection(page, 'Usuários')
   await page.fill('input[name="user-name"]', 'Viewer')
   await page.fill('input[name="user-email"]', userEmail)
   await page.fill('input[name="user-password"]', 'senha-forte-123')
   await page.selectOption('select[name="user-profile"]', { label: 'Somente Consumo' })
-  await page.getByRole('button', { name: 'Criar usuário' }).click()
+  await page.getByRole('button', { name: /Criar usuário|Novo usuário/ }).click()
   await expect(page.getByText(userEmail)).toBeVisible()
 
   // Edit the user: rename + reset password through the UI.
@@ -71,9 +72,9 @@ test('admin creates a custom profile, edits a user, permissions apply', async ({
   // New password works; old is dead; permissions match the custom profile.
   await signIn(page, userEmail, 'senha-nova-4567')
   await expect(page.getByTestId('current-user')).toHaveText('Viewer Renomeada')
-  await expect(page.getByRole('link', { name: 'Consumo' })).toBeVisible()
-  await expect(page.getByRole('link', { name: 'Usuários' })).toHaveCount(0)
-  await expect(page.getByRole('link', { name: 'Templates' })).toHaveCount(0)
+  await expectSectionAvailable(page, 'Consumo')
+  await expectSectionAvailable(page, 'Usuários', false)
+  await expectSectionAvailable(page, 'Templates', false)
 
   // Backend enforces it too, not just the nav.
   const viewerToken = (

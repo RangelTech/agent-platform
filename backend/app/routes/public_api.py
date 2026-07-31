@@ -9,14 +9,13 @@ Auth: Bearer API key from an active integration. Modes:
 Conversation continuity: external_session_id maps to a stable kernel thread.
 """
 
-import asyncio
 import hashlib
 import hmac
 import json
 import logging
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -169,7 +168,9 @@ async def _deliver_webhook(integration: dict, session_id: str, kernel_payload: d
 
 
 @router.post("/messages")
-async def public_message(request: Request, payload: PublicMessageIn):
+async def public_message(
+    request: Request, payload: PublicMessageIn, background: BackgroundTasks
+):
     integration = _authenticate(request)
     _enforce_rate_limit(integration)
     _log_message(
@@ -180,8 +181,11 @@ async def public_message(request: Request, payload: PublicMessageIn):
     if payload.mode == "webhook":
         if not integration["webhook_url"]:
             raise HTTPException(status_code=400, detail="Integração sem webhook_url")
-        asyncio.get_running_loop().create_task(
-            _deliver_webhook(dict(integration), payload.external_session_id, kernel_payload)
+        # BackgroundTasks (e não create_task solto): a entrega roda depois da
+        # resposta, mas ainda dentro do ciclo de vida da requisição — uma task
+        # órfã morre junto com o loop quando o servidor recicla o worker.
+        background.add_task(
+            _deliver_webhook, dict(integration), payload.external_session_id, kernel_payload
         )
         return {"status": "accepted"}
 

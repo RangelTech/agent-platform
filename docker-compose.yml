@@ -22,10 +22,14 @@ services:
     environment:
       DATABASE_URL: postgresql://agent:agent@postgres:5432/agent_llm
       PORT: "8080"
-      # Dev only: both services share one volume standing in for GCS.
+      STORAGE_BACKEND: local
+      # Dev only: both services share one volume standing in for object storage.
       ARTIFACTS_LOCAL_DIR: /srv/shared-storage
+      # Dev only: local BigQuery ADC for homologacao (mi-prd-lake read access).
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/mi-prd-lake-sa.json
     volumes:
       - shared_storage:/srv/shared-storage
+      - ../../personal-skills/secrets/mi-prd-lake-sa.json:/secrets/mi-prd-lake-sa.json:ro
     ports:
       - "8080:8080"
     depends_on:
@@ -40,6 +44,7 @@ services:
       DATABASE_URL: postgresql://agent:agent@postgres:5432/agent_llm
       KERNEL_URL: http://kernel:8080
       PORT: "8090"
+      STORAGE_BACKEND: local
       STORAGE_LOCAL_DIR: /srv/shared-storage
     volumes:
       - shared_storage:/srv/shared-storage
