@@ -21,6 +21,7 @@ import Integrations from './pages/Integrations'
 import Login from './pages/Login'
 import McpStore from './pages/McpStore'
 import Memories from './pages/Memories'
+import Omnichannel from './pages/Omnichannel'
 import Payments from './pages/Payments'
 import Customize from './pages/Customize'
 import Profiles from './pages/Profiles'
@@ -64,6 +65,7 @@ function Shell() {
     { to: '/integracoes', label: 'Integrações', show: can('integrations', 'view') },
     { to: '/pagamentos', label: 'Pagamentos', show: can('payments', 'view') },
     { to: '/mcp-store', label: 'MCP Store', show: can('mcp_store', 'view') },
+    { to: '/atendimento', label: 'Atendimento', show: can('omnichannel', 'view') },
     { to: '/personalizar', label: 'Personalizar', show: !(user?.is_master ?? false) && can('users', 'edit') },
   ].filter((l) => l.show)
 
@@ -224,6 +226,7 @@ function Shell() {
               <Route path="/integracoes" element={<Integrations />} />
               <Route path="/pagamentos" element={<Payments />} />
               <Route path="/mcp-store" element={<McpStore />} />
+              <Route path="/atendimento" element={<Omnichannel />} />
               <Route path="/personalizar" element={<Customize />} />
               <Route path="*" element={<Navigate to={links[0]?.to ?? '/usuarios'} replace />} />
             </Routes>

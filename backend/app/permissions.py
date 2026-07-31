@@ -17,6 +17,7 @@ RESOURCES = (
     "usage",
     "payments",
     "mcp_store",
+    "omnichannel",
 )
 
 ACTIONS = ("view", "create", "edit", "delete")

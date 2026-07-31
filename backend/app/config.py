@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     # Base da API do Mercado Pago; só muda em teste.
     mercado_pago_api: str = "https://api.mercadopago.com"
 
+    # Camada omnichannel (Fase 2): a ponte que fala com o Chatwoot. Vazio
+    # desliga a funcionalidade sem quebrar nada.
+    bridge_url: str = ""
+    bridge_admin_token: str = ""
+
     # Object storage (uploads). Priority: S3-compatible (MinIO) -> GCS -> local
     # dir. Must match the kernel's settings so both sides read the same paths.
     storage_backend: str = ""

@@ -47,7 +47,7 @@ deploy_backend() {
     --project=$PROJECT --region=$REGION \
     --image=$REPO/teste_ia-backend:$SHORT_SHA \
     --service-account=$RUNTIME_SA \
-    --set-secrets=DATABASE_URL=teste-ia-database-url:latest,ENCRYPTION_KEY=teste-ia-encryption-key:latest,S3_ACCESS_KEY_ID=teste-ia-s3-access-key:latest,S3_SECRET_ACCESS_KEY=teste-ia-s3-secret-key:latest \
+    --set-secrets=DATABASE_URL=teste-ia-database-url:latest,ENCRYPTION_KEY=teste-ia-encryption-key:latest,S3_ACCESS_KEY_ID=teste-ia-s3-access-key:latest,S3_SECRET_ACCESS_KEY=teste-ia-s3-secret-key:latest,BRIDGE_ADMIN_TOKEN=teste-ia-bridge-admin-token:latest \
     --set-env-vars="KERNEL_URL=$kernel_url,KERNEL_AUDIENCE=$kernel_url,STORAGE_BACKEND=s3,S3_BUCKET=teste-ia,S3_ENDPOINT_URL=https://storage.rangeltech.net,S3_REGION=us-east-1,S3_PREFIX=agent-llm" \
     --allow-unauthenticated \
     --memory=512Mi --cpu=1 --min-instances=0 --max-instances=5 \

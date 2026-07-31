@@ -17,6 +17,7 @@ from app.routes import files as file_routes
 from app.routes import integrations as integration_routes
 from app.routes import mcp_store as mcp_store_routes
 from app.routes import memories as memory_routes
+from app.routes import omnichannel as omnichannel_routes
 from app.routes import payments as payment_routes
 from app.routes import profiles as profile_routes
 from app.routes import public_api as public_routes
@@ -82,6 +83,7 @@ app.include_router(toolkit_routes.router)
 app.include_router(payment_routes.router)
 app.include_router(mcp_store_routes.router)
 app.include_router(whatsapp_routes.router)
+app.include_router(omnichannel_routes.router)
 
 
 def _mount_spa(application: FastAPI) -> None:
