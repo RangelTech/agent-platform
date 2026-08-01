@@ -94,3 +94,45 @@ test('o seletor de template continua acessível no cabeçalho', async ({ page, r
   await openChat(page, request)
   await expect(page.locator('select[name="template-picker"]')).toBeVisible()
 })
+
+test('a conversa ocupa mais espaço que a área de escrita', async ({ page, request }) => {
+  await openChat(page, request)
+  const lista = await page.getByTestId('message-list').boundingBox()
+  const composer = await page.locator('[name="chat-input"]').boundingBox()
+  const viewport = page.viewportSize()!
+
+  // O campo começa com uma linha; a moldura em volta dele não pode competir
+  // com a conversa por altura.
+  expect(composer!.height).toBeLessThan(60)
+  expect(lista!.height).toBeGreaterThan(viewport.height * 0.5)
+})
+
+test('o campo de escrita cresce com o texto e para num teto', async ({ page, request }) => {
+  await openChat(page, request)
+  const campo = page.locator('[name="chat-input"]')
+  const vazio = (await campo.boundingBox())!.height
+
+  await campo.fill(Array(5).join('linha' + String.fromCharCode(10)))
+  const comQuatroLinhas = (await campo.boundingBox())!.height
+  expect(comQuatroLinhas).toBeGreaterThan(vazio)
+
+  await campo.fill(Array(41).join('linha' + String.fromCharCode(10)))
+  const comQuarentaLinhas = (await campo.boundingBox())!.height
+  // Rascunho longo rola por dentro em vez de engolir a conversa.
+  expect(comQuarentaLinhas).toBeLessThanOrEqual(240)
+})
+
+test('Enter envia e Shift+Enter quebra linha', async ({ page, request }) => {
+  await openChat(page, request)
+  const campo = page.locator('[name="chat-input"]')
+
+  await campo.fill('primeira')
+  await campo.press('Shift+Enter')
+  await campo.type('segunda')
+  expect(await campo.inputValue()).toBe('primeira' + String.fromCharCode(10) + 'segunda')
+
+  await campo.fill('')
+  // Enter com o campo vazio não dispara envio nenhum.
+  await campo.press('Enter')
+  await expect(page.getByTestId('message-list')).not.toContainText('Você')
+})

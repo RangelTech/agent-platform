@@ -27,6 +27,10 @@ function formatRelativeDate(value: string) {
   }).format(date)
 }
 
+// Teto do campo de texto: acima disso ele rola por dentro, para um rascunho
+// longo não engolir a conversa.
+const MAX_COMPOSER_PX = 220
+
 const SIDEBAR_KEY = 'chat.painel.conversas'
 const TILES_KEY = 'chat.painel.live-tiles'
 
@@ -77,6 +81,7 @@ export default function Chat() {
   const chatIdRef = useRef<string | null>(null)
   const recorderRef = useRef<MediaRecorder | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const draftRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     chatIdRef.current = activeChat
@@ -212,6 +217,15 @@ export default function Chat() {
     : tilesOpen
       ? 'lg:grid-cols-[56px_minmax(0,1fr)] xl:grid-cols-[56px_minmax(0,1fr)_320px]'
       : 'lg:grid-cols-[56px_minmax(0,1fr)] xl:grid-cols-[56px_minmax(0,1fr)_56px]'
+
+  // O campo acompanha o texto: uma linha quando vazio, crescendo até o teto.
+  // Antes ele reservava quatro linhas mesmo vazio, e isso saía da conversa.
+  useEffect(() => {
+    const node = draftRef.current
+    if (!node) return
+    node.style.height = 'auto'
+    node.style.height = `${Math.min(node.scrollHeight, MAX_COMPOSER_PX)}px`
+  }, [draft])
 
   const emptyState = !activeChat && messages.length === 0 && !streaming
   // Conversa de canal externo é histórico: responder por ela exigiria assumir
@@ -365,8 +379,8 @@ export default function Chat() {
 
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="flex min-h-0 flex-1 flex-col">
-            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6" data-testid="message-list">
-              <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
+            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4" data-testid="message-list">
+              <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
                 {emptyState && (
                   <section className="rounded-[28px] border border-[var(--border)] bg-[var(--surface)] px-8 py-10 shadow-[0_24px_90px_rgba(15,23,42,0.16)]">
                     <span className="inline-flex rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">
@@ -512,8 +526,8 @@ export default function Chat() {
               </div>
             </div>
 
-            <div className="border-t border-[var(--border)] px-6 py-5 backdrop-blur-xl">
-              <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 rounded-[28px] border border-[var(--border)] bg-[var(--surface)] p-4 shadow-[0_30px_90px_rgba(15,23,42,0.18)]">
+            <div className="border-t border-[var(--border)] px-6 py-3 backdrop-blur-xl">
+              <div className="mx-auto flex w-full max-w-5xl flex-col gap-2 rounded-[24px] border border-[var(--border)] bg-[var(--surface)] p-3 shadow-[0_30px_90px_rgba(15,23,42,0.18)]">
                 {pendingFiles.length > 0 && (
                   <div className="flex flex-wrap gap-2">
                     {pendingFiles.map((f, i) => (
@@ -555,13 +569,34 @@ export default function Chat() {
                     }}
                   />
 
-                  <div className="flex flex-1 flex-col gap-3">
-                    {/* Enviar fica no cabeçalho do composer: a prévia do envio
-                        saiu porque repetia o texto que o usuário está lendo. */}
-                    <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--text-faint)]">
-                      Composer
-                      <span className="rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-2 py-0.5 text-[10px] text-[var(--text-muted)]">
-                        {busy ? 'Enviando' : draft ? 'Digitando' : 'Ocioso'}
+                  <div className="flex flex-1 flex-col gap-2">
+                    {/* Uma barra só: ações, estado e envio. Antes eram duas
+                        linhas de moldura em volta de um campo de texto. */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-sm text-[var(--text)] hover:bg-[var(--surface-elevated)]"
+                        onClick={() => fileInputRef.current?.click()}
+                        title="Anexar arquivo"
+                      >
+                        Anexar arquivo
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={recording ? 'danger' : 'ghost'}
+                        className="rounded-2xl border border-[var(--border)] px-3 py-1.5 text-sm"
+                        onClick={toggleRecording}
+                        title={recording ? 'Parar gravação' : 'Gravar áudio'}
+                      >
+                        {recording ? 'Parar gravação' : 'Gravar áudio'}
+                      </Button>
+                      <span className="hidden text-xs text-[var(--text-faint)] sm:inline">
+                        {busy
+                          ? 'Enviando'
+                          : draft.trim().length > 0
+                            ? `${draft.trim().length} caracteres`
+                            : 'Ocioso'}
                       </span>
                       <Button
                         type="submit"
@@ -571,40 +606,26 @@ export default function Chat() {
                         {busy ? 'Enviando…' : 'Enviar mensagem'}
                       </Button>
                     </div>
-                    <div className="rounded-[24px] border border-[var(--border)] bg-[var(--surface-soft)] p-3 transition focus-within:border-[var(--brand)] focus-within:bg-[var(--surface-elevated)]">
+                    <div className="rounded-[20px] border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-2 transition focus-within:border-[var(--brand)] focus-within:bg-[var(--surface-elevated)]">
                       <textarea
+                        ref={draftRef}
                         name="chat-input"
                         disabled={readOnly}
                         value={draft}
                         onChange={(e) => setDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          // Enter envia; Shift+Enter quebra linha.
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault()
+                            onSubmit(e)
+                          }
+                        }}
                         placeholder="Descreva a tarefa, faça uma pergunta ou adicione contexto operacional…"
                         autoComplete="off"
-                        rows={4}
-                        className="min-h-[112px] w-full resize-none bg-transparent px-1 py-1 text-[15px] leading-7 text-[var(--text)] outline-none placeholder:text-[var(--text-faint)]"
+                        rows={1}
+                        style={{ maxHeight: MAX_COMPOSER_PX }}
+                        className="w-full resize-none overflow-y-auto bg-transparent px-1 py-1 text-[15px] leading-7 text-[var(--text)] outline-none placeholder:text-[var(--text-faint)]"
                       />
-                      <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[var(--border)] pt-3">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-[var(--text)] hover:bg-[var(--surface-elevated)]"
-                          onClick={() => fileInputRef.current?.click()}
-                          title="Anexar arquivo"
-                        >
-                          Anexar arquivo
-                        </Button>
-                        <Button
-                          type="button"
-                          variant={recording ? 'danger' : 'ghost'}
-                          className="rounded-2xl border border-[var(--border)] px-4 py-2"
-                          onClick={toggleRecording}
-                          title={recording ? 'Parar gravação' : 'Gravar áudio'}
-                        >
-                          {recording ? 'Parar gravação' : 'Gravar áudio'}
-                        </Button>
-                        <span className="ml-auto text-xs text-[var(--text-faint)]">
-                          {draft.trim().length > 0 ? `${draft.trim().length} caracteres` : 'Sem texto no momento'}
-                        </span>
-                      </div>
                     </div>
                   </div>
 
