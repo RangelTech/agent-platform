@@ -190,10 +190,9 @@ function Shell() {
             </div>
             <nav data-testid="nav-drawer" className="flex-1 space-y-2 overflow-y-auto">
               {navLinks}
-              {/* Menu curto quase sempre é permissão faltando, não bug. Dizer
-                  isso evita o usuário procurar uma tela que o perfil dele não
-                  alcança. */}
-              {links.length <= 3 && (
+              {/* Quem não administra a empresa vê um menu curto por desenho.
+                  Dizer isso evita procurar uma tela que o perfil não alcança. */}
+              {!user?.is_master && !can('users', 'edit') && (
                 <p
                   data-testid="nav-scope-note"
                   className="mt-4 rounded-2xl border border-dashed border-[var(--border-strong)] bg-[var(--surface-soft)] px-4 py-3 text-sm leading-6 text-[var(--text-muted)]"

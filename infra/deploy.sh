@@ -58,9 +58,14 @@ deploy_backend() {
   local backend_url
   backend_url=$(gcloud run services describe teste-ia-backend \
     --project=$PROJECT --region=$REGION --format='value(status.url)')
+  # A ponte omnichannel (repo chatwoot-rt) é opcional: quando o serviço não
+  # existe, BRIDGE_URL fica vazia e a aba de atendimento simplesmente some.
+  local bridge_url
+  bridge_url=$(gcloud run services describe chatwoot-bridge \
+    --project=$PROJECT --region=$REGION --format='value(status.url)' 2>/dev/null || echo "")
   gcloud run services update teste-ia-backend \
     --project=$PROJECT --region=$REGION \
-    --update-env-vars="PUBLIC_BASE_URL=$backend_url"
+    --update-env-vars="PUBLIC_BASE_URL=$backend_url,BRIDGE_URL=$bridge_url"
 }
 
 case $target in

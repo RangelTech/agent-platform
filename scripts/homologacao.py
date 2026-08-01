@@ -393,6 +393,75 @@ def homolog_hamburgueria(client: httpx.Client, master_token: str) -> dict[str, A
 
 
 
+def homolog_ferragista(client: httpx.Client, master_token: str) -> dict[str, Any]:
+    """Balcão de vendas: consulta de catálogo, cálculo e venda gravada de verdade.
+
+    É o cenário que exercita leitura e escrita no mesmo template, com a
+    confirmação obrigatória no meio — se a confirmação sumir, este caso quebra.
+    """
+    ensure_user_password(client, master_token, "dono@lojademo.com")
+    token = login(client, "dono@lojademo.com", TEST_USER_PASSWORD)
+    templates = list_templates(client, token)
+    tpl = next(t for t in templates if t["name"] == "Balcao de Vendas")
+    datasources = list_datasources(client, token)
+    datasource = next(d for d in datasources if d["name"] == "erp_loja")
+
+    datasource_test = client.post(
+        f"/api/datasources/{datasource['id']}/test", headers=auth(token)
+    )
+    datasource_test.raise_for_status()
+
+    catalogo = send_chat(
+        client,
+        token,
+        "Liste os 3 produtos com maior estoque, com preço, e diga o valor total "
+        "se eu levar 2 unidades de cada.",
+        tpl["id"],
+    )
+    venda = send_chat(
+        client,
+        token,
+        "Quero fechar uma venda de 2 Furadeira 650W para o cliente de id 1. Pode registrar.",
+        tpl["id"],
+        chat_id=catalogo["chat_id"],
+    )
+    confirmacao = send_chat(
+        client,
+        token,
+        "Sim, confirmo o registro dessa venda.",
+        tpl["id"],
+        chat_id=venda["chat_id"],
+    )
+    relatorio = send_chat(
+        client,
+        token,
+        "Quantos pedidos existem no total e qual o valor do último pedido registrado?",
+        tpl["id"],
+        chat_id=confirmacao["chat_id"],
+    )
+
+    steps = [catalogo, venda, confirmacao, relatorio]
+    tools = [t["tool"] for step in steps for t in step["tools"]]
+    has_write = any(
+        tool in {"execute_sql_write", "execute_sql_transaction"} for tool in tools
+    )
+    passed = (
+        datasource_test.json().get("ok") is True
+        and all(step["error"] is None for step in steps)
+        and "run_sql_query" in tools
+        and has_write
+    )
+    return {
+        "case": "ferragista",
+        "passed": passed,
+        "datasource_ok": datasource_test.json().get("ok") is True,
+        "used_sql": "run_sql_query" in tools,
+        "has_write": has_write,
+        "tools": sorted(set(tools)),
+        "steps": steps,
+    }
+
+
 def homolog_matrix(client: httpx.Client, master_token: str) -> dict[str, Any]:
     ensure_user_password(client, master_token, "qa@matrixdemo.com")
     token = login(client, "qa@matrixdemo.com", TEST_USER_PASSWORD)
@@ -489,6 +558,7 @@ def save_results(results: list[dict[str, Any]]) -> None:
 
 CASES: dict[str, Callable[[httpx.Client, str], dict[str, Any]]] = {
     "catalogo": homolog_catalogo,
+    "ferragista": homolog_ferragista,
     "hamburgueria": homolog_hamburgueria,
     "matrix": homolog_matrix,
 }
@@ -496,7 +566,11 @@ CASES: dict[str, Callable[[httpx.Client, str], dict[str, Any]]] = {
 
 def main() -> None:
     which = sys.argv[1] if len(sys.argv) > 1 else "all"
-    selected = ["educacional", "catalogo", "hamburgueria", "matrix"] if which == "all" else [which]
+    selected = (
+        ["educacional", "catalogo", "ferragista", "hamburgueria", "matrix"]
+        if which == "all"
+        else [which]
+    )
     existing = load_existing_results()
     new_results: list[dict[str, Any]] = []
 
