@@ -91,8 +91,8 @@ function Shell() {
   )
 
   return (
-    <div className="min-h-screen bg-[var(--bg)] text-[var(--text)]">
-      <header className="sticky top-0 z-40 border-b border-[var(--border)] bg-[color-mix(in_srgb,var(--bg)_82%,transparent)] backdrop-blur-xl">
+    <div className="flex h-[100dvh] min-h-screen flex-col bg-[var(--bg)] text-[var(--text)]">
+      <header className="sticky top-0 z-40 flex-none border-b border-[var(--border)] bg-[color-mix(in_srgb,var(--bg)_82%,transparent)] backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3 sm:px-6">
           <Button
             type="button"
@@ -188,7 +188,21 @@ function Shell() {
                 ✕
               </Button>
             </div>
-            <nav data-testid="nav-drawer" className="flex-1 space-y-2 overflow-y-auto">{navLinks}</nav>
+            <nav data-testid="nav-drawer" className="flex-1 space-y-2 overflow-y-auto">
+              {navLinks}
+              {/* Menu curto quase sempre é permissão faltando, não bug. Dizer
+                  isso evita o usuário procurar uma tela que o perfil dele não
+                  alcança. */}
+              {links.length <= 3 && (
+                <p
+                  data-testid="nav-scope-note"
+                  className="mt-4 rounded-2xl border border-dashed border-[var(--border-strong)] bg-[var(--surface-soft)] px-4 py-3 text-sm leading-6 text-[var(--text-muted)]"
+                >
+                  Seu perfil dá acesso apenas a estas áreas. Peça a um administrador da empresa para
+                  ampliar suas permissões.
+                </p>
+              )}
+            </nav>
             <div className="mt-4 rounded-[24px] border border-[var(--border)] bg-[var(--surface)] p-4 sm:hidden">
               <p data-testid="current-user-drawer" className="text-sm font-medium text-[var(--text)]">
                 {user?.name}
@@ -202,7 +216,15 @@ function Shell() {
         </div>
       )}
 
-      <main className={isChat ? 'mx-auto flex min-h-[calc(100vh-73px)] w-full max-w-[1680px] px-0 sm:px-4 sm:py-4' : `mx-auto px-4 py-6 ${isDashboard ? 'max-w-7xl' : 'max-w-6xl'}`}>
+      {/* O chat ocupa a altura restante e rola por dentro; as demais rotas
+          rolam a página inteira, como qualquer tela de conteúdo. */}
+      <main
+        className={
+          isChat
+            ? 'mx-auto flex w-full min-h-0 flex-1 max-w-[1920px] overflow-hidden px-0 sm:px-4 sm:py-4'
+            : `mx-auto w-full flex-1 overflow-y-auto px-4 py-6 ${isDashboard ? 'max-w-7xl' : 'max-w-6xl'}`
+        }
+      >
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
             key={location.pathname}
@@ -210,6 +232,7 @@ function Shell() {
             initial="initial"
             animate="animate"
             exit="exit"
+            className={isChat ? 'flex min-h-0 w-full flex-1' : undefined}
           >
             <Routes location={location}>
               <Route path="/dashboard" element={user?.is_master ? <Navigate to="/empresas" /> : <Dashboard />} />

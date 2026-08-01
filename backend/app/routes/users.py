@@ -49,18 +49,38 @@ def list_users(user: dict = Depends(require("users", "view"))):
     return [_serialize(r) for r in rows]
 
 
+def _default_profile_id(conn, tenant_id) -> str | None:
+    """Perfil de entrada quando quem cria não escolhe um.
+
+    Usuário sem perfil fica com permissão nenhuma e some da própria navegação —
+    um estado quebrado que não ajuda ninguém. O primeiro usuário da empresa é o
+    dono dela e entra como administrador; os seguintes entram como usuário
+    comum, e o administrador promove quem precisar.
+    """
+    has_users = conn.execute(
+        "SELECT 1 FROM users WHERE tenant_id = %s LIMIT 1", (tenant_id,)
+    ).fetchone()
+    wanted = "Usuário" if has_users else "Administrador"
+    row = conn.execute(
+        "SELECT id FROM user_profiles WHERE tenant_id = %s AND name = %s",
+        (tenant_id, wanted),
+    ).fetchone()
+    return str(row["id"]) if row else None
+
+
 @router.post("", status_code=201)
 def create_user(payload: UserIn, user: dict = Depends(require("users", "create"))):
     tenant_id = resolve_target_tenant(user, payload.tenant_id)
     with get_connection() as conn:
         _assert_profile_in_tenant(conn, payload.profile_id, tenant_id)
+        profile_id = payload.profile_id or _default_profile_id(conn, tenant_id)
         try:
             row = conn.execute(
                 """INSERT INTO users (tenant_id, profile_id, email, name, password_hash)
                    VALUES (%s, %s, %s, %s, %s) RETURNING *""",
                 (
                     tenant_id,
-                    payload.profile_id,
+                    profile_id,
                     payload.email,
                     payload.name,
                     hash_password(payload.password),

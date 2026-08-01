@@ -198,7 +198,7 @@ export default function Chat() {
   const readOnly = (activeChatMeta?.channel ?? 'web') !== 'web'
 
   return (
-    <div className="grid min-h-[calc(100vh-105px)] w-full grid-cols-1 overflow-hidden rounded-none border border-[var(--border)] bg-[var(--shell-gradient)] shadow-[0_40px_120px_-60px_rgba(15,23,42,0.65)] sm:rounded-[32px] lg:grid-cols-[320px_minmax(0,1fr)] xl:grid-cols-[320px_minmax(0,1fr)_320px]">
+    <div className="grid h-full min-h-0 w-full grid-cols-1 overflow-hidden rounded-none border border-[var(--border)] bg-[var(--shell-gradient)] shadow-[0_40px_120px_-60px_rgba(15,23,42,0.65)] sm:rounded-[32px] lg:grid-cols-[320px_minmax(0,1fr)] xl:grid-cols-[320px_minmax(0,1fr)_320px]">
       <aside className="flex min-h-0 flex-col border-b border-[var(--border)] bg-[color-mix(in_srgb,var(--surface-solid)_84%,transparent)] backdrop-blur-xl lg:border-r lg:border-b-0">
         <div className="border-b border-[var(--border)] px-5 py-5">
           <div className="mb-4 flex items-start justify-between gap-3">
@@ -334,7 +334,7 @@ export default function Chat() {
           </div>
         </div>
 
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-0">
+        <div className="flex min-h-0 flex-1 flex-col">
           <div className="flex min-h-0 flex-col">
             <div className="border-b border-[var(--border)] px-6 py-4">
               <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-end">
@@ -621,76 +621,76 @@ export default function Chat() {
               </div>
             </div>
           </div>
-
-          <aside className="hidden min-h-0 border-l border-[var(--border)] bg-[color-mix(in_srgb,var(--surface-solid)_72%,transparent)] xl:flex xl:flex-col xl:col-start-3 xl:row-start-1">
-            <div className="border-b border-[var(--border)] px-5 py-5">
-              <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-[var(--text-faint)]">Live tiles</p>
-              <h3 className="mt-2 text-lg font-semibold text-[var(--text)]">Visão operacional</h3>
-              <p className="mt-1 text-sm leading-6 text-[var(--text-muted)]">
-                Indicadores rápidos da sessão atual para orientar a próxima ação.
-              </p>
-            </div>
-            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-5">
-              <div className="rounded-[24px] border border-[var(--border)] bg-[var(--surface)] p-4">
-                <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Status da execução</p>
-                <p className="mt-3 text-base font-semibold text-[var(--text)]">{busy ? 'Processando resposta' : 'Aguardando próxima instrução'}</p>
-                <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">
-                  {workingAgent
-                    ? `${workingAgent} está conduzindo a etapa ativa do fluxo.`
-                    : 'Nenhum agente especializado está rodando neste instante.'}
-                </p>
-              </div>
-
-              <div className="rounded-[24px] border border-[var(--border)] bg-[var(--surface)] p-4">
-                <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Última conversa</p>
-                <p className="mt-3 text-base font-semibold text-[var(--text)]">
-                  {activeChatMeta ? conversationTitle(activeChatMeta) : 'Ainda não iniciada'}
-                </p>
-                <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">
-                  {messages.length > 0
-                    ? `${messages.length} mensagens na sessão e ${assistantMessages} respostas do assistente.`
-                    : 'Selecione uma conversa recente ou inicie uma nova sessão.'}
-                </p>
-              </div>
-
-              <div className="rounded-[24px] border border-[var(--border)] bg-[var(--surface)] p-4">
-                <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Template ativo</p>
-                <p className="mt-3 text-base font-semibold text-[var(--text)]">{activeTemplate?.name || 'Padrão'}</p>
-                <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">
-                  {activeTemplate?.description || 'Use o seletor acima para aplicar um template com ferramentas e guardrails específicos.'}
-                </p>
-              </div>
-
-              <div className="rounded-[24px] border border-[var(--border)] bg-[var(--surface)] p-4">
-                <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Checklist da sessão</p>
-                <div className="mt-3 space-y-3 text-sm text-[var(--text-muted)]">
-                  {[
-                    {
-                      label: 'Contexto anexado',
-                      done: totalAttachments > 0,
-                    },
-                    {
-                      label: 'Template selecionado',
-                      done: Boolean(templateId),
-                    },
-                    {
-                      label: 'Primeira resposta gerada',
-                      done: assistantMessages > 0,
-                    },
-                  ].map((item) => (
-                    <div key={item.label} className="flex items-center justify-between gap-3 rounded-2xl bg-[var(--surface-soft)] px-3 py-3">
-                      <span>{item.label}</span>
-                      <span className={`rounded-full px-2 py-1 text-[11px] ${item.done ? 'bg-[var(--success-soft)] text-[var(--success)]' : 'bg-[var(--surface-elevated)] text-[var(--text-faint)]'}`}>
-                        {item.done ? 'OK' : 'Pendente'}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </aside>
         </div>
       </section>
+
+      <aside className="hidden min-h-0 border-l border-[var(--border)] bg-[color-mix(in_srgb,var(--surface-solid)_72%,transparent)] xl:flex xl:flex-col xl:col-start-3 xl:row-start-1">
+        <div className="border-b border-[var(--border)] px-5 py-5">
+          <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-[var(--text-faint)]">Live tiles</p>
+          <h3 className="mt-2 text-lg font-semibold text-[var(--text)]">Visão operacional</h3>
+          <p className="mt-1 text-sm leading-6 text-[var(--text-muted)]">
+            Indicadores rápidos da sessão atual para orientar a próxima ação.
+          </p>
+        </div>
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-5">
+          <div className="rounded-[24px] border border-[var(--border)] bg-[var(--surface)] p-4">
+            <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Status da execução</p>
+            <p className="mt-3 text-base font-semibold text-[var(--text)]">{busy ? 'Processando resposta' : 'Aguardando próxima instrução'}</p>
+            <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">
+              {workingAgent
+                ? `${workingAgent} está conduzindo a etapa ativa do fluxo.`
+                : 'Nenhum agente especializado está rodando neste instante.'}
+            </p>
+          </div>
+
+          <div className="rounded-[24px] border border-[var(--border)] bg-[var(--surface)] p-4">
+            <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Última conversa</p>
+            <p className="mt-3 text-base font-semibold text-[var(--text)]">
+              {activeChatMeta ? conversationTitle(activeChatMeta) : 'Ainda não iniciada'}
+            </p>
+            <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">
+              {messages.length > 0
+                ? `${messages.length} mensagens na sessão e ${assistantMessages} respostas do assistente.`
+                : 'Selecione uma conversa recente ou inicie uma nova sessão.'}
+            </p>
+          </div>
+
+          <div className="rounded-[24px] border border-[var(--border)] bg-[var(--surface)] p-4">
+            <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Template ativo</p>
+            <p className="mt-3 text-base font-semibold text-[var(--text)]">{activeTemplate?.name || 'Padrão'}</p>
+            <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">
+              {activeTemplate?.description || 'Use o seletor acima para aplicar um template com ferramentas e guardrails específicos.'}
+            </p>
+          </div>
+
+          <div className="rounded-[24px] border border-[var(--border)] bg-[var(--surface)] p-4">
+            <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Checklist da sessão</p>
+            <div className="mt-3 space-y-3 text-sm text-[var(--text-muted)]">
+              {[
+                {
+                  label: 'Contexto anexado',
+                  done: totalAttachments > 0,
+                },
+                {
+                  label: 'Template selecionado',
+                  done: Boolean(templateId),
+                },
+                {
+                  label: 'Primeira resposta gerada',
+                  done: assistantMessages > 0,
+                },
+              ].map((item) => (
+                <div key={item.label} className="flex items-center justify-between gap-3 rounded-2xl bg-[var(--surface-soft)] px-3 py-3">
+                  <span>{item.label}</span>
+                  <span className={`rounded-full px-2 py-1 text-[11px] ${item.done ? 'bg-[var(--success-soft)] text-[var(--success)]' : 'bg-[var(--surface-elevated)] text-[var(--text-faint)]'}`}>
+                    {item.done ? 'OK' : 'Pendente'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </aside>
     </div>
   )
 }

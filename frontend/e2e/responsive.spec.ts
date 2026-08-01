@@ -16,6 +16,10 @@ const BREAKPOINTS = [
   { name: 'mobile', width: 390, height: 844 },
   { name: 'tablet', width: 820, height: 1180 },
   { name: 'desktop', width: 1440, height: 900 },
+  // Janela maximizada em monitor grande: é onde o grid do chat quebrava,
+  // porque o painel lateral criava colunas implícitas no grid interno.
+  { name: 'wide', width: 1920, height: 1080 },
+  { name: 'ultrawide', width: 2560, height: 1080 },
 ] as const
 
 async function signIn(page: Page, email: string, password: string) {
@@ -103,6 +107,14 @@ for (const bp of BREAKPOINTS) {
       await expect(page.locator('[name="chat-input"]')).toBeVisible()
       await expect(page.getByRole('button', { name: /Enviar/ })).toBeVisible()
       await expectNoHorizontalScroll(page)
+
+      // A área de conversa tem que usar a largura que sobra. Quando o painel
+      // lateral criava colunas implícitas, ela encolhia para o min-content e
+      // o texto quebrava palavra por palavra.
+      const composer = await page.locator('[name="chat-input"]').boundingBox()
+      const viewport = page.viewportSize()!
+      const minimo = viewport.width >= 1280 ? 420 : 240
+      expect(composer!.width).toBeGreaterThan(minimo)
     })
   })
 }
