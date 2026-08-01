@@ -27,12 +27,8 @@ function formatRelativeDate(value: string) {
   }).format(date)
 }
 
-function messagePreview(message: ChatMessage) {
-  const content = message.content?.trim()
-  if (content) return content
-  if ((message.attachments ?? []).length > 0) return 'Mensagem com anexo'
-  return 'Nova conversa'
-}
+const SIDEBAR_KEY = 'chat.painel.conversas'
+const TILES_KEY = 'chat.painel.live-tiles'
 
 function conversationTitle(chat: ChatSummary) {
   return chat.title?.trim() || 'Nova conversa'
@@ -51,6 +47,21 @@ export default function Chat() {
   })
 
   const [activeChat, setActiveChat] = useState<string | null>(null)
+  // Painéis laterais colapsáveis. A preferência fica no navegador: quem
+  // escondeu um painel não quer ele de volta a cada recarga.
+  const [sidebarOpen, setSidebarOpen] = useState(
+    () => localStorage.getItem(SIDEBAR_KEY) !== 'closed',
+  )
+  const [tilesOpen, setTilesOpen] = useState(
+    () => localStorage.getItem(TILES_KEY) !== 'closed',
+  )
+
+  useEffect(() => {
+    localStorage.setItem(SIDEBAR_KEY, sidebarOpen ? 'open' : 'closed')
+  }, [sidebarOpen])
+  useEffect(() => {
+    localStorage.setItem(TILES_KEY, tilesOpen ? 'open' : 'closed')
+  }, [tilesOpen])
   const [templateId, setTemplateId] = useState<string>('')
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [draft, setDraft] = useState('')
@@ -192,27 +203,66 @@ export default function Chat() {
     },
   ]
 
+  // Classes completas em vez de template string: o Tailwind precisa ver o
+  // nome da classe no código-fonte para gerá-la.
+  const gridClass = sidebarOpen
+    ? tilesOpen
+      ? 'lg:grid-cols-[320px_minmax(0,1fr)] xl:grid-cols-[320px_minmax(0,1fr)_320px]'
+      : 'lg:grid-cols-[320px_minmax(0,1fr)] xl:grid-cols-[320px_minmax(0,1fr)_56px]'
+    : tilesOpen
+      ? 'lg:grid-cols-[56px_minmax(0,1fr)] xl:grid-cols-[56px_minmax(0,1fr)_320px]'
+      : 'lg:grid-cols-[56px_minmax(0,1fr)] xl:grid-cols-[56px_minmax(0,1fr)_56px]'
+
   const emptyState = !activeChat && messages.length === 0 && !streaming
   // Conversa de canal externo é histórico: responder por ela exigiria assumir
   // o atendimento no lugar do agente, o que está fora do escopo desta fase.
   const readOnly = (activeChatMeta?.channel ?? 'web') !== 'web'
 
   return (
-    <div className="grid h-full min-h-0 w-full grid-cols-1 overflow-hidden rounded-none border border-[var(--border)] bg-[var(--shell-gradient)] shadow-[0_40px_120px_-60px_rgba(15,23,42,0.65)] sm:rounded-[32px] lg:grid-cols-[320px_minmax(0,1fr)] xl:grid-cols-[320px_minmax(0,1fr)_320px]">
-      <aside className="flex min-h-0 flex-col border-b border-[var(--border)] bg-[color-mix(in_srgb,var(--surface-solid)_84%,transparent)] backdrop-blur-xl lg:border-r lg:border-b-0">
+    <div
+      className={`grid h-full min-h-0 w-full grid-cols-1 overflow-hidden rounded-none border border-[var(--border)] bg-[var(--shell-gradient)] shadow-[0_40px_120px_-60px_rgba(15,23,42,0.65)] sm:rounded-[32px] ${gridClass}`}
+    >
+      {!sidebarOpen && (
+        <aside className="hidden flex-col items-center gap-3 border-r border-[var(--border)] bg-[color-mix(in_srgb,var(--surface-solid)_84%,transparent)] py-4 lg:flex">
+          <Button
+            type="button"
+            variant="ghost"
+            data-testid="expandir-conversas"
+            aria-label="Mostrar painel de conversas"
+            title="Mostrar conversas"
+            className="h-10 w-10 rounded-2xl px-0"
+            onClick={() => setSidebarOpen(true)}
+          >
+            »
+          </Button>
+          <span className="rotate-180 text-[11px] uppercase tracking-[0.2em] text-[var(--text-faint)] [writing-mode:vertical-rl]">
+            Conversas
+          </span>
+        </aside>
+      )}
+
+      <aside
+        className={`min-h-0 flex-col border-b border-[var(--border)] bg-[color-mix(in_srgb,var(--surface-solid)_84%,transparent)] backdrop-blur-xl lg:border-r lg:border-b-0 ${
+          sidebarOpen ? 'flex' : 'flex lg:hidden'
+        }`}
+      >
         <div className="border-b border-[var(--border)] px-5 py-5">
           <div className="mb-4 flex items-start justify-between gap-3">
             <div>
               <p className="text-[11px] font-medium uppercase tracking-[0.24em] text-[var(--text-faint)]">Workspace de chat</p>
               <h1 className="mt-2 text-xl font-semibold text-[var(--text)]">Central de conversas</h1>
-              <p className="mt-1 text-sm leading-6 text-[var(--text-muted)]">
-                Operação premium para agentes, artefatos e respostas com contexto.
-              </p>
             </div>
-            <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-2 text-right shadow-[0_10px_40px_rgba(15,23,42,0.18)]">
-              <p className="text-[11px] uppercase tracking-[0.2em] text-[var(--text-faint)]">Ativo</p>
-              <p className="mt-1 text-sm font-medium text-[var(--text)]">{busy ? 'Em execução' : 'Pronto'}</p>
-            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              data-testid="colapsar-conversas"
+              aria-label="Ocultar painel de conversas"
+              title="Ocultar conversas"
+              className="hidden h-10 w-10 rounded-2xl px-0 lg:inline-flex"
+              onClick={() => setSidebarOpen(false)}
+            >
+              «
+            </Button>
           </div>
 
           <Button
@@ -228,19 +278,6 @@ export default function Chat() {
           >
             + Nova conversa
           </Button>
-        </div>
-
-        <div className="grid grid-cols-3 gap-3 border-b border-[var(--border)] px-5 py-5">
-          {stats.map((stat) => (
-            <div
-              key={stat.label}
-              className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-3 shadow-[0_12px_40px_rgba(15,23,42,0.12)]"
-            >
-              <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-faint)]">{stat.label}</p>
-              <p className="mt-2 text-2xl font-semibold text-[var(--text)]">{stat.value}</p>
-              <p className="mt-1 text-[11px] leading-5 text-[var(--text-muted)]">{stat.helper}</p>
-            </div>
-          ))}
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
@@ -288,85 +325,48 @@ export default function Chat() {
       </aside>
 
       <section className="flex min-w-0 flex-col overflow-hidden bg-[var(--panel-gradient)] xl:col-start-2">
-        <div className="border-b border-[var(--border)] px-6 py-5 backdrop-blur-xl">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-            <div className="min-w-0">
-              <div className="flex items-center gap-3">
-                <span className="inline-flex items-center rounded-full border border-[var(--success)]/20 bg-[var(--success-soft)] px-3 py-1 text-xs font-medium text-[var(--success)]">
-                  {busy ? 'Streaming em andamento' : 'Sessão pronta'}
-                </span>
-                {workingAgent && (
-                  <span
-                    data-testid="working-agent"
-                    className="inline-flex items-center rounded-full border border-[var(--info)]/20 bg-[var(--info-soft)] px-3 py-1 text-xs font-medium text-[var(--info)]"
-                  >
-                    {workingAgent} trabalhando
-                  </span>
-                )}
-              </div>
-              <h2 className="mt-3 truncate text-2xl font-semibold tracking-tight text-[var(--text)]">
-                {activeChatMeta ? conversationTitle(activeChatMeta) : 'Nova sessão com agentes'}
-              </h2>
-              <p className="mt-1 text-sm leading-6 text-[var(--text-muted)]">
-                {activeTemplate?.name
-                  ? `Template ativo: ${activeTemplate.name}`
-                  : 'Usando o template padrão até que um fluxo especializado seja escolhido.'}
-              </p>
-            </div>
+        {/* Cabeçalho enxuto: só o que muda durante a conversa. Título e
+            métricas saíram daqui — repetiam o que já está na tela. */}
+        <div className="flex flex-wrap items-center gap-3 border-b border-[var(--border)] px-6 py-3 backdrop-blur-xl">
+          <span className="inline-flex items-center rounded-full border border-[var(--success)]/20 bg-[var(--success-soft)] px-3 py-1 text-xs font-medium text-[var(--success)]">
+            {busy ? 'Streaming em andamento' : 'Sessão pronta'}
+          </span>
+          {workingAgent && (
+            <span
+              data-testid="working-agent"
+              className="inline-flex items-center rounded-full border border-[var(--info)]/20 bg-[var(--info-soft)] px-3 py-1 text-xs font-medium text-[var(--info)]"
+            >
+              {workingAgent} trabalhando
+            </span>
+          )}
+          <span className="min-w-0 truncate text-sm text-[var(--text-muted)]">
+            {activeChatMeta ? conversationTitle(activeChatMeta) : 'Nova conversa'}
+          </span>
 
-            <div className="grid gap-3 sm:grid-cols-3 xl:min-w-[520px]">
-              <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-3">
-                <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Mensagens</p>
-                <p className="mt-2 text-lg font-semibold text-[var(--text)]">{metricLabel(messages.length, 'evento', 'eventos')}</p>
-                <p className="text-xs text-[var(--text-faint)]">Histórico visível na sessão</p>
-              </div>
-              <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-3">
-                <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Assistente</p>
-                <p className="mt-2 truncate text-lg font-semibold text-[var(--text)]">{workingAgent || 'Supervisor'}</p>
-                <p className="text-xs text-[var(--text-faint)]">Coordenação atual do fluxo</p>
-              </div>
-              <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-3">
-                <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Artefatos</p>
-                <p className="mt-2 text-lg font-semibold text-[var(--text)]">{metricLabel(artifacts.length, 'saída', 'saídas')}</p>
-                <p className="text-xs text-[var(--text-faint)]">Charts, arquivos e datasets</p>
-              </div>
-            </div>
-          </div>
+          <label className="ml-auto flex items-center gap-2">
+            <span className="text-xs uppercase tracking-[0.18em] text-[var(--text-faint)]">Template</span>
+            <select
+              name="template-picker"
+              value={templateId}
+              onChange={(e) => setTemplateId(e.target.value)}
+              className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text)] outline-none transition focus:border-[var(--brand)] focus:bg-[var(--surface-elevated)]"
+            >
+              <option value="">Padrão</option>
+              {templates
+                .filter((t) => t.active_version_id)
+                .map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+            </select>
+          </label>
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col">
-          <div className="flex min-h-0 flex-col">
-            <div className="border-b border-[var(--border)] px-6 py-4">
-              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-end">
-                <div>
-                  <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-[var(--text-faint)]">Orquestração</p>
-                  <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">
-                    Defina um template para controlar contexto, ferramentas e permissões antes de enviar a próxima solicitação.
-                  </p>
-                </div>
-                <label className="block">
-                  <span className="mb-2 block text-sm font-medium text-[var(--text-muted)]">Template da conversa</span>
-                  <select
-                    name="template-picker"
-                    value={templateId}
-                    onChange={(e) => setTemplateId(e.target.value)}
-                    className="w-full rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--text)] outline-none transition focus:border-[var(--brand)] focus:bg-[var(--surface-elevated)]"
-                  >
-                    <option value="">Padrão</option>
-                    {templates
-                      .filter((t) => t.active_version_id)
-                      .map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-              </div>
-            </div>
-
+          <div className="flex min-h-0 flex-1 flex-col">
             <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6" data-testid="message-list">
-              <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
+              <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
                 {emptyState && (
                   <section className="rounded-[28px] border border-[var(--border)] bg-[var(--surface)] px-8 py-10 shadow-[0_24px_90px_rgba(15,23,42,0.16)]">
                     <span className="inline-flex rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">
@@ -513,7 +513,7 @@ export default function Chat() {
             </div>
 
             <div className="border-t border-[var(--border)] px-6 py-5 backdrop-blur-xl">
-              <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 rounded-[28px] border border-[var(--border)] bg-[var(--surface)] p-4 shadow-[0_30px_90px_rgba(15,23,42,0.18)]">
+              <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 rounded-[28px] border border-[var(--border)] bg-[var(--surface)] p-4 shadow-[0_30px_90px_rgba(15,23,42,0.18)]">
                 {pendingFiles.length > 0 && (
                   <div className="flex flex-wrap gap-2">
                     {pendingFiles.map((f, i) => (
@@ -541,7 +541,7 @@ export default function Chat() {
                   </p>
                 )}
 
-                <form onSubmit={onSubmit} className="flex flex-col gap-4 lg:flex-row lg:items-end">
+                <form onSubmit={onSubmit} className="flex flex-col gap-3">
                   <input
                     ref={fileInputRef}
                     type="file"
@@ -556,11 +556,20 @@ export default function Chat() {
                   />
 
                   <div className="flex flex-1 flex-col gap-3">
+                    {/* Enviar fica no cabeçalho do composer: a prévia do envio
+                        saiu porque repetia o texto que o usuário está lendo. */}
                     <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--text-faint)]">
                       Composer
                       <span className="rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-2 py-0.5 text-[10px] text-[var(--text-muted)]">
                         {busy ? 'Enviando' : draft ? 'Digitando' : 'Ocioso'}
                       </span>
+                      <Button
+                        type="submit"
+                        disabled={readOnly || busy || (!draft.trim() && pendingFiles.length === 0)}
+                        className="ml-auto rounded-2xl px-5 py-2 text-sm font-semibold shadow-[0_20px_60px_rgba(79,70,229,0.35)]"
+                      >
+                        {busy ? 'Enviando…' : 'Enviar mensagem'}
+                      </Button>
                     </div>
                     <div className="rounded-[24px] border border-[var(--border)] bg-[var(--surface-soft)] p-3 transition focus-within:border-[var(--brand)] focus-within:bg-[var(--surface-elevated)]">
                       <textarea
@@ -599,24 +608,6 @@ export default function Chat() {
                     </div>
                   </div>
 
-                  <div className="flex w-full flex-col gap-3 lg:w-[210px]">
-                    <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-3">
-                      <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Prévia do envio</p>
-                      <p className="mt-2 text-sm font-medium text-[var(--text)]">{draft.trim() ? messagePreview({ id: '', role: 'user', content: draft, created_at: '' }) : 'Pronto para compor'}</p>
-                      <p className="mt-1 text-xs leading-5 text-[var(--text-faint)]">
-                        {pendingFiles.length > 0
-                          ? metricLabel(pendingFiles.length, 'anexo aguardando', 'anexos aguardando')
-                          : 'Nenhum arquivo pendente'}
-                      </p>
-                    </div>
-                    <Button
-                      type="submit"
-                      disabled={readOnly || busy || (!draft.trim() && pendingFiles.length === 0)}
-                      className="rounded-2xl py-3 text-sm font-semibold shadow-[0_20px_60px_rgba(79,70,229,0.35)]"
-                    >
-                      {busy ? 'Enviando…' : 'Enviar mensagem'}
-                    </Button>
-                  </div>
                 </form>
               </div>
             </div>
@@ -624,15 +615,63 @@ export default function Chat() {
         </div>
       </section>
 
-      <aside className="hidden min-h-0 border-l border-[var(--border)] bg-[color-mix(in_srgb,var(--surface-solid)_72%,transparent)] xl:flex xl:flex-col xl:col-start-3 xl:row-start-1">
-        <div className="border-b border-[var(--border)] px-5 py-5">
-          <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-[var(--text-faint)]">Live tiles</p>
-          <h3 className="mt-2 text-lg font-semibold text-[var(--text)]">Visão operacional</h3>
-          <p className="mt-1 text-sm leading-6 text-[var(--text-muted)]">
-            Indicadores rápidos da sessão atual para orientar a próxima ação.
-          </p>
+      {!tilesOpen && (
+        <aside className="hidden flex-col items-center gap-3 border-l border-[var(--border)] bg-[color-mix(in_srgb,var(--surface-solid)_72%,transparent)] py-4 xl:flex xl:col-start-3 xl:row-start-1">
+          <Button
+            type="button"
+            variant="ghost"
+            data-testid="expandir-live-tiles"
+            aria-label="Mostrar painel de indicadores"
+            title="Mostrar indicadores"
+            className="h-10 w-10 rounded-2xl px-0"
+            onClick={() => setTilesOpen(true)}
+          >
+            «
+          </Button>
+          <span className="rotate-180 text-[11px] uppercase tracking-[0.2em] text-[var(--text-faint)] [writing-mode:vertical-rl]">
+            Live tiles
+          </span>
+        </aside>
+      )}
+
+      <aside
+        className={`min-h-0 border-l border-[var(--border)] bg-[color-mix(in_srgb,var(--surface-solid)_72%,transparent)] xl:col-start-3 xl:row-start-1 ${
+          tilesOpen ? 'hidden xl:flex xl:flex-col' : 'hidden'
+        }`}
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
+          <div>
+            <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-[var(--text-faint)]">Live tiles</p>
+            <h3 className="mt-1 text-lg font-semibold text-[var(--text)]">Visão operacional</h3>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            data-testid="colapsar-live-tiles"
+            aria-label="Ocultar painel de indicadores"
+            title="Ocultar indicadores"
+            className="h-10 w-10 rounded-2xl px-0"
+            onClick={() => setTilesOpen(false)}
+          >
+            »
+          </Button>
         </div>
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-5">
+          {/* Métricas da sessão: vieram da barra lateral, onde ocupavam
+              espaço que a lista de conversas usa melhor. */}
+          <div className="grid grid-cols-3 gap-2">
+            {stats.map((stat) => (
+              <div
+                key={stat.label}
+                data-testid="tile-metrica"
+                className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-3 py-3"
+              >
+                <p className="text-[10px] uppercase tracking-[0.16em] text-[var(--text-faint)]">{stat.label}</p>
+                <p className="mt-1 text-xl font-semibold text-[var(--text)]">{stat.value}</p>
+              </div>
+            ))}
+          </div>
+
           <div className="rounded-[24px] border border-[var(--border)] bg-[var(--surface)] p-4">
             <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Status da execução</p>
             <p className="mt-3 text-base font-semibold text-[var(--text)]">{busy ? 'Processando resposta' : 'Aguardando próxima instrução'}</p>
