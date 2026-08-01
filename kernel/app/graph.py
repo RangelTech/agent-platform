@@ -431,6 +431,10 @@ async def get_graph():
             min_size=1,
             max_size=settings.checkpoint_pool_size,
             kwargs={"autocommit": True, "prepare_threshold": 0},
+            # `check` descarta conexão morta antes de entregá-la: o banco fica
+            # atrás do Traefik da VPS, e um restart lá deixa conexões ociosas
+            # em estado zumbi que só falham na hora do uso.
+            check=AsyncConnectionPool.check_connection,
             open=False,
         )
         await _pool.open()

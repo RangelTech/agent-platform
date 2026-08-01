@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from app.bootstrap import bootstrap_master
 from app.config import settings
 from app.migrations import run_migrations
+from app.routes import ai_router as ai_router_routes
 from app.routes import ai_services as ai_service_routes
 from app.routes import artifacts as artifact_routes
 from app.routes import auth as auth_routes
@@ -84,6 +85,7 @@ app.include_router(payment_routes.router)
 app.include_router(mcp_store_routes.router)
 app.include_router(whatsapp_routes.router)
 app.include_router(omnichannel_routes.router)
+app.include_router(ai_router_routes.router)
 
 
 def _mount_spa(application: FastAPI) -> None:

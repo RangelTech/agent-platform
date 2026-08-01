@@ -21,6 +21,8 @@ async def _get_pool() -> AsyncConnectionPool:
             min_size=0,
             max_size=3,
             kwargs={"autocommit": True},
+            # Conexão ociosa pode ter morrido com o banco atrás do Traefik.
+            check=AsyncConnectionPool.check_connection,
             open=False,
         )
         await _pool.open()

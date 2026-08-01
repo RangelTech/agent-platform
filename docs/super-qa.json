@@ -1,0 +1,138 @@
+{
+  "backend": "https://teste-ia-backend-x27vtpiida-uc.a.run.app",
+  "passou": true,
+  "checks": [
+    {
+      "area": "ferragista",
+      "check": "empresa existe",
+      "ok": true,
+      "detalhe": ""
+    },
+    {
+      "area": "ferragista",
+      "check": "template ativo",
+      "ok": true,
+      "detalhe": ""
+    },
+    {
+      "area": "ferragista",
+      "check": "fonte de dados responde",
+      "ok": true,
+      "detalhe": "{'ok': True, 'detail': ''}"
+    },
+    {
+      "area": "ferragista",
+      "check": "consulta SQL com artefato",
+      "ok": true,
+      "detalhe": "['describe_datasources', 'run_sql_query', 'calculate']"
+    },
+    {
+      "area": "ferragista",
+      "check": "resposta sem erro",
+      "ok": true,
+      "detalhe": "None"
+    },
+    {
+      "area": "ferragista",
+      "check": "venda gravada após confirmação",
+      "ok": true,
+      "detalhe": ""
+    },
+    {
+      "area": "hamburgueria",
+      "check": "empresa existe",
+      "ok": true,
+      "detalhe": ""
+    },
+    {
+      "area": "hamburgueria",
+      "check": "template ativo",
+      "ok": true,
+      "detalhe": ""
+    },
+    {
+      "area": "hamburgueria",
+      "check": "cardápio veio do banco",
+      "ok": true,
+      "detalhe": "['run_sql_query', 'run_sql_query', 'run_sql_query', 'run_sql_query', 'run_sql_query', 'run_sql_query']"
+    },
+    {
+      "area": "hamburgueria",
+      "check": "resposta sem erro",
+      "ok": true,
+      "detalhe": "None"
+    },
+    {
+      "area": "artefatos",
+      "check": "template de QA disponível",
+      "ok": true,
+      "detalhe": ""
+    },
+    {
+      "area": "artefatos",
+      "check": "gráfico ou planilha gerados",
+      "ok": true,
+      "detalhe": "['describe_datasources', 'run_sql_query', 'run_sql_query', 'generate_chart', 'export_xlsx', 'calculate']"
+    },
+    {
+      "area": "artefatos",
+      "check": "sem erro no fluxo",
+      "ok": true,
+      "detalhe": "None"
+    },
+    {
+      "area": "pagamentos",
+      "check": "credencial salva sem voltar em claro",
+      "ok": true,
+      "detalhe": "{\"id\":\"e9f711b2-289f-40fc-84ed-45a2e00c681c\",\"tenant_id\":\"0ef885b2-a6b6-4718-94a6-59f7fd6dd79f\",\"provider\":\"mercado_pago\",\"has_token\":true,\"has_webhook_secret\":false,\"sandbox\":true,\"is_active\":true,\"webhook_path\":\"/api/payments/webhooks/mercado-pago/ace94954e8143ad11a8ebc2ed01f4888d315\",\"updated_at\":\"2026-08-01T14:00:46.116419-03:00\"}"
+    },
+    {
+      "area": "pagamentos",
+      "check": "listagem não expõe token",
+      "ok": true,
+      "detalhe": ""
+    },
+    {
+      "area": "pagamentos",
+      "check": "tools de cobrança disponíveis",
+      "ok": true,
+      "detalhe": ""
+    },
+    {
+      "area": "pagamentos",
+      "check": "agente aciona a cobrança",
+      "ok": true,
+      "detalhe": "['generate_pix_charge']"
+    },
+    {
+      "area": "isolamento",
+      "check": "não enxerga fonte de dados alheia",
+      "ok": true,
+      "detalhe": ""
+    },
+    {
+      "area": "isolamento",
+      "check": "não enxerga credencial de pagamento alheia",
+      "ok": true,
+      "detalhe": ""
+    },
+    {
+      "area": "isolamento",
+      "check": "não enxerga serviço de IA alheio",
+      "ok": true,
+      "detalhe": "[]"
+    },
+    {
+      "area": "isolamento",
+      "check": "sem instância de IA não acessa contas",
+      "ok": true,
+      "detalhe": "{\"detail\":\"Esta empresa ainda não tem instância de IA provisionada\"}"
+    },
+    {
+      "area": "memória",
+      "check": "o agente lembra dentro da conversa",
+      "ok": true,
+      "detalhe": "Seu nome é Ana! Como posso ajudar você hoje?"
+    }
+  ]
+}

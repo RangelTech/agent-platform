@@ -43,7 +43,10 @@ async def _get_pool() -> AsyncConnectionPool:
     if _pool is None:
         _pool = AsyncConnectionPool(
             settings.database_url, min_size=0, max_size=3,
-            kwargs={"autocommit": True, "row_factory": dict_row}, open=False,
+            kwargs={"autocommit": True, "row_factory": dict_row},
+            # Conexão ociosa pode ter morrido com o banco atrás do Traefik.
+            check=AsyncConnectionPool.check_connection,
+            open=False,
         )
         await _pool.open()
     return _pool

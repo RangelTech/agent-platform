@@ -18,6 +18,7 @@ RESOURCES = (
     "payments",
     "mcp_store",
     "omnichannel",
+    "ai_router",
 )
 
 ACTIONS = ("view", "create", "edit", "delete")

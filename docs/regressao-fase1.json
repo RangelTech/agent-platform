@@ -1,6 +1,6 @@
 {
   "backend": "https://teste-ia-backend-x27vtpiida-uc.a.run.app",
-  "executed_at": "2026-08-01T15:49:29.414503+00:00",
+  "executed_at": "2026-08-01T16:56:54.307226+00:00",
   "passed": true,
   "checks": [
     {
@@ -13,19 +13,19 @@
       "phase": "fase-0",
       "check": "login do master",
       "ok": true,
-      "detail": "{\"token\":\"6x6Wen1CeeLnT7RgrMs52M2j-N3kA80l8Oi_k0Pw95k\"}"
+      "detail": "{\"token\":\"W3S9ERf6pNs8jgTegEyf-BIjxP9avS4gUTd9jEbgWPo\"}"
     },
     {
       "phase": "fase-0",
       "check": "criação de empresa",
       "ok": true,
-      "detail": "{\"id\":\"38325f05-a910-45a5-baf2-1dc6f8ba1e6e\",\"tenant_key\":\"regressao-d89f2991\",\"name\":\"Regressão d89f2991\",\"brand_name\":\"\",\"brand_color\":\"\",\"brand_theme\":\"dark\",\"has_logo\":false,\"is_active\":true}"
+      "detail": "{\"id\":\"f59e95fa-8bb3-47fb-9a42-d722a38ff3b9\",\"tenant_key\":\"regressao-634069d1\",\"name\":\"Regressão 634069d1\",\"brand_name\":\"\",\"brand_color\":\"\",\"brand_theme\":\"dark\",\"has_logo\":false,\"is_active\":true}"
     },
     {
       "phase": "fase-0",
       "check": "criação de usuário admin",
       "ok": true,
-      "detail": "{\"id\":\"a795875d-1fe9-4b1f-b2ae-f54f8b0804c8\",\"tenant_id\":\"38325f05-a910-45a5-baf2-1dc6f8ba1e6e\",\"profile_id\":\"69704697-a4b2-426a-a35c-593e23791d2c\",\"email\":\"regressao-d89f2991@example.com\",\"name\":\"Admin Regressão\",\"is_master\":false,\"is_active\":true}"
+      "detail": "{\"id\":\"93c8999a-27d2-4807-ad97-2f931a1b0359\",\"tenant_id\":\"f59e95fa-8bb3-47fb-9a42-d722a38ff3b9\",\"profile_id\":\"08929666-5ad9-439e-8f58-32ce60f4ac82\",\"email\":\"regressao-634069d1@example.com\",\"name\":\"Admin Regressão\",\"is_master\":false,\"is_active\":true}"
     },
     {
       "phase": "fase-b",

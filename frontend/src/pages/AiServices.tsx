@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { Badge, Button, Card, EmptyState, ErrorText, Input, PageHeader, SectionIntro, Select, StatCard, Table, TableSkeleton } from '../components/ui'
+import { ContasIA } from '../components/ContasIA'
 import { api, listTenants } from '../lib/api'
 import { useAuth } from '../lib/auth'
 
@@ -124,6 +125,10 @@ export default function AiServices() {
           </Button>
         }
       />
+
+      {/* Contas da empresa e combos: o caminho novo, em que o cliente traz as
+          contas dele. O cadastro direto de provider continua abaixo. */}
+      {!isMaster && <ContasIA />}
 
       <div className="grid gap-4 md:grid-cols-3">
         <StatCard label="Serviços totais" value={String(services.length)} meta="Catálogo consolidado por tenant e provider." />
