@@ -102,13 +102,61 @@ python scripts/provisionar_router.py <tenant_key> --remover
 
 Remove o container e preserva o volume em `/opt/platform/data/`.
 
-### Contas por assinatura (OAuth)
+#### Contas por assinatura
 
-O consentimento tem que acontecer na tela do serviço que vai guardar a sessão.
-Como a instância é do tenant, o caminho é: abrir
-`https://ia-<tenant>.rangeltech.net`, conectar a conta por lá, e clicar em
-**Sincronizar contas** na plataforma. A partir daí ela aparece na lista e pode
-entrar em combos.
+Conectadas pela nossa tela, sem o cliente ver a instância. **Sincronizar
+contas** continua existindo para trazer o que foi conectado direto na
+instância — hoje é rede de segurança, não o caminho normal.
+
+## Como o cliente conecta uma conta
+
+Cada provedor conecta de um jeito, e é por isso que a tela pergunta **um
+provedor por vez, num modal**, em vez de um formulário só tentando servir aos
+três casos:
+
+| Modo | Como é | Quem usa |
+|---|---|---|
+| `apikey` | um campo | Gemini, OpenAI, Anthropic, DeepSeek, Groq… |
+| `redirect` | abre o site do provedor, volta com um código para colar | Claude, Codex, Antigravity, Gemini CLI, Cline |
+| `device` | mostra um código curto para digitar no site; a tela fica perguntando até confirmar | GitHub Copilot, Qwen, Kimi, Kilo Code |
+
+Duas armadilhas da instância que o backend esconde da tela:
+
+- **São endpoints diferentes.** `GET /api/oauth/<p>/authorize` serve o fluxo
+  redirect; device precisa de `GET /api/oauth/<p>/device-code`. Chamar
+  `authorize` num provedor de device devolve só material PKCE, sem código
+  nenhum — o campo aparece vazio e parece bug de tela.
+- **As convenções não batem.** `authorize` responde em camelCase
+  (`authUrl`, `codeVerifier`), `device-code` em snake_case (`user_code`,
+  `device_code`). O backend normaliza; a tela recebe um formato só.
+
+O `codeVerifier` (PKCE) volta para a tela e retorna no fim. É um verificador de
+uso único, feito exatamente para isso, e por isso não é persistido.
+
+## Curadoria: 80 provedores viram 21
+
+A instância conhece 80 provedores e 752 modelos — a maioria regional, de mídia
+ou de nicho. `backend/app/router_catalog.py` guarda a lista que a tela oferece,
+com rótulo em português e o modo de conexão.
+
+Esse arquivo carrega também o mapa **prefixo do modelo → provedor da conta**,
+que não é óbvio e não vem da API: uma conta `claude` serve modelos `cc/…`, uma
+conta `codex` serve `cx/…`, `gemini-cli` serve `gc/…`. Sem ele não dá para
+dizer quais modelos as contas do tenant liberam.
+
+`cursor` ficou de fora: `authorize` responde `d.buildAuthUrl is not a function`
+na 0.5.40.
+
+## Por que a validação de modelo é nossa
+
+Testado na instância real: `POST /api/combos` com o modelo `zz/nao-existe`
+devolve **201**. A instância não valida nada. Um combo assim seria aceito na
+criação e quebraria só no meio de um atendimento.
+
+Por isso `/api/ai-router/modelos` não devolve `/v1/models` cru — devolve o
+catálogo **cruzado com as contas que existem**, e a criação de combo recusa o
+que sobrar. Na prática, para a loja de demonstração: 4 modelos oferecidos em
+vez de 752.
 
 ## Validado em produção
 
@@ -131,5 +179,6 @@ Com o tenant `loja-demo`:
   corte de propósito, para não inventar um canal de execução remota agora.
 - **Fallback automático**: se a instância cair, o agente falha. O caminho certo
   é o template ter um serviço BYOK de reserva; hoje isso é escolha manual.
-- **Painel de consumo**: `GET /api/ai-router/uso` já devolve o dado da
-  instância (já filtrado por tenant, porque a instância é dele); falta a tela.
+- **Painel de consumo**: `GET /api/ai-router/uso` já devolve o dado (o caminho
+  na instância é `/api/usage/stats`; `/api/usage` sozinho é 404). Falta a tela.
+- **Cursor** e os provedores fora da curadoria: entram quando fizerem falta.

@@ -24,7 +24,7 @@
       "area": "ferragista",
       "check": "consulta SQL com artefato",
       "ok": true,
-      "detalhe": "['describe_datasources', 'run_sql_query', 'calculate']"
+      "detalhe": "['describe_datasources', 'run_sql_query']"
     },
     {
       "area": "ferragista",
@@ -54,7 +54,7 @@
       "area": "hamburgueria",
       "check": "cardápio veio do banco",
       "ok": true,
-      "detalhe": "['run_sql_query', 'run_sql_query', 'run_sql_query', 'run_sql_query', 'run_sql_query', 'run_sql_query']"
+      "detalhe": "['run_sql_query', 'run_sql_query', 'run_sql_query', 'run_sql_query', 'run_sql_query', 'run_sql_query', 'run_sql_query']"
     },
     {
       "area": "hamburgueria",
@@ -84,7 +84,7 @@
       "area": "pagamentos",
       "check": "credencial salva sem voltar em claro",
       "ok": true,
-      "detalhe": "{\"id\":\"e9f711b2-289f-40fc-84ed-45a2e00c681c\",\"tenant_id\":\"0ef885b2-a6b6-4718-94a6-59f7fd6dd79f\",\"provider\":\"mercado_pago\",\"has_token\":true,\"has_webhook_secret\":false,\"sandbox\":true,\"is_active\":true,\"webhook_path\":\"/api/payments/webhooks/mercado-pago/ace94954e8143ad11a8ebc2ed01f4888d315\",\"updated_at\":\"2026-08-01T14:00:46.116419-03:00\"}"
+      "detalhe": "{\"id\":\"e9f711b2-289f-40fc-84ed-45a2e00c681c\",\"tenant_id\":\"0ef885b2-a6b6-4718-94a6-59f7fd6dd79f\",\"provider\":\"mercado_pago\",\"has_token\":true,\"has_webhook_secret\":false,\"sandbox\":true,\"is_active\":true,\"webhook_path\":\"/api/payments/webhooks/mercado-pago/ace94954e8143ad11a8ebc2ed01f4888d315\",\"updated_at\":\"2026-08-01T23:40:38.996161-03:00\"}"
     },
     {
       "area": "pagamentos",
@@ -132,7 +132,7 @@
       "area": "memória",
       "check": "o agente lembra dentro da conversa",
       "ok": true,
-      "detalhe": "Seu nome é Ana! Como posso ajudar você hoje?"
+      "detalhe": "Seu nome é Ana! Como posso te ajudar hoje?"
     }
   ]
 }
