@@ -35,13 +35,92 @@ class RunState(MessagesState):
     run_config: dict
 
 
-def _history_messages(state: RunState, system_prompt: str) -> list[dict]:
+# Prompt do resumo. Pede fatos, não prosa: o resumo volta para o modelo como
+# contexto, e adjetivo ocupa lugar de número.
+_RESUMO_PROMPT = (
+    "Resuma a conversa abaixo preservando o que a continuação precisa saber: "
+    "decisões tomadas, números e valores citados, nomes, arquivos mencionados, "
+    "preferências do usuário e pendências. Escreva em tópicos curtos, em "
+    "português. Não invente nada e não comente — só o resumo."
+)
+
+
+async def _resumir_trecho(mensagens: list, run_config: dict) -> str | None:
+    """Condensa as mensagens antigas numa só.
+
+    Falhar aqui não pode derrubar o turno: se o resumo não sai, o trecho é
+    descartado como se a compressão estivesse desligada — pior contexto, mas a
+    conversa continua.
+    """
+    from app.providers import ModelConfig, complete
+
+    transcricao = []
+    for m in mensagens:
+        papel = "assistente" if m.type == "ai" else "usuário"
+        conteudo = m.content if isinstance(m.content, str) else json.dumps(m.content)
+        transcricao.append(f"{papel}: {conteudo[:2000]}")
+
+    async def engolir(_):
+        return None
+
+    try:
+        resultado = await complete(
+            ModelConfig(**run_config["supervisor"]["model"]),
+            [
+                {"role": "system", "content": _RESUMO_PROMPT},
+                {"role": "user", "content": "\n".join(transcricao)},
+            ],
+            engolir,
+        )
+    except Exception:  # noqa: BLE001 — resumo é melhoria, não requisito
+        logger.exception("falha ao resumir histórico")
+        return None
+    texto = (resultado.content or "").strip()
+    return texto or None
+
+
+async def _historico_para_o_modelo(state: RunState, run_config: dict) -> list:
+    """As mensagens que cabem neste turno.
+
+    A conversa inteira ia para o modelo a cada turno. O custo crescia junto com
+    ela e, longa o bastante, o turno falhava no limite do modelo em vez de
+    degradar. O corte é do template porque a escolha afeta qualidade: cortar é
+    barato e perde o começo; resumir preserva o sentido e custa uma chamada.
+    """
+    mensagens = list(state["messages"])
+    limite = int(run_config.get("history_limit") or 100)
+    if len(mensagens) <= limite:
+        return [(None, m) for m in mensagens]
+
+    # Metade recente intacta; o resto vira resumo (ou é descartado).
+    recentes = mensagens[-(limite // 2):]
+    antigas = mensagens[: -(limite // 2)]
+
+    if not run_config.get("compress_history"):
+        return [(None, m) for m in recentes]
+
+    resumo = await _resumir_trecho(antigas, run_config)
+    if resumo is None:
+        return [(None, m) for m in recentes]
+    cabecalho = (
+        f"[Resumo automático das {len(antigas)} mensagens anteriores desta "
+        f"conversa]\n{resumo}"
+    )
+    return [("resumo", cabecalho)] + [(None, m) for m in recentes]
+
+
+async def _history_messages(
+    state: RunState, system_prompt: str, run_config: dict
+) -> list[dict]:
     messages: list[dict] = []
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
-    for m in state["messages"]:
-        role = "assistant" if m.type == "ai" else "user"
-        messages.append({"role": role, "content": m.content})
+    for marca, item in await _historico_para_o_modelo(state, run_config):
+        if marca == "resumo":
+            messages.append({"role": "user", "content": item})
+            continue
+        role = "assistant" if item.type == "ai" else "user"
+        messages.append({"role": role, "content": item.content})
     return messages
 
 
@@ -336,7 +415,7 @@ async def _supervisor_node(state: RunState) -> dict:
         bool(run_config.get("require_write_confirmation"))
         and bool(run_config.get("write_tables")),
     )
-    messages = _history_messages(state, system_prompt)
+    messages = await _history_messages(state, system_prompt, run_config)
 
     async def emit(delta: str):
         writer({"type": "token", "text": delta})

@@ -210,6 +210,8 @@ export default function Templates() {
   const [datasourceIds, setDatasourceIds] = useState<string[]>([])
   const [writeTables, setWriteTables] = useState('')
   const [requireConfirm, setRequireConfirm] = useState(true)
+  const [historyLimit, setHistoryLimit] = useState(100)
+  const [compressHistory, setCompressHistory] = useState(false)
 
   const { data: businessFiles = [] } = useQuery({
     queryKey: ['files'],
@@ -247,6 +249,8 @@ export default function Templates() {
       setAgents(v.agents)
       setWriteTables((v.write_tables ?? []).join(', '))
       setRequireConfirm(v.require_write_confirmation ?? true)
+      setHistoryLimit(v.history_limit ?? 100)
+      setCompressHistory(v.compress_history ?? false)
       setDatasourceIds(v.datasource_ids ?? [])
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -274,6 +278,8 @@ export default function Templates() {
         agents,
         write_tables: writeTables.split(',').map((t) => t.trim()).filter(Boolean),
         require_write_confirmation: requireConfirm,
+        history_limit: historyLimit,
+        compress_history: compressHistory,
         datasource_ids: datasourceIds,
       })
       return v
@@ -440,6 +446,38 @@ export default function Templates() {
                 className="h-4 w-4 accent-[var(--brand)]"
               />
               Exigir confirmação do usuário antes de escrever no banco
+            </label>
+          </div>
+          {/* Histórico: quanto da conversa volta para o modelo a cada turno.
+              Fica aqui, junto dos outros limites, porque é da mesma família —
+              o que o agente pode gastar num turno. */}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Input
+              label="Mensagens enviadas ao modelo"
+              hint="Conversa mais longa que isso vai cortada. Menos mensagens custam menos e respondem mais rápido; muito pouco faz o agente esquecer o começo."
+              type="number"
+              min={4}
+              max={500}
+              name="history-limit"
+              value={historyLimit}
+              onChange={(e) => setHistoryLimit(Number(e.target.value))}
+            />
+            <label className="flex items-start gap-2 pt-7 text-sm text-[var(--text-muted)]">
+              <input
+                type="checkbox"
+                name="compress-history"
+                checked={compressHistory}
+                onChange={(e) => setCompressHistory(e.target.checked)}
+                className="mt-0.5 h-4 w-4 accent-[var(--brand)]"
+              />
+              <span>
+                Resumir o começo em vez de descartar
+                <span className="mt-0.5 block text-xs">
+                  Ao passar do limite, a metade mais antiga vira um resumo feito
+                  pela IA. Preserva o contexto, custa uma chamada a mais por
+                  turno e a qualidade depende do resumo.
+                </span>
+              </span>
             </label>
           </div>
         </div>

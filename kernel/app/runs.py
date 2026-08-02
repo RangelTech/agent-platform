@@ -70,6 +70,10 @@ class RunRequest(BaseModel):
     supervisor: SupervisorSpec
     agents: list[AgentSpec] = Field(default_factory=list)
     max_steps: int = Field(default=6, ge=1, le=20)
+    # Quantas mensagens recentes seguem para o modelo.
+    history_limit: int = Field(default=100, ge=4, le=500)
+    # Resumir o começo em vez de descartá-lo.
+    compress_history: bool = False
     tenant_id: str | None = None
     user_id: str | None = None
     # name -> value, resolved into {{secret:NAME}} references inside tools;
@@ -113,6 +117,8 @@ async def create_run(payload: RunRequest):
         "supervisor": payload.supervisor.model_dump(),
         "agents": [a.model_dump() for a in payload.agents],
         "max_steps": payload.max_steps,
+        "history_limit": payload.history_limit,
+        "compress_history": payload.compress_history,
         "tenant_id": payload.tenant_id,
         "user_id": payload.user_id,
         "thread_id": payload.thread_id,

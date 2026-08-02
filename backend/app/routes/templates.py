@@ -49,6 +49,11 @@ class VersionIn(BaseModel):
     datasource_ids: list[str] = Field(default_factory=list)
     write_tables: list[str] = Field(default_factory=list)
     require_write_confirmation: bool = True
+    # Quantas mensagens recentes vão para o modelo a cada turno.
+    history_limit: int = Field(default=100, ge=4, le=500)
+    # Resumir o começo em vez de descartá-lo. Custa uma chamada a mais e
+    # depende do resumo estar bom, por isso é escolha explícita.
+    compress_history: bool = False
     notes: str = ""
 
 
@@ -174,8 +179,9 @@ def create_version(
                    (template_id, version_number, supervisor_prompt,
                     supervisor_ai_service_id, supervisor_model_override,
                     supervisor_reasoning_effort, max_steps, created_by, notes,
-                    write_tables, require_write_confirmation)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *""",
+                    write_tables, require_write_confirmation,
+                    history_limit, compress_history)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *""",
             (
                 template_id,
                 number,
@@ -188,6 +194,8 @@ def create_version(
                 payload.notes,
                 Json(payload.write_tables),
                 payload.require_write_confirmation,
+                payload.history_limit,
+                payload.compress_history,
             ),
         ).fetchone()
         for order, agent in enumerate(payload.agents):
@@ -302,6 +310,8 @@ def get_version(
         "max_steps": version["max_steps"],
         "write_tables": version.get("write_tables") or [],
         "require_write_confirmation": version.get("require_write_confirmation", True),
+        "history_limit": version.get("history_limit", 100),
+        "compress_history": version.get("compress_history", False),
         "notes": version["notes"],
         "agents": [
             {

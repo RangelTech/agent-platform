@@ -17,6 +17,15 @@ SENHA = "licita-senha-forte-123"
 FERRAMENTAS_DADOS = ["describe_datasources", "run_sql_query", "calculate"]
 FERRAMENTAS_SAIDA = ["generate_chart", "export_xlsx", "generate_pdf", "generate_forecast"]
 FERRAMENTAS_PESADAS = ["execute_python", "analyze_pdf_pages", "query_agent_rag"]
+FERRAMENTAS_COBRANCA = ["generate_pix_charge", "check_payment_status"]
+
+# Todo especialista que consulta dado também entrega o resultado. Observado no
+# QA: perguntado por uma projeção, o supervisor mandou a pergunta inteira para
+# `despesas` e não chamou `analista` — e `despesas` não tinha execute_python,
+# então a resposta foi "não tenho essa ferramenta". Depender de o supervisor
+# encadear dois especialistas é frágil; dar a ferramenta a quem já está no
+# caminho não é.
+FERRAMENTAS_ANALISE = FERRAMENTAS_DADOS + FERRAMENTAS_SAIDA + ["execute_python"]
 
 AGENTES = [
     {
@@ -29,7 +38,7 @@ AGENTES = [
             "município ou UF quando a pergunta indicar. Nunca invente número: se a consulta "
             "não trouxer linha, diga que não há registro para aquele filtro."
         ),
-        "tools": FERRAMENTAS_DADOS + ["generate_chart", "export_xlsx"],
+        "tools": FERRAMENTAS_ANALISE,
     },
     {
         "name": "itens",
@@ -39,7 +48,7 @@ AGENTES = [
             "`mi-prd-lake.semantic_zone`. Quando pedirem comparação de preço de item, "
             "agregue e mostre a dispersão, não só a média — média sozinha esconde outlier."
         ),
-        "tools": FERRAMENTAS_DADOS + ["generate_chart", "export_xlsx"],
+        "tools": FERRAMENTAS_ANALISE,
     },
     {
         "name": "despesas",
@@ -51,7 +60,7 @@ AGENTES = [
             "Sempre informe o ano de referência junto do valor — despesa sem ano não "
             "significa nada."
         ),
-        "tools": FERRAMENTAS_DADOS + ["generate_chart", "export_xlsx", "generate_forecast"],
+        "tools": FERRAMENTAS_ANALISE,
     },
     {
         "name": "receitas",
@@ -61,7 +70,7 @@ AGENTES = [
             "(`mi-prd-lake.semantic_zone`). O campo `codigo_conta_contabil` separa as "
             "contas; agregue com cuidado para não somar conta com subconta e dobrar o valor."
         ),
-        "tools": FERRAMENTAS_DADOS + ["generate_chart", "export_xlsx", "generate_forecast"],
+        "tools": FERRAMENTAS_ANALISE,
     },
     {
         "name": "contabilidade",
@@ -72,7 +81,7 @@ AGENTES = [
             "`mi-prd-lake.semantic_zone`. Explique o que o indicador significa antes de dar o "
             "número — quem pergunta raramente conhece a sigla."
         ),
-        "tools": FERRAMENTAS_DADOS + ["generate_chart", "export_xlsx", "generate_pdf"],
+        "tools": FERRAMENTAS_ANALISE,
     },
     {
         "name": "gerais",
@@ -82,7 +91,7 @@ AGENTES = [
             "`obt_ibge_municipio` e `obt_ibge_uf` em `mi-prd-lake.semantic_zone`. Você é quem "
             "traduz nome de município em código IBGE para os outros especialistas."
         ),
-        "tools": FERRAMENTAS_DADOS,
+        "tools": FERRAMENTAS_ANALISE,
     },
     {
         "name": "analista",
@@ -94,7 +103,24 @@ AGENTES = [
             "Quando pedirem gráfico ou planilha a partir de algo que já foi consultado nesta "
             "conversa, use o resultado que já existe — não consulte de novo."
         ),
-        "tools": FERRAMENTAS_DADOS + FERRAMENTAS_SAIDA + FERRAMENTAS_PESADAS + ["web_search"],
+        "tools": (
+            FERRAMENTAS_DADOS
+            + FERRAMENTAS_SAIDA
+            + FERRAMENTAS_PESADAS
+            + FERRAMENTAS_COBRANCA
+            + ["web_search"]
+        ),
+    },
+    {
+        "name": "financeiro",
+        "description": "Emite cobrança PIX e confere pagamento.",
+        "prompt": (
+            "Você cuida de cobrança. Use `generate_pix_charge` para emitir e "
+            "`check_payment_status` para conferir. Confirme o valor com o "
+            "usuário antes de emitir e repita o valor na resposta — cobrança "
+            "com valor errado é o pior erro possível aqui."
+        ),
+        "tools": FERRAMENTAS_COBRANCA + ["calculate"],
     },
     {
         "name": "pesquisador",
@@ -167,6 +193,8 @@ def main():
                 "supervisor_prompt": SUPERVISOR,
                 "ai_service_id": combo["id"],
                 "max_steps": 18,
+                "history_limit": 100,
+                "compress_history": True,
                 "agents": agentes,
                 "datasource_ids": [fonte["id"]],
                 "require_write_confirmation": True,
