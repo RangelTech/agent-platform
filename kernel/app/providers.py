@@ -110,6 +110,82 @@ async def _stream_stub(messages: list[dict], on_delta) -> Completion:
     return Completion(content="".join(parts))
 
 
+class ReasoningFilter:
+    """Drops `<think>…</think>` blocks from model output.
+
+    Reasoning models emit their scratchpad inline with the answer. It is not
+    part of the reply and must never reach the user — a combo that mixes model
+    families makes this unavoidable, since one provider emits the tags and
+    another does not.
+
+    Streaming is what makes this more than a `replace`: a tag arrives split
+    across chunks, so a partial tag at the end of a chunk has to be held back
+    until the next one proves what it is.
+    """
+
+    OPEN = "<think>"
+    CLOSE = "</think>"
+
+    def __init__(self) -> None:
+        self._held = ""
+        self._inside = False
+
+    def feed(self, text: str) -> str:
+        """Returns the part of `text` that is safe to show right now."""
+        self._held += text
+        out: list[str] = []
+        while self._held:
+            if self._inside:
+                fim = self._held.find(self.CLOSE)
+                if fim == -1:
+                    # Keep only what could still be the closing tag.
+                    self._held = self._held[-(len(self.CLOSE) - 1) :]
+                    break
+                self._held = self._held[fim + len(self.CLOSE) :]
+                self._inside = False
+                continue
+            inicio = self._held.find(self.OPEN)
+            if inicio == -1:
+                seguro = self._maior_prefixo_de_tag(self._held)
+                if seguro:
+                    out.append(self._held[:-seguro])
+                    self._held = self._held[-seguro:]
+                else:
+                    out.append(self._held)
+                    self._held = ""
+                break
+            out.append(self._held[:inicio])
+            self._held = self._held[inicio + len(self.OPEN) :]
+            self._inside = True
+        return "".join(out)
+
+    def flush(self) -> str:
+        """Whatever is left once the stream ends.
+
+        Text held back inside an unterminated block is dropped: an answer that
+        never closed its scratchpad has no reply to show, and printing the
+        scratchpad would be worse than printing nothing.
+        """
+        if self._inside:
+            self._held = ""
+            return ""
+        resto, self._held = self._held, ""
+        return resto
+
+    def _maior_prefixo_de_tag(self, texto: str) -> int:
+        """Quantos caracteres finais podem ser o começo de `<think>`."""
+        for tamanho in range(min(len(self.OPEN) - 1, len(texto)), 0, -1):
+            if self.OPEN.startswith(texto[-tamanho:]):
+                return tamanho
+        return 0
+
+
+def strip_reasoning(text: str) -> str:
+    """Same rule applied to a complete, non-streamed answer."""
+    filtro = ReasoningFilter()
+    return filtro.feed(text) + filtro.flush()
+
+
 async def _stream_litellm(
     config: ModelConfig, messages: list[dict], on_delta, tools: list[dict] | None
 ) -> Completion:
@@ -133,13 +209,16 @@ async def _stream_litellm(
     content_parts: list[str] = []
     # Streamed tool calls arrive as fragments indexed by position.
     calls: dict[int, dict] = {}
+    reasoning = ReasoningFilter()
     async for chunk in response:
         delta = chunk.choices[0].delta
         if delta is None:
             continue
         if delta.content:
-            content_parts.append(delta.content)
-            await on_delta(delta.content)
+            visivel = reasoning.feed(delta.content)
+            if visivel:
+                content_parts.append(visivel)
+                await on_delta(visivel)
         for tc in delta.tool_calls or []:
             slot = calls.setdefault(
                 tc.index, {"id": "", "name": "", "arguments": ""}
@@ -150,6 +229,11 @@ async def _stream_litellm(
                 slot["name"] += tc.function.name
             if tc.function and tc.function.arguments:
                 slot["arguments"] += tc.function.arguments
+
+    resto = reasoning.flush()
+    if resto:
+        content_parts.append(resto)
+        await on_delta(resto)
 
     tool_calls = [
         ToolCall(id=c["id"] or f"call-{i}", name=c["name"], arguments=c["arguments"] or "{}")
