@@ -120,9 +120,11 @@ export default function AiServices() {
         title="Serviços de IA"
         description="Conecte provedores por tenant, mantenha chaves sob seu controle e monitore rapidamente disponibilidade e saúde operacional."
         actions={
-          <Button type="submit" form="ai-service-form" disabled={create.isPending}>
-            {create.isPending ? 'Salvando…' : 'Novo serviço'}
-          </Button>
+          isMaster ? (
+            <Button type="submit" form="ai-service-form" disabled={create.isPending}>
+              {create.isPending ? 'Salvando…' : 'Novo serviço'}
+            </Button>
+          ) : null
         }
       />
 
@@ -136,6 +138,7 @@ export default function AiServices() {
         <StatCard label="Últimos testes OK" value={String(healthyCount)} meta="Resultado mais recente persistido no backend." />
       </div>
 
+      {isMaster && (
       <Card title="Cadastrar serviço BYOK">
         <div className="space-y-6">
           <SectionIntro
@@ -216,6 +219,8 @@ export default function AiServices() {
           </form>
         </div>
       </Card>
+      )}
+
 
       <Card title="Serviços cadastrados" actions={<Badge ok={activeCount > 0}>{activeCount} ativos</Badge>}>
         {isLoading ? (

@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Badge, Button, Card, EmptyState, ErrorText, Input, Select, Skeleton } from './ui'
 import { api, ApiError } from '../lib/api'
@@ -6,9 +6,20 @@ import { api, ApiError } from '../lib/api'
 /**
  * Contas de IA da empresa e os combos que revezam entre elas.
  *
- * O cliente escolhe conta e combo; a plataforma cuida do resto. Cada empresa
- * tem uma instância de roteamento própria — é isso que garante que a conta de
- * um cliente nunca atenda a chamada de outro.
+ * Cada empresa tem uma instância de roteamento própria — é isso que garante
+ * que a conta de um cliente nunca atenda a chamada de outro. O cliente não vê
+ * essa instância: ele vê contas e combos.
+ *
+ * Duas coisas explicam o formato da tela:
+ *
+ * 1. **Cada provedor conecta de um jeito.** Chave de API é um campo;
+ *    assinatura (Claude, ChatGPT) manda autorizar no site do provedor e voltar
+ *    com um código; e há provedor que mostra um código para digitar lá e fica
+ *    sendo consultado até confirmar. Por isso é um provedor por vez, num
+ *    modal, e não um formulário só tentando servir aos três.
+ * 2. **Mais de uma conta do mesmo provedor é o objetivo, não acidente.** É daí
+ *    que vem o revezamento que segura o limite de uso. Por isso prioridade e
+ *    estratégia ficam visíveis.
  */
 
 interface StatusRouter {
@@ -17,17 +28,34 @@ interface StatusRouter {
   combos?: number
 }
 
+type ModoConexao = 'apikey' | 'redirect' | 'device'
+
+interface Provedor {
+  id: string
+  nome: string
+  modo: ModoConexao
+  prefixo: string
+  nota?: string
+}
+
 interface Conta {
   id: string
   provider: string
+  provider_nome: string
   auth_type: string
   label: string
   conectada: boolean
+  situacao?: string
+  ativa?: boolean
+  prioridade?: number | null
+  expira_em?: string | null
+  ultimo_erro?: string | null
 }
 
 interface Modelo {
   id: string
   provider: string | null
+  provider_nome: string | null
 }
 
 interface Combo {
@@ -37,17 +65,27 @@ interface Combo {
   ai_service_id: string | null
 }
 
-const PROVEDORES = [
-  { value: 'gemini', label: 'Google Gemini' },
-  { value: 'openai', label: 'OpenAI' },
-  { value: 'anthropic', label: 'Anthropic Claude' },
-  { value: 'deepseek', label: 'DeepSeek' },
-  { value: 'groq', label: 'Groq' },
-]
+interface InicioOAuth {
+  modo: ModoConexao
+  auth_url: string | null
+  user_code: string | null
+  device_code: string | null
+  redirect_uri: string | null
+  code_verifier: string | null
+  state: string | null
+}
+
+const SITUACAO: Record<string, { texto: string; ok: boolean }> = {
+  active: { texto: 'Ativa', ok: true },
+  unknown: { texto: 'Sem uso ainda', ok: true },
+  unavailable: { texto: 'Indisponível', ok: false },
+  ausente: { texto: 'Pendente na instância', ok: false },
+}
 
 export function ContasIA() {
   const qc = useQueryClient()
   const [erro, setErro] = useState('')
+  const [provedorAberto, setProvedorAberto] = useState<Provedor | null>(null)
 
   const { data: status, isLoading } = useQuery({
     queryKey: ['ai-router-status'],
@@ -55,6 +93,11 @@ export function ContasIA() {
   })
   const provisionado = status?.provisionado ?? false
 
+  const { data: catalogo = [] } = useQuery({
+    queryKey: ['ai-router-catalogo'],
+    queryFn: () => api<Provedor[]>('/ai-router/catalogo'),
+    enabled: provisionado,
+  })
   const { data: contas = [] } = useQuery({
     queryKey: ['ai-router-contas'],
     queryFn: () => api<Conta[]>('/ai-router/contas'),
@@ -70,58 +113,35 @@ export function ContasIA() {
     queryFn: () => api<Combo[]>('/ai-router/combos'),
     enabled: provisionado,
   })
+  const { data: estrategias = {} } = useQuery({
+    queryKey: ['ai-router-estrategia'],
+    queryFn: () => api<Record<string, string>>('/ai-router/estrategia'),
+    enabled: provisionado,
+  })
 
-  const [conta, setConta] = useState({ provider: 'gemini', api_key: '', label: '' })
-  const [comboNome, setComboNome] = useState('')
-  const [comboModelos, setComboModelos] = useState<string[]>([])
+  const recarregar = () => {
+    qc.invalidateQueries({ queryKey: ['ai-router-contas'] })
+    qc.invalidateQueries({ queryKey: ['ai-router-modelos'] })
+    qc.invalidateQueries({ queryKey: ['ai-router-status'] })
+  }
 
-  const criarConta = useMutation({
-    mutationFn: () => api('/ai-router/contas', { method: 'POST', body: JSON.stringify(conta) }),
-    onSuccess: () => {
-      setConta({ provider: 'gemini', api_key: '', label: '' })
-      setErro('')
-      qc.invalidateQueries({ queryKey: ['ai-router-contas'] })
-      qc.invalidateQueries({ queryKey: ['ai-router-modelos'] })
-    },
-    onError: (e) => setErro(e instanceof ApiError ? e.message : 'Falha ao conectar conta'),
+  const removerConta = useMutation({
+    mutationFn: (id: string) => api(`/ai-router/contas/${id}`, { method: 'DELETE' }),
+    onSuccess: recarregar,
+    onError: (e) => setErro(e instanceof ApiError ? e.message : 'Falha ao remover conta'),
   })
 
   const sincronizar = useMutation({
     mutationFn: () => api<{ novas: number }>('/ai-router/sincronizar', { method: 'POST' }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['ai-router-contas'] })
-      qc.invalidateQueries({ queryKey: ['ai-router-modelos'] })
-    },
+    onSuccess: recarregar,
     onError: (e) => setErro(e instanceof ApiError ? e.message : 'Falha ao sincronizar'),
   })
 
-  const removerConta = useMutation({
-    mutationFn: (id: string) => api(`/ai-router/contas/${id}`, { method: 'DELETE' }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['ai-router-contas'] }),
-  })
-
-  const criarCombo = useMutation({
-    mutationFn: () =>
-      api('/ai-router/combos', {
-        method: 'POST',
-        body: JSON.stringify({ name: comboNome, models: comboModelos }),
-      }),
-    onSuccess: () => {
-      setComboNome('')
-      setComboModelos([])
-      setErro('')
-      qc.invalidateQueries({ queryKey: ['ai-router-combos'] })
-      qc.invalidateQueries({ queryKey: ['ai-services'] })
-    },
-    onError: (e) => setErro(e instanceof ApiError ? e.message : 'Falha ao criar combo'),
-  })
-
-  const removerCombo = useMutation({
-    mutationFn: (id: string) => api(`/ai-router/combos/${id}`, { method: 'DELETE' }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['ai-router-combos'] })
-      qc.invalidateQueries({ queryKey: ['ai-services'] })
-    },
+  const trocarEstrategia = useMutation({
+    mutationFn: (v: { provider: string; estrategia: string }) =>
+      api('/ai-router/estrategia', { method: 'PUT', body: JSON.stringify(v) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['ai-router-estrategia'] }),
+    onError: (e) => setErro(e instanceof ApiError ? e.message : 'Falha ao mudar revezamento'),
   })
 
   if (isLoading) return <Skeleton className="h-40" />
@@ -137,179 +157,503 @@ export function ContasIA() {
     )
   }
 
+  // O revezamento só muda alguma coisa onde há mais de uma conta do mesmo
+  // provedor — então só aí a escolha aparece.
+  const comRevezamento = [...new Set(contas.map((c) => c.provider))].filter(
+    (p) => contas.filter((c) => c.provider === p).length > 1,
+  )
+
   return (
-    <>
+    <div className="space-y-4">
       <Card
         title="Contas de IA da empresa"
         actions={
-          <Button variant="ghost" onClick={() => sincronizar.mutate()} disabled={sincronizar.isPending}>
-            {sincronizar.isPending ? 'Sincronizando…' : 'Sincronizar contas'}
+          <Button variant="ghost" onClick={() => sincronizar.mutate()}>
+            {sincronizar.isPending ? 'Sincronizando…' : 'Sincronizar'}
           </Button>
         }
       >
-        <form
-          onSubmit={(e: FormEvent) => {
-            e.preventDefault()
-            setErro('')
-            criarConta.mutate()
-          }}
-          className="grid gap-4 lg:grid-cols-4"
-        >
-          <Select
-            label="Provedor"
-            name="conta-provider"
-            value={conta.provider}
-            onChange={(e) => setConta({ ...conta, provider: e.target.value })}
-          >
-            {PROVEDORES.map((p) => (
-              <option key={p.value} value={p.value}>
-                {p.label}
-              </option>
-            ))}
-          </Select>
-          <Input
-            label="Apelido"
-            hint="Como esta conta aparece para o seu time."
-            name="conta-label"
-            value={conta.label}
-            onChange={(e) => setConta({ ...conta, label: e.target.value })}
-          />
-          <Input
-            label="Chave da conta"
-            hint="Fica guardada cifrada e nunca é exibida de volta."
-            type="password"
-            name="conta-key"
-            autoComplete="off"
-            value={conta.api_key}
-            onChange={(e) => setConta({ ...conta, api_key: e.target.value })}
-          />
-          <div className="flex items-end">
-            <Button type="submit" disabled={criarConta.isPending || !conta.api_key || !conta.label}>
-              {criarConta.isPending ? 'Conectando…' : 'Conectar conta'}
-            </Button>
+        <div className="space-y-6">
+          <div>
+            <p className="mb-3 text-sm text-[var(--text-muted)]">
+              Conecte as contas que a empresa já paga. Assinaturas (Claude, ChatGPT, Copilot)
+              autorizam pelo site do provedor; as demais pedem a chave de API.
+            </p>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {catalogo.map((p) => {
+                const quantas = contas.filter((c) => c.provider === p.id).length
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    data-testid={`provedor-${p.id}`}
+                    onClick={() => {
+                      setErro('')
+                      setProvedorAberto(p)
+                    }}
+                    className="flex min-h-14 items-center justify-between gap-2 rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-3 text-left transition hover:border-[var(--brand)] hover:bg-[var(--brand-soft)]"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium text-[var(--text)]">
+                        {p.nome}
+                      </span>
+                      <span className="block text-xs text-[var(--text-muted)]">
+                        {p.modo === 'apikey' ? 'chave de API' : 'assinatura'}
+                      </span>
+                    </span>
+                    {quantas > 0 && <Badge ok>{quantas}</Badge>}
+                  </button>
+                )
+              })}
+            </div>
           </div>
-          <p className="lg:col-span-4 text-sm leading-6 text-[var(--text-muted)]">
-            Contas de assinatura (Claude, Codex) são conectadas por login na instância da empresa e
-            entram aqui com <strong>Sincronizar contas</strong>.
-          </p>
-          <div className="lg:col-span-4">
-            <ErrorText>{erro}</ErrorText>
-          </div>
-        </form>
 
-        <div className="mt-6 space-y-2">
+          {erro && <ErrorText>{erro}</ErrorText>}
+
           {contas.length === 0 ? (
             <EmptyState
               title="Nenhuma conta conectada"
-              description="Conecte a primeira conta acima para que os agentes desta empresa possam responder."
+              description="Escolha um provedor acima para conectar a primeira conta."
             />
           ) : (
-            contas.map((c) => (
-              <div
-                key={c.id}
-                data-testid="conta-ia"
-                className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-3"
-              >
-                <div>
-                  <p className="text-sm font-medium text-[var(--text)]">{c.label}</p>
-                  <p className="text-xs text-[var(--text-muted)]">
-                    {c.provider} · {c.auth_type === 'oauth' ? 'assinatura' : 'chave de API'}
-                  </p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <Badge ok={c.conectada}>{c.conectada ? 'Ativa' : 'Pendente'}</Badge>
-                  <Button variant="danger" onClick={() => removerConta.mutate(c.id)}>
-                    Remover
-                  </Button>
-                </div>
+            <ul className="space-y-2" data-testid="lista-contas">
+              {contas.map((c) => {
+                const s = SITUACAO[c.situacao ?? 'unknown'] ?? SITUACAO.unknown
+                return (
+                  <li
+                    key={c.id}
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-[var(--surface-soft)] px-4 py-3"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-[var(--text)]">{c.label}</p>
+                      <p className="text-xs text-[var(--text-muted)]">
+                        {c.provider_nome} ·{' '}
+                        {c.auth_type === 'apikey' ? 'chave de API' : 'assinatura'}
+                        {c.prioridade ? ` · prioridade ${c.prioridade}` : ''}
+                      </p>
+                      {c.ultimo_erro && (
+                        <p className="mt-1 text-xs text-[var(--danger)]">{c.ultimo_erro}</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge ok={s.ok}>{s.texto}</Badge>
+                      <Button variant="danger" onClick={() => removerConta.mutate(c.id)}>
+                        Remover
+                      </Button>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+
+          {comRevezamento.length > 0 && (
+            <div className="rounded-2xl border border-[var(--border)] p-4">
+              <p className="text-sm font-medium text-[var(--text)]">Revezamento entre contas</p>
+              <p className="mb-3 text-xs text-[var(--text-muted)]">
+                Alternar a cada chamada distribui o limite entre as contas. Só quando falhar
+                mantém uma conta até ela parar de responder.
+              </p>
+              <div className="space-y-2">
+                {comRevezamento.map((p) => (
+                  <div key={p} className="flex flex-wrap items-center justify-between gap-3">
+                    <span className="text-sm text-[var(--text)]">
+                      {contas.find((c) => c.provider === p)?.provider_nome ?? p}
+                    </span>
+                    <Select
+                      value={estrategias[p] ?? 'fallback'}
+                      onChange={(e) =>
+                        trocarEstrategia.mutate({ provider: p, estrategia: e.target.value })
+                      }
+                      className="max-w-[16rem]"
+                    >
+                      <option value="round-robin">Alternar a cada chamada</option>
+                      <option value="fallback">Só quando falhar</option>
+                    </Select>
+                  </div>
+                ))}
               </div>
-            ))
+            </div>
           )}
         </div>
       </Card>
 
-      <Card title="Combos">
-        <form
-          onSubmit={(e: FormEvent) => {
-            e.preventDefault()
-            setErro('')
-            criarCombo.mutate()
+      <CombosCard modelos={modelos} combos={combos} />
+
+      {provedorAberto && (
+        <ModalConexao
+          provedor={provedorAberto}
+          onFechar={() => setProvedorAberto(null)}
+          onPronto={() => {
+            setProvedorAberto(null)
+            recarregar()
           }}
-          className="grid gap-4 lg:grid-cols-2"
-        >
+        />
+      )}
+    </div>
+  )
+}
+
+/**
+ * Conexão de uma conta, um provedor por vez.
+ *
+ * O fluxo de assinatura tem duas etapas separadas por uma ida ao site do
+ * provedor. O `code_verifier` devolvido na primeira etapa volta na segunda:
+ * é um verificador PKCE de uso único, feito exatamente para trafegar assim,
+ * e por isso vive só no estado deste componente — não é persistido.
+ */
+function ModalConexao({
+  provedor,
+  onFechar,
+  onPronto,
+}: {
+  provedor: Provedor
+  onFechar: () => void
+  onPronto: () => void
+}) {
+  const [label, setLabel] = useState('')
+  const [apiKey, setApiKey] = useState('')
+  const [codigo, setCodigo] = useState('')
+  const [inicio, setInicio] = useState<InicioOAuth | null>(null)
+  const [erro, setErro] = useState('')
+  const [aguardando, setAguardando] = useState(false)
+  const cancelado = useRef(false)
+
+  useEffect(
+    () => () => {
+      cancelado.current = true
+    },
+    [],
+  )
+
+  const conectarChave = useMutation({
+    mutationFn: () =>
+      api('/ai-router/contas', {
+        method: 'POST',
+        body: JSON.stringify({
+          provider: provedor.id,
+          api_key: apiKey,
+          label: label || provedor.nome,
+        }),
+      }),
+    onSuccess: onPronto,
+    onError: (e) => setErro(e instanceof ApiError ? e.message : 'Falha ao conectar'),
+  })
+
+  const iniciar = useMutation({
+    mutationFn: () =>
+      api<InicioOAuth>('/ai-router/contas/oauth/iniciar', {
+        method: 'POST',
+        body: JSON.stringify({ provider: provedor.id }),
+      }),
+    onSuccess: (dados) => {
+      setInicio(dados)
+      if (dados.auth_url) window.open(dados.auth_url, '_blank', 'noopener')
+      if (dados.modo === 'device') void aguardarConfirmacao(dados)
+    },
+    onError: (e) => setErro(e instanceof ApiError ? e.message : 'Falha ao iniciar autorização'),
+  })
+
+  const concluir = useMutation({
+    mutationFn: () =>
+      api<{ pendente: boolean }>('/ai-router/contas/oauth/concluir', {
+        method: 'POST',
+        body: JSON.stringify({
+          provider: provedor.id,
+          label: label || provedor.nome,
+          code: codigo,
+          redirect_uri: inicio?.redirect_uri,
+          code_verifier: inicio?.code_verifier,
+          state: inicio?.state,
+        }),
+      }),
+    onSuccess: onPronto,
+    onError: (e) => setErro(e instanceof ApiError ? e.message : 'Falha ao concluir'),
+  })
+
+  /**
+   * Fluxo device: o cliente digita o código no site do provedor e nós
+   * perguntamos até ele confirmar. Sem isso ele teria que apertar um botão
+   * sem saber quando — e apertar cedo demais parece erro.
+   */
+  async function aguardarConfirmacao(dados: InicioOAuth) {
+    setAguardando(true)
+    cancelado.current = false
+    for (let tentativa = 0; tentativa < 60 && !cancelado.current; tentativa += 1) {
+      await new Promise((r) => setTimeout(r, 5000))
+      if (cancelado.current) return
+      try {
+        const r = await api<{ pendente: boolean; erro?: string | null }>(
+          '/ai-router/contas/oauth/concluir',
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              provider: provedor.id,
+              label: label || provedor.nome,
+              device_code: dados.device_code,
+              code_verifier: dados.code_verifier,
+            }),
+          },
+        )
+        if (!r.pendente) {
+          if (r.erro) setErro(r.erro)
+          else {
+            onPronto()
+            return
+          }
+          break
+        }
+      } catch (e) {
+        setErro(e instanceof ApiError ? e.message : 'Falha ao confirmar')
+        break
+      }
+    }
+    setAguardando(false)
+  }
+
+  const enviar = (e: FormEvent) => {
+    e.preventDefault()
+    setErro('')
+    if (provedor.modo === 'apikey') conectarChave.mutate()
+    else if (!inicio) iniciar.mutate()
+    else concluir.mutate()
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4"
+      role="dialog"
+      aria-modal="true"
+    >
+      <form
+        onSubmit={enviar}
+        data-testid="modal-conexao"
+        className="max-h-[90dvh] w-full max-w-lg space-y-4 overflow-y-auto rounded-[28px] border border-[var(--border)] bg-[var(--surface-solid)] p-6 shadow-2xl"
+      >
+        <div>
+          <h3 className="text-base font-semibold text-[var(--text)]">
+            Conectar {provedor.nome}
+          </h3>
+          {provedor.nota && (
+            <p className="mt-1 text-sm text-[var(--text-muted)]">{provedor.nota}</p>
+          )}
+        </div>
+
+        <Input
+          label="Apelido"
+          hint="Como esta conta aparece para o seu time."
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          placeholder={provedor.nome}
+        />
+
+        {provedor.modo === 'apikey' && (
           <Input
-            label="Nome do combo"
-            hint="É este nome que aparece ao escolher o serviço de IA de um template."
-            name="combo-nome"
-            value={comboNome}
-            onChange={(e) => setComboNome(e.target.value)}
+            label="Chave de API"
+            hint="Fica guardada cifrada e nunca é exibida de volta."
+            type="password"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            required
           />
-          <div>
-            <span className="block text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">
-              Modelos que revezam
-            </span>
-            <p className="mt-1 text-sm leading-5 text-[var(--text-faint)]">
-              As chamadas alternam entre os modelos marcados, na ordem em que você marcar.
-            </p>
-            <div className="mt-2 max-h-40 space-y-1 overflow-y-auto rounded-2xl border border-[var(--border)] p-2">
-              {modelos.length === 0 && (
-                <p className="px-2 py-3 text-sm text-[var(--text-faint)]">
-                  Conecte uma conta para ver os modelos disponíveis.
-                </p>
-              )}
-              {modelos.map((m) => (
-                <label key={m.id} className="flex items-center gap-2 px-2 py-1 text-sm text-[var(--text)]">
-                  <input
-                    type="checkbox"
-                    checked={comboModelos.includes(m.id)}
-                    onChange={(e) =>
-                      setComboModelos(
-                        e.target.checked
-                          ? [...comboModelos, m.id]
-                          : comboModelos.filter((x) => x !== m.id),
-                      )
-                    }
-                  />
-                  {m.id}
-                </label>
-              ))}
+        )}
+
+        {provedor.modo === 'redirect' && inicio && (
+          <div className="space-y-3">
+            <div className="rounded-2xl bg-[var(--surface-soft)] p-3">
+              <p className="text-sm font-medium text-[var(--text)]">
+                1. Autorize no site do provedor
+              </p>
+              <p className="mt-1 text-xs text-[var(--text-muted)]">
+                A janela abriu em outra aba. Se não abriu,{' '}
+                <a
+                  className="underline"
+                  href={inicio.auth_url ?? '#'}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  clique aqui
+                </a>
+                .
+              </p>
             </div>
+            <Input
+              label="2. Cole o que o provedor devolveu"
+              hint="Pode colar a URL inteira da barra de endereços — extraímos o código."
+              value={codigo}
+              onChange={(e) => setCodigo(e.target.value)}
+              required
+            />
           </div>
-          <div className="lg:col-span-2">
+        )}
+
+        {provedor.modo === 'device' && inicio && (
+          <div className="space-y-2 rounded-2xl bg-[var(--surface-soft)] p-4 text-center">
+            <p className="text-sm font-medium text-[var(--text)]">
+              Digite este código no site do provedor
+            </p>
+            <p className="font-mono text-2xl tracking-[0.3em] text-[var(--text)]">
+              {inicio.user_code ?? '—'}
+            </p>
+            <p className="text-xs text-[var(--text-muted)]">
+              {aguardando
+                ? 'Esperando você confirmar… esta janela fecha sozinha.'
+                : 'Confirme no site para concluir.'}
+            </p>
+          </div>
+        )}
+
+        {erro && <ErrorText>{erro}</ErrorText>}
+
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="ghost" onClick={onFechar}>
+            Cancelar
+          </Button>
+          {!(provedor.modo === 'device' && inicio) && (
             <Button
               type="submit"
-              disabled={criarCombo.isPending || !comboNome || comboModelos.length === 0}
+              disabled={iniciar.isPending || concluir.isPending || conectarChave.isPending}
             >
-              {criarCombo.isPending ? 'Criando…' : 'Criar combo'}
+              {provedor.modo === 'apikey'
+                ? 'Conectar'
+                : inicio
+                  ? 'Concluir'
+                  : 'Abrir autorização'}
+            </Button>
+          )}
+        </div>
+      </form>
+    </div>
+  )
+}
+
+/** Combos: quais modelos revezam entre si e viram um serviço de IA. */
+function CombosCard({ modelos, combos }: { modelos: Modelo[]; combos: Combo[] }) {
+  const qc = useQueryClient()
+  const [nome, setNome] = useState('')
+  const [escolhidos, setEscolhidos] = useState<string[]>([])
+  const [erro, setErro] = useState('')
+
+  const criar = useMutation({
+    mutationFn: () =>
+      api('/ai-router/combos', {
+        method: 'POST',
+        body: JSON.stringify({ name: nome, models: escolhidos }),
+      }),
+    onSuccess: () => {
+      setNome('')
+      setEscolhidos([])
+      setErro('')
+      qc.invalidateQueries({ queryKey: ['ai-router-combos'] })
+      qc.invalidateQueries({ queryKey: ['ai-services'] })
+    },
+    onError: (e) => setErro(e instanceof ApiError ? e.message : 'Falha ao criar combo'),
+  })
+
+  const remover = useMutation({
+    mutationFn: (id: string) => api(`/ai-router/combos/${id}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ai-router-combos'] })
+      qc.invalidateQueries({ queryKey: ['ai-services'] })
+    },
+  })
+
+  // Agrupar por provedor deixa visível que um combo bom mistura contas
+  // diferentes — é isso que faz o limite de uma não derrubar o atendimento.
+  const porProvedor = modelos.reduce<Record<string, Modelo[]>>((acc, m) => {
+    const chave = m.provider_nome ?? m.provider ?? 'Outros'
+    acc[chave] = [...(acc[chave] ?? []), m]
+    return acc
+  }, {})
+
+  return (
+    <Card title="Combos">
+      <div className="space-y-5">
+        <p className="text-sm text-[var(--text-muted)]">
+          Um combo reveza entre os modelos escolhidos e vira um serviço de IA, pronto para
+          escolher no template.
+        </p>
+
+        {modelos.length === 0 ? (
+          <EmptyState
+            title="Conecte uma conta primeiro"
+            description="Os modelos de um combo vêm das contas conectadas acima."
+          />
+        ) : (
+          <div className="space-y-3">
+            <Input
+              label="Nome do combo"
+              value={nome}
+              onChange={(e) => setNome(e.target.value)}
+              placeholder="Ex.: Produção"
+              className="max-w-sm"
+            />
+
+            <div className="max-h-72 space-y-4 overflow-y-auto rounded-2xl border border-[var(--border)] p-4">
+              {Object.entries(porProvedor).map(([grupo, lista]) => (
+                <div key={grupo}>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                    {grupo}
+                  </p>
+                  <div className="grid gap-1 sm:grid-cols-2">
+                    {lista.map((m) => (
+                      <label key={m.id} className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={escolhidos.includes(m.id)}
+                          onChange={(e) =>
+                            setEscolhidos((atual) =>
+                              e.target.checked
+                                ? [...atual, m.id]
+                                : atual.filter((x) => x !== m.id),
+                            )
+                          }
+                        />
+                        <span className="truncate font-mono text-xs text-[var(--text)]">
+                          {m.id}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {erro && <ErrorText>{erro}</ErrorText>}
+
+            <Button
+              onClick={() => criar.mutate()}
+              disabled={!nome || escolhidos.length === 0 || criar.isPending}
+            >
+              {criar.isPending ? 'Criando…' : `Criar combo (${escolhidos.length})`}
             </Button>
           </div>
-        </form>
+        )}
 
-        <div className="mt-6 space-y-2">
-          {combos.length === 0 ? (
-            <EmptyState
-              title="Nenhum combo criado"
-              description="Um combo agrupa as contas da empresa e vira uma opção de serviço de IA nos templates."
-            />
-          ) : (
-            combos.map((c) => (
-              <div
+        {combos.length > 0 && (
+          <ul className="space-y-2" data-testid="lista-combos">
+            {combos.map((c) => (
+              <li
                 key={c.id}
-                data-testid="combo-ia"
-                className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-3"
+                className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-[var(--surface-soft)] px-4 py-3"
               >
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-[var(--text)]">{c.name}</p>
-                  <p className="truncate text-xs text-[var(--text-muted)]">{c.models.join(' · ')}</p>
+                  <p className="truncate font-mono text-xs text-[var(--text-muted)]">
+                    {c.models.join(' · ')}
+                  </p>
                 </div>
-                <Button variant="danger" onClick={() => removerCombo.mutate(c.id)}>
-                  Remover
-                </Button>
-              </div>
-            ))
-          )}
-        </div>
-      </Card>
-    </>
+                <div className="flex items-center gap-2">
+                  <Badge ok>serviço de IA publicado</Badge>
+                  <Button variant="danger" onClick={() => remover.mutate(c.id)}>
+                    Remover
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </Card>
   )
 }

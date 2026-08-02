@@ -47,6 +47,7 @@ async def _request(
     path: str,
     *,
     json_body: dict | None = None,
+    params: dict | None = None,
 ) -> dict:
     from app.crypto import decrypt
 
@@ -59,6 +60,7 @@ async def _request(
                 f"{base_url.rstrip('/')}{path}",
                 headers={"Cookie": f"auth_token={token}"},
                 json=json_body,
+                params=params,
             )
     except httpx.HTTPError as exc:
         raise RouterError(f"instância de IA inacessível: {exc}") from exc
@@ -107,6 +109,85 @@ async def delete_connection(router: dict, connection_id: str) -> None:
     await _request(router, "DELETE", f"/api/providers/{connection_id}")
 
 
+async def update_connection(router: dict, connection_id: str, **campos) -> dict:
+    """Prioridade e liga/desliga de uma conta.
+
+    A prioridade é o que decide a ordem do revezamento entre contas do mesmo
+    provedor — é por ela que a conta 2 assume quando a 1 bate no limite.
+    """
+    return await _request(
+        router, "PUT", f"/api/providers/{connection_id}", json_body=campos
+    )
+
+
+# --------------------------------------------------------------------------
+# Contas por assinatura (OAuth)
+# --------------------------------------------------------------------------
+#
+# São dois fluxos, e a diferença importa para a tela:
+#
+#   redirect — `authorize` devolve uma URL. O cliente autoriza no provedor e
+#              volta com um código. Quem guarda `codeVerifier`/`state` entre as
+#              duas etapas é a tela, e devolve os dois no `exchange`.
+#   device   — `authorize` devolve um código curto e uma URL. O cliente digita
+#              o código lá, e a instância vai sendo consultada (`poll`) até ele
+#              confirmar.
+
+
+async def oauth_authorize(
+    router: dict, provider: str, *, redirect_uri: str | None = None
+) -> dict:
+    """Fluxo redirect: devolve a URL para o cliente autorizar."""
+    params = {"redirect_uri": redirect_uri} if redirect_uri else None
+    return await _request(
+        router, "GET", f"/api/oauth/{provider}/authorize", params=params
+    )
+
+
+async def oauth_device_code(router: dict, provider: str) -> dict:
+    """Fluxo device: devolve o código curto e onde digitá-lo.
+
+    É uma ação separada de `authorize` — chamar `authorize` num provedor de
+    device devolve só material PKCE, sem código nenhum, e a tela ficaria
+    mostrando um campo vazio.
+    """
+    return await _request(router, "GET", f"/api/oauth/{provider}/device-code")
+
+
+async def oauth_exchange(
+    router: dict,
+    provider: str,
+    *,
+    code: str,
+    redirect_uri: str,
+    code_verifier: str | None,
+    state: str | None = None,
+) -> dict:
+    return await _request(
+        router,
+        "POST",
+        f"/api/oauth/{provider}/exchange",
+        json_body={
+            "code": code,
+            "redirectUri": redirect_uri,
+            "codeVerifier": code_verifier,
+            "state": state,
+        },
+    )
+
+
+async def oauth_poll(
+    router: dict, provider: str, *, device_code: str, code_verifier: str | None
+) -> dict:
+    """Enquanto o cliente não confirma, devolve `pending`. Não é erro."""
+    return await _request(
+        router,
+        "POST",
+        f"/api/oauth/{provider}/poll",
+        json_body={"deviceCode": device_code, "codeVerifier": code_verifier},
+    )
+
+
 # --------------------------------------------------------------------------
 # Combos (o revezamento entre as contas do próprio tenant)
 # --------------------------------------------------------------------------
@@ -118,8 +199,20 @@ async def list_combos(router: dict) -> list[dict]:
 
 
 async def create_combo(router: dict, *, name: str, models: list[str]) -> dict:
+    """O nome só aceita letras, números, `-`, `_` e `.` — sem espaço e sem
+    acento. Quem monta o nome interno é `ai_router._slug`.
+
+    A instância **não valida os modelos**: um combo com modelo inexistente é
+    aceito com 201 e só falha na hora de responder. Por isso a validação de
+    verdade acontece do nosso lado, antes desta chamada."""
     return await _request(
         router, "POST", "/api/combos", json_body={"name": name, "models": models}
+    )
+
+
+async def update_combo(router: dict, combo_id: str, *, models: list[str]) -> dict:
+    return await _request(
+        router, "PUT", f"/api/combos/{combo_id}", json_body={"models": models}
     )
 
 
@@ -145,7 +238,37 @@ async def list_models(router: dict) -> list[dict]:
     return (response.json() or {}).get("data") or []
 
 
+async def available_models(router: dict) -> list[dict]:
+    """Modelos que as contas conectadas do tenant realmente liberam.
+
+    `/v1/models` devolve o catálogo inteiro da imagem (752 modelos), conectado
+    ou não — usar aquilo como "disponível" deixaria o cliente montar um combo
+    que nunca responde. Aqui o catálogo é cruzado com as contas que existem na
+    instância, pelo prefixo do modelo.
+    """
+    from app.router_catalog import provedor_de_modelo
+
+    conexoes = await list_connections(router)
+    conectados = {c.get("provider") for c in conexoes if c.get("isActive")}
+    return [
+        m
+        for m in await list_models(router)
+        if provedor_de_modelo(m["id"]) in conectados and m.get("owned_by") != "combo"
+    ]
+
+
+async def settings(router: dict) -> dict:
+    return await _request(router, "GET", "/api/settings")
+
+
+async def update_settings(router: dict, campos: dict) -> dict:
+    return await _request(router, "PATCH", "/api/settings", json_body=campos)
+
+
 async def usage(router: dict) -> dict:
     """Consumo da instância. Como ela é de um tenant só, o número já vem
-    filtrado por tenant — o painel nativo do 9Router não faria isso."""
-    return await _request(router, "GET", "/api/usage")
+    filtrado por tenant — o painel nativo do 9Router não faria isso.
+
+    O caminho é `/api/usage/stats`; `/api/usage` sozinho é 404.
+    """
+    return await _request(router, "GET", "/api/usage/stats")

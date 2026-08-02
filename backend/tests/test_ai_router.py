@@ -49,6 +49,9 @@ def _fake_router():
             "provider": corpo["provider"],
             "authType": "apikey",
             "name": corpo.get("name"),
+            "isActive": True,
+            "priority": 1,
+            "testStatus": "active",
         }
         estado["conexoes"].append(conexao)
         return {"connection": conexao}
@@ -74,7 +77,25 @@ def _fake_router():
         estado["combos"].append(combo)
         return combo
 
-    @app.get("/api/usage")
+    @app.get("/api/oauth/{provider}/authorize")
+    async def autorizar(provider: str):
+        return {
+            "authUrl": f"https://exemplo.invalido/{provider}",
+            "state": "s",
+            "codeVerifier": "v",
+            "redirectUri": "http://localhost:8080/callback",
+        }
+
+    @app.get("/api/oauth/{provider}/device-code")
+    async def codigo_de_dispositivo(provider: str):
+        return {
+            "device_code": "d-123",
+            "user_code": "ABCD-1234",
+            "verification_uri": f"https://exemplo.invalido/{provider}/device",
+            "codeVerifier": "v",
+        }
+
+    @app.get("/api/usage/stats")
     async def uso():
         return {"total": 42}
 
@@ -140,6 +161,12 @@ def test_combo_vira_servico_de_ia_do_tenant(client, master_token, tenant_admin):
     server, porta, _ = _fake_router()
     try:
         _registrar(client, master_token, tenant_admin["user"]["tenant_id"], porta)
+        for provedor in ("gemini", "claude"):
+            client.post(
+                "/api/ai-router/contas",
+                json={"provider": provedor, "api_key": "k", "label": provedor},
+                headers=auth(tenant_admin["token"]),
+            )
         combo = client.post(
             "/api/ai-router/combos",
             json={"name": "Principal", "models": ["gemini/gemini-3.1-flash", "cc/claude-sonnet-5"]},
@@ -212,3 +239,105 @@ def test_credenciais_da_instancia_ficam_cifradas(client, master_token, tenant_ad
     for senha, chave in linhas:
         assert "senha-da-instancia" not in (senha or "")
         assert "sk-da-instancia" not in (chave or "")
+
+
+def test_modelo_sem_conta_conectada_nao_entra_em_combo(client, master_token, tenant_admin):
+    """O catálogo da instância traz 752 modelos, conectados ou não.
+
+    Se `/v1/models` fosse a fonte de "disponível", o cliente montaria um combo
+    com um modelo que nenhuma conta dele atende — aceito na criação e quebrando
+    só no meio de um atendimento. Aqui a empresa tem conta Gemini e nenhuma
+    Claude, então o modelo `cc/…` não pode entrar.
+    """
+    server, porta, _ = _fake_router()
+    try:
+        _registrar(client, master_token, tenant_admin["user"]["tenant_id"], porta)
+        client.post(
+            "/api/ai-router/contas",
+            json={"provider": "gemini", "api_key": "k", "label": "Gemini"},
+            headers=auth(tenant_admin["token"]),
+        )
+        modelos = client.get("/api/ai-router/modelos", headers=auth(tenant_admin["token"]))
+        combo = client.post(
+            "/api/ai-router/combos",
+            json={"name": "Mistura", "models": ["cc/claude-sonnet-5"]},
+            headers=auth(tenant_admin["token"]),
+        )
+    finally:
+        server.should_exit = True
+
+    oferecidos = {m["id"] for m in modelos.json()}
+    assert oferecidos == {"gemini/gemini-3.1-flash"}
+    assert combo.status_code == 400
+    assert "cc/claude-sonnet-5" in combo.json()["detail"]
+
+
+def test_catalogo_nao_expoe_provedor_fora_da_curadoria(client, master_token, tenant_admin):
+    """A instância conhece 80 provedores; a tela oferece os que fazem sentido
+    aqui. Provedor fora da lista não conecta nem por chamada direta."""
+    server, porta, _ = _fake_router()
+    try:
+        _registrar(client, master_token, tenant_admin["user"]["tenant_id"], porta)
+        catalogo = client.get("/api/ai-router/catalogo", headers=auth(tenant_admin["token"]))
+        recusado = client.post(
+            "/api/ai-router/contas/oauth/iniciar",
+            json={"provider": "provedor-inexistente"},
+            headers=auth(tenant_admin["token"]),
+        )
+    finally:
+        server.should_exit = True
+
+    ids = {p["id"] for p in catalogo.json()}
+    assert {"claude", "codex", "gemini"} <= ids
+    assert all(p["modo"] in {"apikey", "redirect", "device"} for p in catalogo.json())
+    assert recusado.status_code == 400
+
+
+def test_assinatura_devolve_o_que_a_tela_precisa_mostrar(client, master_token, tenant_admin):
+    """Os dois fluxos de assinatura chegam à tela no mesmo formato.
+
+    A instância responde em camelCase no fluxo de redirecionamento e em
+    snake_case no de código de dispositivo, e são endpoints diferentes. Se essa
+    diferença vazasse para a tela, o campo do código apareceria vazio — que foi
+    exatamente o defeito encontrado antes de existir este teste.
+    """
+    server, porta, _ = _fake_router()
+    try:
+        _registrar(client, master_token, tenant_admin["user"]["tenant_id"], porta)
+        redirecionado = client.post(
+            "/api/ai-router/contas/oauth/iniciar",
+            json={"provider": "claude"},
+            headers=auth(tenant_admin["token"]),
+        ).json()
+        dispositivo = client.post(
+            "/api/ai-router/contas/oauth/iniciar",
+            json={"provider": "github"},
+            headers=auth(tenant_admin["token"]),
+        ).json()
+    finally:
+        server.should_exit = True
+
+    assert redirecionado["modo"] == "redirect"
+    assert redirecionado["auth_url"].startswith("https://")
+    assert redirecionado["code_verifier"]
+
+    assert dispositivo["modo"] == "device"
+    assert dispositivo["user_code"] == "ABCD-1234"
+    assert dispositivo["device_code"] == "d-123"
+    assert dispositivo["auth_url"].startswith("https://")
+
+
+def test_chave_de_api_nao_passa_pelo_fluxo_de_assinatura(client, master_token, tenant_admin):
+    """Gemini conecta por chave; pedir autorização dele é erro de uso."""
+    server, porta, _ = _fake_router()
+    try:
+        _registrar(client, master_token, tenant_admin["user"]["tenant_id"], porta)
+        resposta = client.post(
+            "/api/ai-router/contas/oauth/iniciar",
+            json={"provider": "gemini"},
+            headers=auth(tenant_admin["token"]),
+        )
+    finally:
+        server.should_exit = True
+
+    assert resposta.status_code == 400

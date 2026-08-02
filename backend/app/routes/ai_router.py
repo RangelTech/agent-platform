@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from psycopg.types.json import Json
 from pydantic import BaseModel, Field
 
-from app import router_client
+from app import router_catalog, router_client
 from app.auth import require
 from app.crypto import encrypt
 from app.db import get_connection
@@ -99,15 +99,37 @@ async def listar_contas(user: dict = Depends(require("ai_router", "view"))):
                 WHERE tenant_id = %s AND is_active ORDER BY created_at""",
             (user["tenant_id"],),
         ).fetchall()
+    def _saude(remota: dict | None) -> dict:
+        """Estado real da conta, como a instância enxerga.
+
+        Sem isto, uma conta que bateu no limite (429) ou cuja sessão expirou
+        continuaria aparecendo como saudável, e o cliente só descobriria pelo
+        agente falhando no meio de um atendimento.
+        """
+        if remota is None:
+            return {"conectada": False, "situacao": "ausente"}
+        estado = remota.get("testStatus") or "unknown"
+        return {
+            "conectada": True,
+            "situacao": estado,
+            "ativa": bool(remota.get("isActive")),
+            "prioridade": remota.get("priority"),
+            "expira_em": remota.get("expiresAt"),
+            "ultimo_uso": remota.get("lastUsedAt"),
+            "ultimo_erro": (remota.get("lastError") or "")[:200] or None,
+        }
+
     return [
         {
             "id": str(r["id"]),
             "provider": r["provider"],
+            "provider_nome": (router_catalog.POR_ID.get(r["provider"], {})).get("nome")
+            or r["provider"],
             "auth_type": r["auth_type"],
             "label": r["label"],
             # Conta que sumiu da instância aparece como pendente em vez de
             # desaparecer silenciosamente da tela.
-            "conectada": r["router_connection_id"] in conexoes,
+            **_saude(conexoes.get(r["router_connection_id"])),
         }
         for r in linhas
     ]
@@ -193,20 +215,254 @@ async def remover_conta(conta_id: str, user: dict = Depends(require("ai_router",
     return {"status": "ok"}
 
 
+@router.get("/catalogo")
+def catalogo(user: dict = Depends(require("ai_router", "view"))):
+    """Provedores que a empresa pode conectar, e como cada um conecta."""
+    return router_catalog.PROVEDORES
+
+
 @router.get("/modelos")
 async def listar_modelos(user: dict = Depends(require("ai_router", "view"))):
-    """Modelos disponíveis para montar combo — vêm das contas do tenant."""
+    """Modelos que as contas conectadas desta empresa liberam.
+
+    Não é o catálogo da imagem: é o cruzamento dele com as contas que existem
+    na instância. Modelo sem conta correspondente não aparece, porque combo
+    montado com ele seria aceito pela instância e falharia só na resposta.
+    """
     registro = _exigir_router(user)
     try:
-        modelos = await router_client.list_models(registro)
+        modelos = await router_client.available_models(registro)
     except router_client.RouterError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    # Combos também aparecem em /v1/models; não se monta combo de combo.
     return [
-        {"id": m["id"], "provider": m.get("owned_by")}
+        {
+            "id": m["id"],
+            "provider": router_catalog.provedor_de_modelo(m["id"]),
+            "provider_nome": (
+                router_catalog.POR_ID.get(router_catalog.provedor_de_modelo(m["id"]) or "", {})
+            ).get("nome"),
+        }
         for m in modelos
-        if m.get("owned_by") != "combo"
     ]
+
+
+
+class OAuthInicioIn(BaseModel):
+    provider: str = Field(min_length=1, max_length=40)
+
+
+class OAuthFimIn(BaseModel):
+    provider: str = Field(min_length=1, max_length=40)
+    label: str = Field(min_length=1, max_length=120)
+    # Fluxo redirect: o cliente cola a URL de retorno (ou só o código).
+    code: str | None = None
+    redirect_uri: str | None = None
+    code_verifier: str | None = None
+    state: str | None = None
+    # Fluxo device: o código que a etapa de início devolveu.
+    device_code: str | None = None
+
+
+def _provedor_do_catalogo(provider_id: str) -> dict:
+    provedor = router_catalog.POR_ID.get(provider_id)
+    if provedor is None:
+        raise HTTPException(status_code=400, detail="Provedor não suportado")
+    return provedor
+
+
+def _codigo_de(texto: str) -> str:
+    """Aceita a URL de retorno inteira ou só o código.
+
+    O provedor devolve algo como `https://…/callback?code=abc#state=xyz`, e o
+    cliente costuma colar a barra de endereços inteira. Exigir que ele recorte
+    o código à mão é onde esse fluxo costuma quebrar.
+    """
+    from urllib.parse import parse_qs, urlparse
+
+    texto = texto.strip()
+    if "://" not in texto:
+        return texto.split("#", 1)[0].split("&", 1)[0]
+    partes = urlparse(texto)
+    consulta = parse_qs(partes.query) | parse_qs(partes.fragment)
+    valor = consulta.get("code", [""])[0]
+    return valor or texto
+
+
+def _registrar_conta(user: dict, conexao: dict, provider: str, label: str) -> dict:
+    with get_connection() as conn:
+        linha = conn.execute(
+            """INSERT INTO tenant_ai_accounts
+                   (tenant_id, router_connection_id, provider, auth_type, label)
+               VALUES (%s, %s, %s, %s, %s)
+               ON CONFLICT (tenant_id, router_connection_id) DO UPDATE
+                   SET label = EXCLUDED.label, is_active = TRUE
+               RETURNING *""",
+            (user["tenant_id"], conexao["id"], provider, conexao.get("authType", "oauth"), label),
+        ).fetchone()
+    return {"id": str(linha["id"]), "provider": linha["provider"], "label": linha["label"]}
+
+
+@router.post("/contas/oauth/iniciar")
+async def oauth_iniciar(
+    payload: OAuthInicioIn, user: dict = Depends(require("ai_router", "create"))
+):
+    """Primeira metade da conexão por assinatura.
+
+    Devolve o que a tela precisa mostrar. No fluxo `redirect` é uma URL para
+    abrir; no `device`, um código curto para digitar no site do provedor.
+    `code_verifier` volta para a tela porque é ela que devolve no fim — é um
+    verificador PKCE de uso único, que existe justamente para trafegar assim.
+    """
+    provedor = _provedor_do_catalogo(payload.provider)
+    if provedor["modo"] == "apikey":
+        raise HTTPException(status_code=400, detail="Este provedor conecta por chave de API")
+    registro = _exigir_router(user)
+    try:
+        if provedor["modo"] == "device":
+            dados = await router_client.oauth_device_code(registro, payload.provider)
+        else:
+            dados = await router_client.oauth_authorize(registro, payload.provider)
+    except router_client.RouterError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    # A instância mistura convenções: o fluxo redirect responde em camelCase,
+    # o device em snake_case. A tela recebe um formato só.
+    return {
+        "modo": provedor["modo"],
+        "auth_url": (
+            dados.get("verification_uri_complete")
+            or dados.get("verification_uri")
+            or dados.get("authUrl")
+        ),
+        "user_code": dados.get("user_code"),
+        "device_code": dados.get("device_code"),
+        "redirect_uri": dados.get("redirectUri"),
+        "code_verifier": dados.get("codeVerifier"),
+        "state": dados.get("state"),
+    }
+
+
+@router.post("/contas/oauth/concluir", status_code=201)
+async def oauth_concluir(
+    payload: OAuthFimIn, user: dict = Depends(require("ai_router", "create"))
+):
+    """Segunda metade: troca o código pela sessão e registra a conta."""
+    provedor = _provedor_do_catalogo(payload.provider)
+    registro = _exigir_router(user)
+
+    try:
+        if provedor["modo"] == "device":
+            if not payload.device_code:
+                raise HTTPException(status_code=400, detail="Código do dispositivo ausente")
+            resultado = await router_client.oauth_poll(
+                registro,
+                payload.provider,
+                device_code=payload.device_code,
+                code_verifier=payload.code_verifier,
+            )
+            # Enquanto o cliente não confirma no site do provedor, isso não é
+            # erro: a tela continua esperando.
+            if not resultado.get("success"):
+                return {
+                    "pendente": bool(resultado.get("pending")),
+                    "erro": None if resultado.get("pending") else resultado.get("error"),
+                }
+            conexao = resultado["connection"]
+        else:
+            if not payload.code:
+                raise HTTPException(status_code=400, detail="Código de autorização ausente")
+            resultado = await router_client.oauth_exchange(
+                registro,
+                payload.provider,
+                code=_codigo_de(payload.code),
+                redirect_uri=payload.redirect_uri or "http://localhost:8080/callback",
+                code_verifier=payload.code_verifier,
+                state=payload.state,
+            )
+            conexao = resultado["connection"]
+    except router_client.RouterError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    conta = _registrar_conta(user, conexao, payload.provider, payload.label)
+    return {"pendente": False, "conta": conta}
+
+
+class ContaPatch(BaseModel):
+    priority: int | None = Field(default=None, ge=1, le=99)
+    is_active: bool | None = None
+
+
+@router.patch("/contas/{conta_id}")
+async def ajustar_conta(
+    conta_id: str, payload: ContaPatch, user: dict = Depends(require("ai_router", "edit"))
+):
+    """Ordem do revezamento e liga/desliga.
+
+    A prioridade é o que faz a conta 2 assumir quando a 1 bate no limite —
+    é o motivo de existir mais de uma conta do mesmo provedor.
+    """
+    registro = _exigir_router(user)
+    with get_connection() as conn:
+        conta = conn.execute(
+            "SELECT * FROM tenant_ai_accounts WHERE id = %s AND tenant_id = %s",
+            (conta_id, user["tenant_id"]),
+        ).fetchone()
+    if conta is None:
+        raise HTTPException(status_code=404, detail="Conta não encontrada")
+
+    campos = {}
+    if payload.priority is not None:
+        campos["priority"] = payload.priority
+    if payload.is_active is not None:
+        campos["isActive"] = payload.is_active
+    if not campos:
+        return {"status": "ok"}
+    try:
+        await router_client.update_connection(registro, conta["router_connection_id"], **campos)
+    except router_client.RouterError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"status": "ok"}
+
+
+class EstrategiaIn(BaseModel):
+    provider: str = Field(min_length=1, max_length=40)
+    # "round-robin" reveza a cada chamada; "fallback" só troca quando a conta
+    # da vez falha. Round-robin é o que distribui limite entre contas.
+    estrategia: str = Field(pattern="^(round-robin|fallback)$")
+
+
+@router.get("/estrategia")
+async def ler_estrategia(user: dict = Depends(require("ai_router", "view"))):
+    registro = _exigir_router(user)
+    try:
+        config = await router_client.settings(registro)
+    except router_client.RouterError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    por_provedor = config.get("providerStrategies") or {}
+    return {
+        provedor: (por_provedor.get(provedor) or {}).get("fallbackStrategy", "fallback")
+        for provedor in {p["id"] for p in router_catalog.PROVEDORES}
+    }
+
+
+@router.put("/estrategia")
+async def definir_estrategia(
+    payload: EstrategiaIn, user: dict = Depends(require("ai_router", "edit"))
+):
+    """Liga o revezamento entre as contas de um provedor."""
+    _provedor_do_catalogo(payload.provider)
+    registro = _exigir_router(user)
+    try:
+        config = await router_client.settings(registro)
+        estrategias = dict(config.get("providerStrategies") or {})
+        estrategias[payload.provider] = {
+            **(estrategias.get(payload.provider) or {}),
+            "fallbackStrategy": payload.estrategia,
+        }
+        await router_client.update_settings(registro, {"providerStrategies": estrategias})
+    except router_client.RouterError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"status": "ok", "provider": payload.provider, "estrategia": payload.estrategia}
 
 
 @router.get("/combos")
@@ -244,9 +500,10 @@ async def criar_combo(payload: ComboIn, user: dict = Depends(require("ai_router"
     nome_no_router = f"t_{_slug(tenant['tenant_key'])}_{_slug(payload.name)}"
 
     # Um combo só pode usar modelo que as contas do próprio tenant habilitam.
+    # A instância aceitaria qualquer string (testado: modelo inexistente entra
+    # com 201 e só falha ao responder), então a validação de verdade é aqui.
     try:
-        modelos = await router_client.list_models(registro)
-        disponiveis = {m["id"] for m in modelos if m.get("owned_by") != "combo"}
+        disponiveis = {m["id"] for m in await router_client.available_models(registro)}
     except router_client.RouterError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     fora = [m for m in payload.models if m not in disponiveis]
