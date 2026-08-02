@@ -7,7 +7,9 @@ servers declared on a template are reached with the streamable-HTTP client
 and their tools are namespaced ext_<server>_<tool>.
 """
 
+import base64
 import json
+import logging
 import re
 from contextlib import AsyncExitStack
 from contextvars import ContextVar
@@ -17,6 +19,8 @@ import httpx
 from mcp import ClientSession
 from mcp.server.fastmcp import FastMCP
 from mcp.shared.memory import create_connected_server_and_client_session
+
+logger = logging.getLogger(__name__)
 
 catalog = FastMCP("agent-platform-tools")
 
@@ -133,7 +137,6 @@ async def call_http_api(
         return f"ERRO: {exc}"
 
 
-@catalog.tool()
 def _cache_de_leitura() -> dict:
     """Consultas de leitura já executadas neste turno.
 
@@ -160,6 +163,7 @@ def _invalidar_leituras() -> None:
     _cache_de_leitura().clear()
 
 
+@catalog.tool()
 async def describe_datasources() -> str:
     """Lista as fontes de dados disponíveis nesta conversa, com suas tabelas e
     colunas. Chame antes de escrever SQL para saber o que existe."""
@@ -666,7 +670,10 @@ async def generate_pix_charge(
     pedido — NUNCA invente nem arredonde. `reference_id` é o identificador do
     pedido no sistema, para conseguir consultar o pagamento depois.
     Retorna o código copia-e-cola do PIX e o payment_id da cobrança. Entregue o
-    copia-e-cola ao cliente e use check_payment_status para saber se caiu."""
+    copia-e-cola ao cliente e use check_payment_status para saber se caiu.
+    A imagem do QR Code já é publicada na conversa automaticamente: quando
+    `qr_code_exibido` vier verdadeiro, o cliente já está vendo o QR — diga
+    isso em vez de afirmar que não consegue mostrar imagem."""
     context = _context()
     credential = context.get("payment") or {}
     if not credential.get("access_token"):
@@ -698,6 +705,30 @@ async def generate_pix_charge(
     except Exception as exc:  # noqa: BLE001 — o modelo precisa do motivo
         return f"ERRO ao gerar cobrança: {exc}"
 
+    # O QR chega do gateway como PNG em base64 e ficava só no banco: o modelo
+    # nunca via, e o cliente que pedia "me mostra o QR Code" recebia texto.
+    # Publicado como artefato, ele aparece na conversa como imagem.
+    qr_artifact = None
+    if charge.get("qr_code_base64"):
+        try:
+            from app.storage import register_artifact
+
+            qr_artifact = await register_artifact(
+                tenant_id=context.get("tenant_id"),
+                chat_id=context.get("chat_id"),
+                agent_name=context.get("agent", ""),
+                kind="image",
+                title=f"QR Code PIX — R$ {charge['amount']}",
+                schema_json=None,
+                preview_json=None,
+                row_count=None,
+                payload=base64.b64decode(charge["qr_code_base64"]),
+                content_type="image/png",
+                extension="png",
+            )
+        except Exception:  # noqa: BLE001 — cobrança válida não cai por causa da imagem
+            logger.exception("falha ao publicar o QR Code como artefato")
+
     return json.dumps(
         {
             "status": "ok",
@@ -706,6 +737,7 @@ async def generate_pix_charge(
             "payment_status": charge["status"],
             "pix_copia_e_cola": charge["qr_code"],
             "ticket_url": charge["ticket_url"],
+            "qr_code_exibido": bool(qr_artifact),
             "sandbox": bool(credential.get("sandbox", True)),
         },
         ensure_ascii=False,

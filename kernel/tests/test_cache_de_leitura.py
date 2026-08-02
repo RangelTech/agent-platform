@@ -106,3 +106,28 @@ async def test_sem_grafico_nao_avisa(monkeypatch):
 
     saida = await tools.execute_python(code="print(6*7)")
     assert "AVISO" not in saida
+
+
+async def test_catalogo_expoe_as_ferramentas_certas():
+    """Helper interno não pode virar ferramenta, e ferramenta não pode sumir.
+
+    Já aconteceu: um helper foi inserido logo acima de `describe_datasources`
+    e ficou com o `@catalog.tool()` que era dela. O catálogo passou a oferecer
+    o helper ao modelo e perdeu a ferramenta — sem erro nenhum, porque nada
+    valida isso em tempo de importação.
+    """
+    nomes = {t.name for t in await tools.catalog.list_tools()}
+
+    esperadas = {
+        "describe_datasources",
+        "run_sql_query",
+        "execute_python",
+        "generate_chart",
+        "export_xlsx",
+        "generate_pix_charge",
+        "check_payment_status",
+    }
+    assert esperadas <= nomes, f"ferramentas faltando: {esperadas - nomes}"
+
+    internos = {n for n in nomes if n.startswith("_")}
+    assert not internos, f"helper interno exposto como ferramenta: {internos}"
