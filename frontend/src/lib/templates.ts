@@ -37,6 +37,10 @@ export interface VersionDetail {
   max_steps: number
   write_tables: string[]
   require_write_confirmation: boolean
+  /** Quantas mensagens recentes seguem para o modelo a cada turno. */
+  history_limit: number
+  /** Resumir a metade antiga em vez de descartá-la ao passar do limite. */
+  compress_history: boolean
   notes: string
   agents: AgentDraft[]
   datasource_ids: string[]
