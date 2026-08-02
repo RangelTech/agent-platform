@@ -21,6 +21,32 @@ _EXTRACTION_PROMPT = (
 )
 
 
+async def _mensagens_ja_lidas(thread_id: str) -> int:
+    pool = await _get_pool()
+    async with pool.connection() as conn:
+        cursor = await conn.execute(
+            "SELECT messages_read FROM memory_extraction_state WHERE thread_id = %s",
+            (thread_id,),
+        )
+        linha = await cursor.fetchone()
+    return int(linha[0]) if linha else 0
+
+
+async def _marcar_lidas(thread_id: str, total: int) -> None:
+    pool = await _get_pool()
+    async with pool.connection() as conn:
+        await conn.execute(
+            """INSERT INTO memory_extraction_state (thread_id, messages_read)
+               VALUES (%s, %s)
+               ON CONFLICT (thread_id) DO UPDATE
+                   SET messages_read = GREATEST(
+                           memory_extraction_state.messages_read, EXCLUDED.messages_read
+                       ),
+                       updated_at = now()""",
+            (thread_id, total),
+        )
+
+
 async def extract_memories(
     *, thread_id: str, tenant_id, user_id, model: dict, embedding: dict
 ) -> int:
@@ -34,8 +60,18 @@ async def extract_memories(
     if not messages:
         return 0
 
+    # Só o que ainda não foi lido. A extração roda ao fim de cada turno, e a
+    # janela é maior que um turno: sem esta marca, o mesmo trecho voltava a ser
+    # extraído a cada turno seguinte e virava fato novo com outra redação — que
+    # a deduplicação por similaridade não pega. Medido numa conversa real: 215
+    # memórias para ~60 turnos.
+    lidas = await _mensagens_ja_lidas(thread_id)
+    novas = messages[lidas:]
+    if not novas:
+        return 0
+
     transcript = []
-    for m in messages[-8:]:
+    for m in novas[-8:]:
         role = "assistente" if m.type == "ai" else "usuário"
         content = m.content if isinstance(m.content, str) else json.dumps(m.content)
         transcript.append(f"{role}: {content[:1500]}")
@@ -60,6 +96,7 @@ async def extract_memories(
         logger.warning("memory extraction returned non-JSON: %.200s", raw)
         return 0
     if not facts:
+        await _marcar_lidas(thread_id, len(messages))
         return 0
 
     vectors = await embed_texts(embedding, facts)
@@ -82,6 +119,7 @@ async def extract_memories(
                 (tenant_id, user_id, fact.strip(), str(vector), thread_id),
             )
             saved += 1
+    await _marcar_lidas(thread_id, len(messages))
     return saved
 
 

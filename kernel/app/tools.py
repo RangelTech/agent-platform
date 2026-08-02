@@ -59,6 +59,8 @@ def set_run_context(
             "agent_files": agent_files or {},
             "write_tables": write_tables or [],
             "payment": payment or {},
+            # Leituras já feitas neste turno. Ver `_cache_de_leitura`.
+            "leituras": {},
         }
     )
 
@@ -132,6 +134,32 @@ async def call_http_api(
 
 
 @catalog.tool()
+def _cache_de_leitura() -> dict:
+    """Consultas de leitura já executadas neste turno.
+
+    Observado em conversa real: um especialista rodou 45 consultas num único
+    turno, várias delas byte a byte idênticas, porque nada no retorno indicava
+    que aquilo já tinha sido perguntado. Cada repetição custava ~900 ms e uma
+    cobrança do BigQuery, e o turno levou nove minutos.
+
+    O cache vive no contexto do turno, então não atravessa conversas e não
+    guarda dado de um tenant onde outro possa ver.
+    """
+    contexto = _context()
+    if "leituras" not in contexto:
+        contexto["leituras"] = {}
+    return contexto["leituras"]
+
+
+def _chave_de_leitura(datasource: str, query: str) -> str:
+    return f"{datasource}\n{' '.join(query.split())}"
+
+
+def _invalidar_leituras() -> None:
+    """Uma escrita torna qualquer leitura anterior suspeita."""
+    _cache_de_leitura().clear()
+
+
 async def describe_datasources() -> str:
     """Lista as fontes de dados disponíveis nesta conversa, com suas tabelas e
     colunas. Chame antes de escrever SQL para saber o que existe."""
@@ -139,6 +167,10 @@ async def describe_datasources() -> str:
     datasources = context.get("datasources", {})
     if not datasources:
         return "Nenhuma fonte de dados vinculada a este template."
+
+    cache = _cache_de_leitura()
+    if "__catalogo__" in cache:
+        return cache["__catalogo__"]
 
     from app.datasources import list_tables
 
@@ -150,7 +182,9 @@ async def describe_datasources() -> str:
         except Exception as exc:  # noqa: BLE001 — reported to the model
             entry["error"] = str(exc)[:300]
         output.append(entry)
-    return json.dumps(output, ensure_ascii=False, default=str)
+    catalogo = json.dumps(output, ensure_ascii=False, default=str)
+    cache["__catalogo__"] = catalogo
+    return catalogo
 
 
 @catalog.tool()
@@ -169,6 +203,17 @@ async def run_sql_query(datasource: str, query: str, title: str = "") -> str:
     if source is None:
         available = ", ".join(context.get("datasources", {})) or "(nenhuma)"
         return f"ERRO: fonte '{datasource}' não existe. Disponíveis: {available}"
+    cache = _cache_de_leitura()
+    chave = _chave_de_leitura(datasource, query)
+    if chave in cache:
+        # Devolver só o resultado faria o modelo repetir de novo. O aviso é o
+        # que quebra o laço.
+        return (
+            "AVISO: esta consulta já foi executada neste turno; resultado abaixo "
+            "reaproveitado. Se ele não responde à pergunta, mude a consulta em vez "
+            "de repeti-la.\n\n" + cache[chave]
+        )
+
     try:
         columns, rows = await execute_query(source, query, settings.sql_max_rows)
     except Exception as exc:  # noqa: BLE001 — the model needs the error to retry
@@ -188,7 +233,9 @@ async def run_sql_query(datasource: str, query: str, title: str = "") -> str:
             {"columns": columns, "rows": rows}, ensure_ascii=False, default=str
         ).encode(),
     )
-    return json.dumps(descriptor, ensure_ascii=False, default=str)
+    resultado = json.dumps(descriptor, ensure_ascii=False, default=str)
+    cache[chave] = resultado
+    return resultado
 
 
 async def _load_dataset_for(context: dict, artifact_id: str) -> dict | None:
@@ -204,13 +251,31 @@ async def _load_dataset_for(context: dict, artifact_id: str) -> dict | None:
     return json.loads(load_payload(record["storage_path"]))
 
 
+# Bibliotecas de gráfico: usá-las aqui não gera nada que o usuário veja.
+_BIBLIOTECAS_DE_GRAFICO = ("matplotlib", "pyplot", "plotly", "seaborn", "plt.")
+
+
+def _plotou_sem_publicar(code: str, outputs: list[dict]) -> bool:
+    """O código desenhou um gráfico e não publicou dataset nenhum?
+
+    Só avisa quando não há dataset publicado: quem plota *e* publica os dados
+    ainda pode chamar generate_chart depois, e nesse caso o aviso seria ruído.
+    """
+    if any(o.get("kind") == "dataset" for o in outputs):
+        return False
+    return any(termo in code for termo in _BIBLIOTECAS_DE_GRAFICO)
+
+
 @catalog.tool()
 async def execute_python(code: str, artifact_id: str = "") -> str:
     """Executa código Python em sandbox isolado (sem rede, com timeout).
     Se artifact_id de um dataset for passado, o código recebe `columns`,
     `rows` e `df` (pandas). Use publish_dataset(titulo, columns, rows) e
     publish_document(titulo, texto) para materializar resultados. stdout é
-    retornado — use print() para responder valores."""
+    retornado — use print() para responder valores.
+    NÃO desenhe gráfico aqui: matplotlib/plotly dentro do sandbox não produzem
+    nada visível para o usuário. Para gráfico, publique um dataset e depois
+    chame generate_chart com o artifact_id devolvido."""
     from app.sandbox import run_sandboxed
     from app.storage import register_artifact
 
@@ -224,6 +289,17 @@ async def execute_python(code: str, artifact_id: str = "") -> str:
     stdout, stderr, outputs, timed_out = await run_sandboxed(code, dataset)
     if timed_out:
         return "ERRO: tempo limite excedido — o código foi interrompido"
+
+    # O sandbox só publica dataset e documento. Um gráfico desenhado aqui não
+    # chega a lugar nenhum — e o modelo, sem saber disso, anuncia ao usuário um
+    # gráfico que não existe. Melhor falar antes que ele responda.
+    aviso_grafico = ""
+    if _plotou_sem_publicar(code, outputs):
+        aviso_grafico = (
+            "AVISO: código de gráfico detectado, mas o sandbox não produz imagem. "
+            "Nada foi mostrado ao usuário. Publique os dados com publish_dataset e "
+            "chame generate_chart com o artifact_id para o gráfico aparecer.\n\n"
+        )
 
     published = []
     for output in outputs[:5]:
@@ -270,7 +346,7 @@ async def execute_python(code: str, artifact_id: str = "") -> str:
             )
         published.append(descriptor)
 
-    return json.dumps(
+    return aviso_grafico + json.dumps(
         {"stdout": stdout, "stderr": stderr, "artifacts": published},
         ensure_ascii=False,
         default=str,
@@ -502,6 +578,7 @@ async def execute_sql_write(datasource: str, statement: str) -> str:
         )
     except Exception as exc:  # noqa: BLE001 — the model needs the reason
         return f"ERRO na escrita: {exc}"
+    _invalidar_leituras()
     return json.dumps(
         {"status": "ok", "table": table, "affected_rows": rows, "returned": returned},
         ensure_ascii=False,
@@ -541,6 +618,7 @@ async def execute_sql_transaction(datasource: str, statements_json: str) -> str:
         )
     except Exception as exc:  # noqa: BLE001 — the model needs the reason to retry
         return f"ERRO na transação (nada foi gravado): {exc}"
+    _invalidar_leituras()
     return json.dumps(
         {"status": "ok", "statements": len(results), "results": results},
         ensure_ascii=False,
