@@ -124,6 +124,28 @@ async def _history_messages(
     return messages
 
 
+def _descricao_do_especialista(agent: dict) -> str:
+    """A descrição que o supervisor lê para decidir a quem perguntar.
+
+    Anexar documentos a um especialista não mudava nada aqui, então o supervisor
+    continuava sem saber que aquele especialista podia responder a partir deles
+    — e dizia "não tenho acesso a documentos internos" com o documento indexado
+    e ligado ao agente. Quem monta o template teria que lembrar de reescrever a
+    descrição à mão; agora a informação vai junto.
+    """
+    descricao = agent.get("description") or ""
+    if agent.get("file_ids"):
+        quantos = len(agent["file_ids"])
+        plural = "s" if quantos > 1 else ""
+        descricao = (
+            f"{descricao} Também responde a partir de {quantos} documento{plural} "
+            "interno da empresa (contratos, políticas, manuais): consulte este "
+            "especialista quando a pergunta citar documento, arquivo ou "
+            "informação interna."
+        ).strip()
+    return descricao
+
+
 def _agent_tool_defs(agents: list[dict]) -> list[dict]:
     """Each specialist becomes one callable tool for the supervisor."""
     return [
@@ -131,7 +153,7 @@ def _agent_tool_defs(agents: list[dict]) -> list[dict]:
             "type": "function",
             "function": {
                 "name": agent["name"],
-                "description": agent["description"],
+                "description": _descricao_do_especialista(agent),
                 "parameters": {
                     "type": "object",
                     "properties": {

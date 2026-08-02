@@ -158,8 +158,13 @@ def suite_documentos(client, token, template_id, pasta: Path):
     check("documentos", "ingestão concluída nos dois arquivos", len(prontos) == 2, str(prontos))
 
     # Vincular ao agente e publicar: sem isso o RAG não enxerga o arquivo.
-    versao = client.get(f"/api/templates/{template_id}", headers=auth(token)).json()
-    ativa = versao.get("active_version") or {}
+    # Não existe GET de um template só — a versão ativa vem da listagem.
+    templates = client.get("/api/templates", headers=auth(token)).json()
+    resumo = next(t for t in templates if t["id"] == template_id)
+    ativa = client.get(
+        f"/api/templates/{template_id}/versions/{resumo['active_version_id']}",
+        headers=auth(token),
+    ).json()
     agentes = []
     for a in ativa.get("agents", []):
         copia = dict(a)
