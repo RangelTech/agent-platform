@@ -6,12 +6,34 @@ Progresso da execucao em 03/08/2026:
 
 - higiene local iniciada: `kernel/artifacts/` saiu do indice do Git e novos
   artifacts locais estao ignorados;
+- `.gcloudignore` criado para impedir que artifacts, venvs, docs e caches locais
+  sejam enviados ao Cloud Build;
 - backend e kernel agora usam storage temporario nas suites de teste;
 - backend ganhou `/health/ready`, separado de `/health`, com erro saneado e log
   `MIGRATION_FAILED` quando migracao falha;
 - validacao local: backend 128/128, kernel 107/107, Ruff backend/kernel limpo e
   build do frontend aprovado;
-- ainda nao houve deploy desta rodada em producao.
+- deploy manual fatiado executado em producao no commit `7118a62`;
+- kernel: `teste-ia-kernel-00031-ztx`, imagem
+  `teste_ia-kernel:7118a62`, 100% do trafego, `/health` autenticado 200 e
+  403 sem autenticacao;
+- backend: `teste-ia-backend-00045-2dl`, imagem
+  `teste_ia-backend:7118a62`, 100% do trafego, `/health` 200 e
+  `/health/ready` 200;
+- migracao `0023_teto_de_saida_de_ferramenta.sql` conferida no banco;
+  `template_versions.tool_output_limit` existe como `integer NOT NULL DEFAULT
+  24000`;
+- smoke real de chat passou: tenant ACME, eventos `chat`, `token`, `done`, sem
+  erro;
+- `scripts/regressao_fase1.py` passou 12/12 contra producao;
+- `scripts/super_qa.py` passou 22/22 contra producao;
+- smoke Playwright inline salvou e fez deploy de template pela SPA de producao;
+- Chatwoot: `omnichannel_e2e.py` passou 11/11 e
+  `atendimento_negocio.py` passou para hamburgueria e ferragista, incluindo
+  resposta com dado real e silencio apos handoff humano;
+- Licita QA: C1 passou 30/30 turnos, C2 passou 14/14 turnos com os numeros
+  criticos corretos, C5 passou 12/12 turnos; nenhum erro e nenhum turno sem
+  resposta.
 
 Esta spec consolida o que falta no `agent-platform` antes de instalar em um
 cliente real. Ela junta:
@@ -20,7 +42,7 @@ cliente real. Ela junta:
 - `docs/specs/segredos-no-banco.md`;
 - as Mega Specs 1, 2 e 3;
 - a investigacao de `kernel/artifacts/`;
-- o estado local do repo: 20 commits a frente de `origin/main`, CI/CD ainda nao
+- o estado local do repo: 22 commits a frente de `origin/main`, CI/CD ainda nao
   exercitado em push, e pendencias de QA contra producao.
 
 O objetivo nao e listar tudo que seria bom fazer um dia. O objetivo e dizer o que
@@ -101,18 +123,18 @@ ser versionada e que precisa parar de crescer.
 
 Estado confirmado nesta trilha:
 
-- 20 commits locais a frente de `origin/main`;
+- 22 commits locais a frente de `origin/main`;
 - job `deploy` no GitHub Actions dispara em push no `main`;
 - o job roda `./infra/deploy.sh all`;
 - WIF/IAM do deploy foi configurado, mas o job ainda nao foi exercitado por push;
-- o kernel com `tool_output_limit` foi commitado, mas nao validado em turno real
-  depois do deploy;
-- a migracao `0023_teto_de_saida_de_ferramenta.sql` ainda precisa ser conferida
-  em producao.
+- o kernel com `tool_output_limit` foi deployado manualmente e validado em turno
+  real;
+- a migracao `0023_teto_de_saida_de_ferramenta.sql` foi conferida em producao.
 
 Esse conjunto muda a ordem dos trabalhos: o primeiro `git push` nao e um simples
 envio de codigo. Ele tambem e o primeiro teste do CI, do deploy automatizado, do
-kernel novo, do backend novo e da migracao 0023.
+kernel novo e do backend novo. A migracao 0023 e o deploy manual ja foram
+provados nesta rodada.
 
 ## 3. Ordem obrigatoria
 
@@ -282,6 +304,16 @@ Feito quando:
 - um turno real responde sem erro;
 - logs nao mostram erro novo de runtime.
 
+Evidencia de 03/08/2026:
+
+- Cloud Build `dc797a72-3124-4234-b957-3b2119d2cb02` terminou `SUCCESS`;
+- revisao `teste-ia-kernel-00031-ztx` recebe 100% do trafego;
+- imagem `us-central1-docker.pkg.dev/eduk-prd-lake/cloud-run-source-deploy/teste_ia-kernel:7118a62`;
+- `/health` sem autenticacao retorna 403, confirmando Cloud Run privado;
+- `/health` com ID token retorna 200 `{"status":"ok","service":"kernel"}`;
+- `scripts/smoke_chat_prod.py` rodou depois do deploy e completou com eventos
+  `chat`, `token` e `done`, sem erro.
+
 ### 6.4 Deploy manual do backend
 
 Subir o backend depois do kernel:
@@ -302,6 +334,19 @@ Feito quando:
 - a coluna existe no banco;
 - operacao de salvar template funciona;
 - nenhuma credencial e impressa em log.
+
+Evidencia de 03/08/2026:
+
+- Cloud Build `40ca7928-5d6c-4280-9299-bfaf455d6818` terminou `SUCCESS`;
+- revisao final `teste-ia-backend-00045-2dl` recebe 100% do trafego;
+- imagem `us-central1-docker.pkg.dev/eduk-prd-lake/cloud-run-source-deploy/teste_ia-backend:7118a62`;
+- `/health` retorna 200 e `/health/ready` retorna 200;
+- banco confirma `0023_teto_de_saida_de_ferramenta.sql` em
+  `schema_migrations`;
+- banco confirma `template_versions.tool_output_limit integer NOT NULL DEFAULT
+  24000`;
+- smoke Playwright inline criou tenant descartavel `ui-smoke-msdrmdsc`, salvou
+  uma versao de template e fez deploy pela SPA.
 
 ### 6.5 Push e CI
 
@@ -361,6 +406,18 @@ Feito quando:
 - os numeros batem fora do agente;
 - o JSON de evidencia e atualizado.
 
+Evidencia de 03/08/2026:
+
+- C1 rodou 30 turnos contra producao, 0 erros, 0 turnos sem resposta;
+- C2 rodou 14 turnos contra producao, 0 erros, 0 turnos sem resposta;
+- numeros criticos de C2 bateram:
+  - total empenhado: R$ 42.917.202,00;
+  - Porto Velho: R$ 5.204.250,75;
+  - maior percentual pago em Porto Velho: 84,25%;
+- lacuna observada: pedidos de grafico/planilha/PDF em C2 foram atendidos como
+  texto em varios turnos, nao como artifact real. Isso nao quebrou o runtime,
+  mas segue como qualidade de template/agente a ajustar.
+
 ### 7.2 Conferir C5
 
 C5, sandbox e web, ficou pendente de leitura na sessao anterior.
@@ -370,6 +427,17 @@ Feito quando:
 - resultado do C5 e lido;
 - ferramentas realmente chamadas sao conferidas;
 - tabela de resultados do handoff ou desta spec e atualizada.
+
+Evidencia de 03/08/2026:
+
+- C5 rodou 12 turnos contra producao, 0 erros, 0 turnos sem resposta;
+- Python pesado executou com `execute_python`;
+- SQL executou com `describe_datasources` e `run_sql_query`;
+- busca web executou com `web_search`;
+- maior rajada observada nesta rodada ficou em 16 chamadas de ferramenta no
+  turno 12. O incidente antigo de 30 chamadas em um turno nao reapareceu, mas
+  o teto por quantidade de chamadas ainda nao esta implementado como guardrail
+  formal.
 
 ### 7.3 Smokes do Chatwoot
 
@@ -387,6 +455,14 @@ Feito quando:
 - a IA responde dentro da conversa do Chatwoot;
 - handoff humano silencia o bot;
 - resultado fica salvo no repo ou no handoff.
+
+Evidencia de 03/08/2026:
+
+- `omnichannel_e2e.py` passou 11/11 contra producao;
+- `atendimento_negocio.py` passou nos cenarios hamburgueria e ferragista;
+- hamburgueria respondeu com itens e precos reais do cardapio;
+- ferragista respondeu com Furadeira 650W, preco R$ 289,90 e estoque;
+- em ambos os cenarios, depois de mensagem humana, a IA silenciou.
 
 ### 7.4 PIX de QA
 
@@ -781,13 +857,13 @@ explicitamente aceitos como risco:
 - [ ] 215 memorias antigas do tenant de QA limpas.
 - [x] `/health/ready` implementado e testado com falha de migracao.
 - [x] `MIGRATION_FAILED` emitido em log saneado.
-- [ ] Kernel deployado manualmente e validado.
-- [ ] Backend deployado manualmente e migracao 0023 conferida.
-- [ ] Coluna `tool_output_limit` existe em producao.
+- [x] Kernel deployado manualmente e validado.
+- [x] Backend deployado manualmente e migracao 0023 conferida.
+- [x] Coluna `tool_output_limit` existe em producao.
 - [ ] Primeiro push executa CI/CD verde.
-- [ ] C1 e C2 reexecutados contra kernel novo.
-- [ ] C5 lido e registrado.
-- [ ] Smokes Chatwoot reexecutados contra producao.
+- [x] C1 e C2 reexecutados contra kernel novo.
+- [x] C5 lido e registrado.
+- [x] Smokes Chatwoot reexecutados contra producao.
 - [ ] Turno sem texto vira `error` explicito.
 - [ ] Teto de chamadas de ferramenta por turno implementado.
 - [ ] Tamanho real de historico/prompt medido.

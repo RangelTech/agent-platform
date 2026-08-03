@@ -26,6 +26,7 @@ Thumbs.db
 
 # Build artifacts
 *.log
+docs/fixtures-qa/
 
 # Storage local de artifacts/uploads. Em producao isso vai para o MinIO; so cai
 # em disco quando nao ha S3_BUCKET/GCS_BUCKET, que e o caso ao rodar testes e

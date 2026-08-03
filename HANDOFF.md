@@ -9,6 +9,15 @@ decisão consciente do dono (03/08/2026), não descuido. O critério aqui não �
 harness ficou verde": é "a coisa funciona quando alguém usa". Essa distinção
 apareceu literalmente — ver 6.1.
 
+Atualizacao de 03/08/2026, fim da rodada: a spec unificada
+`docs/specs/pendencias-antes-do-primeiro-cliente.md` virou a fonte principal do
+que falta. O deploy manual fatiado ja foi feito no commit `7118a62`; kernel,
+backend, migracao 0023, readiness, UI de template, QA C1/C2/C5 e smokes
+Chatwoot foram revalidados contra producao. O que continua pendente antes do
+primeiro cliente: primeiro `git push`/CI-CD real, limpeza das 215 memorias de QA,
+guardrails novos de runtime, capacidade/pool, segredos no banco e decisoes do
+dono.
+
 ---
 
 ## 1. Ambiente
@@ -22,7 +31,7 @@ apareceu literalmente — ver 6.1.
 | Fonte de dados | `lake_mindlab` → BigQuery `mi-prd-lake.semantic_zone` |
 | Template | `Inteligência de Licitações` (`e79281d2-d6a5-41ee-97b4-45b1f4632863`), versão 5 |
 | Backend | `https://teste-ia-backend-x27vtpiida-uc.a.run.app` |
-| Kernel | `https://teste-ia-kernel-x27vtpiida-uc.a.run.app` (revisão `00030` no fim da sessão) |
+| Kernel | `https://teste-ia-kernel-x27vtpiida-uc.a.run.app` (revisão `00031` / imagem `7118a62`) |
 | Chatwoot | `chatwoot-web` / `chatwoot-worker` / `chatwoot-bridge` (Cloud Run, us-central1) |
 
 ### Deploy
@@ -217,11 +226,11 @@ upgrade. Decisão pendente do dono.
 
 | Conversa | Turnos | Erros | Observação |
 |---|---|---|---|
-| C1 — 30 turnos de dados públicos | 30/30 | 0 | 1 turno voltou vazio (t11) |
-| C2 — cadeia de artefatos | 14/14 | 0 | |
+| C1 — 30 turnos de dados públicos | 30/30 | 0 | Reexecução pós-deploy sem turno vazio |
+| C2 — cadeia de artefatos | 14/14 | 0 | Números críticos batem; alguns pedidos viraram texto, não artifact |
 | C3 — PDF e imagem | 15/15 | 0 | |
 | C4 — previsão | 12/12 | 0 | |
-| C5 — sandbox e web | *rodando ao fim da sessão* | | |
+| C5 — sandbox e web | 12/12 | 0 | Python, SQL, web_search e call_http_api chamados |
 | C6 — PIX | 7/7 | 0 | 2 cobranças pedidas, 2 criadas |
 
 Suítes: kernel **47 unitários + 60 integração**; backend **6 + 120**; ponte
@@ -260,17 +269,18 @@ de turnos.
 ## 7. Onde parei
 
 - [x] 7 defeitos do core corrigidos, com teste
-- [x] Kernel deployado até a revisão `00030` (correções 3.4, 3.5 e 3.6)
-- [x] C1, C2, C3, C4, C6 verdes
+- [x] Kernel deployado até a revisão `00031` no commit `7118a62`
+- [x] Backend deployado até a revisão `00045` no commit `7118a62`
+- [x] `/health/ready` 200 em produção
+- [x] Migração 0023 aplicada e coluna `template_versions.tool_output_limit` conferida
+- [x] C1, C2, C3, C4, C5, C6 verdes em rodadas de QA registradas
 - [x] QR do PIX provado de ponta a ponta; todas as cobranças canceladas
 - [x] CI/CD com deploy por Workload Identity (IAM aplicado)
 - [x] Chatwoot em português nas 10 contas
 - [x] Spec de segredos escrita: `docs/specs/segredos-no-banco.md`
-- [ ] **C5 terminando** — conferir o resultado
-- [ ] **Deploy do kernel com o teto de saída (3.7)** — commitado, NÃO deployado
-- [ ] **`git push`** — 19 commits locais à frente do `origin/main`, nada pushado
-- [ ] Smokes do Chatwoot contra produção (`scripts/smoke/omnichannel_e2e.py` e
-      `scripts/smoke/atendimento_negocio.py`) — **não rodados nesta sessão**
+- [x] Smokes do Chatwoot contra produção (`scripts/smoke/omnichannel_e2e.py` e
+      `scripts/smoke/atendimento_negocio.py`)
+- [ ] **`git push`** — 22 commits locais à frente do `origin/main`, nada pushado
 - [ ] Implementar a spec de segredos (fases 1 a 5)
 - [ ] 215 memórias antigas no tenant de teste:
       `DELETE FROM memories WHERE tenant_id = '31445557-8561-4b27-804d-0129a72b467d'`
@@ -281,13 +291,13 @@ de turnos.
 
 Esta seção é a mais importante do documento. Nada aqui é hipótese confortável.
 
-### 8.1 O teto de saída (3.7) está commitado e não está em produção
+### 8.1 O teto de saída (3.7) já está em produção
 
-O kernel em produção é a revisão `00030`, anterior ao teto. O código, a migração
-0023 e o campo no frontend estão commitados e testados — e **nenhum turno real
-rodou com o corte ligado**. O risco concreto: 24k caracteres pode ser apertado
-para um especialista que lê PDF longo, e o sintoma seria uma resposta pior sem
-erro nenhum. Rodar C1 e C2 depois do deploy é obrigatório, não opcional.
+O kernel em produção está na revisão `00031` e o backend na `00045`, ambos com
+imagem `7118a62`. C1, C2 e C5 rodaram depois do deploy sem erro e sem turno
+vazio. O risco remanescente não é "código não deployado"; é qualidade de agente:
+em C2, alguns pedidos de gráfico/planilha/PDF foram respondidos em texto, não
+como artifact real.
 
 ### 8.2 O job de deploy do CI nunca rodou
 
@@ -296,18 +306,19 @@ WIF configurado, job escrito, zero execuções. Falha típica na primeira vez:
 existe na máquina local. **O primeiro push vai ser o teste** — acompanhe a
 execução em vez de assumir que passou.
 
-### 8.3 A migração 0023 ainda não rodou em produção
+### 8.3 A migração 0023 já rodou em produção
 
-O backend em produção não tem a coluna `tool_output_limit`. Se o backend novo
-subir antes da migração, o `INSERT` de versão de template quebra. Conferir como
-as migrações são aplicadas no deploy antes de subir o backend.
+Conferido direto no banco: `0023_teto_de_saida_de_ferramenta.sql` existe em
+`schema_migrations` e `template_versions.tool_output_limit` existe como
+`integer NOT NULL DEFAULT 24000`.
 
-### 8.4 Turno vazio no C1 (t11), sem diagnóstico
+### 8.4 Turno vazio no C1 (t11) não reapareceu
 
 "Compare essa despesa com a de Campinas" voltou **sem resposta e sem erro**. Não
-foi investigado. É o modo de falha mais perigoso que existe num chat: o cliente
-manda a pergunta e não recebe nada, e nenhum alarme dispara. Nenhum teste cobre
-"turno terminou sem texto".
+foi investigado na sessão antiga. Na reexecução pós-deploy de 03/08/2026, C1
+rodou 30 turnos com 0 erros e 0 turnos sem resposta. Ainda falta o guardrail
+formal: se um supervisor terminar sem texto, o stream deve emitir `error`
+explícito.
 
 ### 8.5 A conversa gasta muito mais do que deveria
 
@@ -348,7 +359,8 @@ do cofre. Hoje isso não está tratado.
 
 - turno que termina sem texto (8.4);
 - número de chamadas de ferramenta por turno (8.5);
-- o caminho Chatwoot → ponte → kernel → resposta, contra produção, nesta sessão;
+- o caminho Chatwoot → ponte → kernel → resposta passou contra produção em
+  03/08/2026, mas deve continuar no smoke obrigatório de release;
 - sincronização de segredo com o Chatwoot (ainda não existe);
 - rotação da chave mestra de cifragem;
 - o que acontece quando o gateway de pagamento fica fora do ar no meio de uma

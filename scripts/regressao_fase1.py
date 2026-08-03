@@ -69,7 +69,12 @@ def main() -> None:
         login = client.post(
             "/api/auth/login", json={"email": MASTER_EMAIL, "password": MASTER_PASSWORD}
         )
-        if not report.record("fase-0", "login do master", login.status_code == 200, login.text):
+        if not report.record(
+            "fase-0",
+            "login do master",
+            login.status_code == 200,
+            login.text if login.status_code != 200 else "",
+        ):
             _save(report)
             sys.exit(1)
         master = auth(login.json()["token"])
