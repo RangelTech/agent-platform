@@ -10,8 +10,13 @@ class Settings(BaseSettings):
     # Base da API do gateway de pagamento. Só muda em teste, para apontar para
     # um servidor falso em vez do Mercado Pago real.
     mercado_pago_api: str = "https://api.mercadopago.com"
-    # Hard ceiling for one conversation turn, model call included.
+    # Máximo de silêncio entre dois eventos do turno. Não é o teto do turno: um
+    # turno que emite uma ferramenta a cada poucos segundos nunca encosta nisto.
     turn_timeout_seconds: float = 120.0
+    # Teto do turno inteiro. Precisa ficar ABAIXO do timeout de requisição do
+    # Cloud Run (600 s em infra/deploy.sh): passando dele, quem corta é a borda,
+    # e o cliente recebe a conexão cortada no lugar do evento de timeout.
+    turn_total_timeout_seconds: float = 540.0
     # Default supervisor step budget per turn when the template omits it.
     max_steps_default: int = 6
     # Tool rounds a specialist may take before being forced to answer.

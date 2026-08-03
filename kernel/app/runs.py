@@ -7,8 +7,14 @@ Events:
   event: done         data: {"text": "<full reply>"}
   event: error        data: {"detail": "..."}
 
-The turn is bounded by settings.turn_timeout_seconds; hitting it emits an
-error event and stops the run. Client disconnects cancel the run cleanly.
+Dois limites, e a diferença importa. `turn_timeout_seconds` é silêncio entre
+eventos; `turn_total_timeout_seconds` é o turno inteiro. Só o primeiro existia,
+e ele sozinho não limita nada: um turno que chama ferramenta a cada poucos
+segundos reinicia a espera a cada evento e segue indefinidamente. Medido numa
+conversa real, um turno passou de oito minutos e 66 chamadas assim — e quem ia
+cortá-lo era o Cloud Run aos 600 s, cortando a conexão em vez de emitir o
+evento de timeout. Qualquer um dos dois emite `error` e encerra o run. Cliente
+que desconecta cancela o run limpo.
 """
 
 import asyncio
@@ -213,11 +219,18 @@ async def create_run(payload: RunRequest):
                 await queue.put(None)
 
         producer = asyncio.create_task(produce())
+        prazo = asyncio.get_running_loop().time() + settings.turn_total_timeout_seconds
         try:
             while True:
+                restante = prazo - asyncio.get_running_loop().time()
+                if restante <= 0:
+                    producer.cancel()
+                    yield _sse("error", {"detail": "timeout"})
+                    return
                 try:
                     item = await asyncio.wait_for(
-                        queue.get(), timeout=settings.turn_timeout_seconds
+                        queue.get(),
+                        timeout=min(settings.turn_timeout_seconds, restante),
                     )
                 except TimeoutError:
                     producer.cancel()
