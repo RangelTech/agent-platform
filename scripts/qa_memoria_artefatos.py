@@ -289,7 +289,9 @@ def suite_artefatos(client, token, template_id):
     baixados = 0
     for a in listagem[:8]:
         resposta = client.get(
-            f"/api/artifacts/{a['id']}/download", headers=auth(token), timeout=300.0
+            f"/api/artifacts/{a['artifact_id']}/download",
+            headers=auth(token),
+            timeout=300.0,
         )
         if resposta.status_code == 200 and len(resposta.content) > 200:
             baixados += 1
@@ -303,7 +305,9 @@ def suite_artefatos(client, token, template_id):
     grafico = (por_tipo.get("chart") or [None])[0]
     if grafico:
         payload = client.get(
-            f"/api/artifacts/{grafico['id']}/payload", headers=auth(token), timeout=300.0
+            f"/api/artifacts/{grafico['artifact_id']}/payload",
+            headers=auth(token),
+            timeout=300.0,
         )
         corpo = payload.text
         check(
@@ -444,7 +448,7 @@ def main() -> int:
 
         artefatos = client.get(f"/api/chats/{chat_id}/artifacts", headers=auth(token)).json()
         artefatos = artefatos.get("items", artefatos) if isinstance(artefatos, dict) else artefatos
-        artefato_id = artefatos[0]["id"] if artefatos else None
+        artefato_id = artefatos[0]["artifact_id"] if artefatos else None
         suite_isolamento(client, token, marca, chat_id, artefato_id)
 
     destino = Path(__file__).parent.parent / "docs" / "qa-memoria-artefatos.json"
