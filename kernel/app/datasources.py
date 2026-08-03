@@ -119,6 +119,21 @@ async def execute_query(datasource: dict, sql: str, max_rows: int):
     )
 
 
+# Só os nomes. Sai barato e é o que garante que nenhuma tabela suma da lista
+# quando as colunas não couberem.
+_LIST_TABLE_NAMES_SQL = {
+    "postgresql": """
+        SELECT table_schema || '.' || table_name
+          FROM information_schema.tables
+         WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
+         ORDER BY 1 LIMIT 500""",
+    "mysql": """
+        SELECT CONCAT(table_schema, '.', table_name)
+          FROM information_schema.tables
+         WHERE table_schema = DATABASE()
+         ORDER BY 1 LIMIT 500""",
+}
+
 _LIST_TABLES_SQL = {
     "postgresql": """
         SELECT table_schema || '.' || table_name, column_name, data_type
@@ -133,17 +148,51 @@ _LIST_TABLES_SQL = {
 }
 
 
+# Quantas tabelas vêm com as colunas detalhadas. Listar coluna de tudo estoura o
+# contexto num dataset grande; listar só as primeiras N e **calar sobre o
+# resto** é pior ainda. Medido no QA: o dataset tinha 180 tabelas, o corte era
+# 50, e as tabelas do SIOPE — o assunto inteiro do template — estavam nas
+# posições 75 a 80. O modelo nunca soube que existiam e passou o turno
+# garimpando INFORMATION_SCHEMA: 54 consultas, mais de dez minutos, sem
+# resposta. Nome de tabela é barato; é o que faz o modelo pedir a coluna certa
+# de uma vez.
+TABELAS_COM_COLUNAS = 50
+
+_SEM_COLUNAS = (
+    "colunas não listadas aqui — consulte INFORMATION_SCHEMA.COLUMNS desta tabela"
+)
+
+
+def _catalogo(nomes: list[str], colunas_de) -> list[dict]:
+    """Catálogo do dataset: todas as tabelas, colunas nas primeiras."""
+    catalogo = []
+    for posicao, nome in enumerate(nomes):
+        if posicao < TABELAS_COM_COLUNAS:
+            catalogo.append({"table": nome, "columns": colunas_de(nome)})
+        else:
+            catalogo.append({"table": nome, "columns": _SEM_COLUNAS})
+    return catalogo
+
+
 async def list_tables(datasource: dict) -> list[dict]:
     """[{table, columns:[{name,type}]}] — capped, for the model's orientation."""
     kind = datasource["kind"]
     if kind in _LIST_TABLES_SQL:
-        columns, rows = await execute_query(
+        _, linhas_nomes = await execute_query(
+            datasource, _LIST_TABLE_NAMES_SQL[kind], max_rows=500
+        )
+        nomes = [linha[0] for linha in linhas_nomes]
+
+        _, rows = await execute_query(
             datasource, _LIST_TABLES_SQL[kind], max_rows=500
         )
+        # As colunas vêm num só resultado limitado: uma tabela larga consome a
+        # cota e as seguintes ficam sem coluna. Ficar sem coluna é aceitável —
+        # sumir da lista, não.
         tables: dict[str, list] = {}
         for table, column, data_type in rows:
             tables.setdefault(table, []).append({"name": column, "type": data_type})
-        return [{"table": t, "columns": c} for t, c in tables.items()]
+        return [{"table": n, "columns": tables.get(n) or _SEM_COLUNAS} for n in nomes]
 
     if kind == "sqlite":
         columns, rows = await execute_query(
@@ -173,14 +222,16 @@ async def list_tables(datasource: dict) -> list[dict]:
             )
             for ds in datasets:
                 ref = ds.reference if hasattr(ds, "reference") else ds
-                for table in list(client.list_tables(ref))[:50]:
-                    schema = client.get_table(table.reference).schema
-                    out.append(
-                        {
-                            "table": f"{table.dataset_id}.{table.table_id}",
-                            "columns": [{"name": f.name, "type": f.field_type} for f in schema],
-                        }
-                    )
+                tabelas = list(client.list_tables(ref))
+                por_nome = {
+                    f"{t.dataset_id}.{t.table_id}": t for t in tabelas
+                }
+
+                def colunas_de(nome, _por_nome=por_nome):
+                    schema = client.get_table(_por_nome[nome].reference).schema
+                    return [{"name": f.name, "type": f.field_type} for f in schema]
+
+                out.extend(_catalogo(list(por_nome), colunas_de))
             return out
 
         return await anyio.to_thread.run_sync(_bq)
