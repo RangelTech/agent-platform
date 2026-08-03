@@ -248,6 +248,42 @@ async def _execute_tool(
     return "\n".join(parts) or "(sem conteúdo)"
 
 
+def _nota_dos_artefatos(descriptors: list[dict]) -> str:
+    """Conta ao supervisor o que já apareceu na tela do usuário.
+
+    O artefato é emitido como evento de stream direto ao cliente, então a
+    imagem/planilha já está visível — mas quem escreve a resposta final é o
+    supervisor, e ele só recebe o TEXTO do especialista. Sem esta nota ele
+    respondia "não consigo exibir imagens" com o QR Code renderizado logo
+    acima, no mesmo turno.
+    """
+    if not descriptors:
+        return ""
+    itens = "; ".join(
+        f"{d.get('kind', 'arquivo')} \"{d.get('title', '')}\"" for d in descriptors
+    )
+    return (
+        f"\n\n[NOTA DA PLATAFORMA] Já foram exibidos ao usuário nesta resposta: "
+        f"{itens}. Ele está vendo isso na tela agora. "
+        "NUNCA diga que não consegue mostrar imagens, gráficos ou arquivos: "
+        "aponte o que está logo acima."
+    )
+
+
+CLAUSULA_DO_ESPECIALISTA = (
+    "\n\nCOMO VOCÊ É CHAMADO: você não conversa com o usuário. Quem fala com ele "
+    "é o supervisor, e você só recebe a tarefa já decidida por ele — você NÃO vê "
+    "a conversa nem as respostas anteriores do usuário. Portanto NUNCA peça "
+    "confirmação, esclarecimento ou dados ao usuário: perguntar aqui é o mesmo "
+    "que não fazer nada, porque a pergunta volta para o supervisor e a próxima "
+    "chamada chega igualmente sem histórico. Se a tarefa está clara, execute-a e "
+    "devolva o resultado; a confirmação do usuário, quando é necessária, já foi "
+    "colhida pelo supervisor antes de chamar você. Se algo indispensável faltar "
+    "na tarefa, diga ao supervisor exatamente o que falta — não pergunte ao "
+    "usuário."
+)
+
+
 async def _run_specialist(
     agent: dict, task: str, writer, run_config: dict, tool_defs: dict,
     catalog_session, external: ExternalServers,
@@ -260,7 +296,7 @@ async def _run_specialist(
     allowed_names = {t for t in agent.get("tools", []) if t in tool_defs}
     allowed = [tool_defs[t] for t in allowed_names] or None
     messages = [
-        {"role": "system", "content": agent["prompt"]},
+        {"role": "system", "content": agent["prompt"] + CLAUSULA_DO_ESPECIALISTA},
         {"role": "user", "content": task},
     ]
 
@@ -268,6 +304,8 @@ async def _run_specialist(
         return None
 
     output = ""
+    exibidos: list[dict] = []
+    exibidos_antes = 0
     try:
         for _round in range(settings.specialist_max_tool_rounds):
             result = await complete(config, messages, swallow, tools=allowed)
@@ -322,6 +360,7 @@ async def _run_specialist(
                     except json.JSONDecodeError:
                         parsed = None
                     for descriptor in _find_artifact_descriptors(parsed):
+                        exibidos.append(descriptor)
                         writer(
                             {
                                 "type": "artifact",
@@ -333,6 +372,15 @@ async def _run_specialist(
                 messages.append(
                     {"role": "tool", "tool_call_id": tc.id, "content": tool_output}
                 )
+            # O aviso precisa entrar aqui, e não só no retorno ao supervisor: quem
+            # redige primeiro é o especialista, e era ele quem escrevia "não
+            # consigo exibir imagem" com o QR Code já na tela. Corrigir só o
+            # supervisor deixava a negativa nascer e depois ser desmentida.
+            if len(exibidos) > exibidos_antes:
+                messages.append(
+                    {"role": "user", "content": _nota_dos_artefatos(exibidos[exibidos_antes:])}
+                )
+                exibidos_antes = len(exibidos)
         else:
             result = await complete(
                 config,
@@ -355,7 +403,7 @@ async def _run_specialist(
         logger.exception("specialist %s failed", agent["name"])
         output = f"ERRO no especialista {agent['name']}: {exc}"
     writer({"type": "agent_done", "name": agent["name"]})
-    return output
+    return output + _nota_dos_artefatos(exibidos)
 
 
 async def _load_tool_defs(catalog_session, external: ExternalServers) -> dict:
@@ -388,7 +436,10 @@ WRITE_CONFIRMATION_CLAUSE = (
     "(criar pedido, efetuar venda, atualizar registro), apresente ao usuário um "
     "resumo claro da operação e SÓ execute depois que ele confirmar "
     "explicitamente na conversa (ex.: 'sim', 'confirmo'). Se a confirmação ainda "
-    "não veio nesta conversa, pergunte e aguarde. "
+    "não veio nesta conversa, pergunte e aguarde. Depois que ela vier, execute: "
+    "não pergunte de novo. O especialista não vê a conversa, então ao delegar "
+    "escreva na tarefa que o usuário JÁ confirmou, com os valores confirmados — "
+    "sem isso ele pede confirmação que nunca chega ao usuário e nada é feito. "
     "Para criar um registro com filhos (um pedido e seus itens), use SEMPRE a "
     "tool execute_sql_transaction com TODOS os statements de uma vez — o pedido "
     "com RETURNING id e os itens referenciando {{returned:0}} — para que seja "
