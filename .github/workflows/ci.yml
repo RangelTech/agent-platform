@@ -51,3 +51,31 @@ jobs:
         run: |
           npm ci
           npm run build
+
+  # Deploy só depois que backend, kernel e frontend passam, e só no main.
+  # Antes disto o deploy era manual (`./infra/deploy.sh`), o que já custou duas
+  # falhas silenciosas: trabalhar com `bq` no lake troca a conta ativa do gcloud
+  # e o deploy morre com PERMISSION_DENIED no meio.
+  #
+  # A autenticação é por Workload Identity Federation — não há chave de service
+  # account guardada como secret. O provedor OIDC só aceita tokens deste
+  # repositório (attribute-condition), então um fork não consegue assumir a
+  # identidade. Setup em infra/ci-deploy-setup.sh.
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [python, frontend]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: eduk-prd-lake
+          workload_identity_provider: projects/188258617713/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: github-deployer@eduk-prd-lake.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Deploy kernel and backend
+        run: ./infra/deploy.sh all
