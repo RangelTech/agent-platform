@@ -17,7 +17,11 @@ pytestmark = pytest.mark.anyio
 
 
 @pytest.fixture
-def contexto_com_fonte(monkeypatch):
+async def contexto_com_fonte(monkeypatch):
+    """Precisa ser async: `set_run_context` grava num ContextVar, e um fixture
+    síncrono roda fora da task onde o teste roda — o valor não chega lá. Rodando
+    sozinho o arquivo passava; junto com qualquer outro teste async, `lake`
+    sumia e a ferramenta devolvia "fonte não existe" antes de tocar o cache."""
     fonte = {"name": "lake", "kind": "postgresql"}
     tools.set_run_context(
         secrets={}, datasources=[fonte], tenant_id="t1", chat_id="c1"
@@ -116,6 +120,11 @@ async def test_catalogo_expoe_as_ferramentas_certas():
     o helper ao modelo e perdeu a ferramenta — sem erro nenhum, porque nada
     valida isso em tempo de importação.
     """
+    # O catálogo só fica completo quando `app.main` importa `tools_output` — é
+    # de lá que vêm gráfico, xlsx e pdf. Olhar só `app.tools` mede um catálogo
+    # que nenhum modelo recebe.
+    from app import main  # noqa: F401 — registra as ferramentas de saída
+
     nomes = {t.name for t in await tools.catalog.list_tools()}
 
     esperadas = {
