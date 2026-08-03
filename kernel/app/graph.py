@@ -248,6 +248,31 @@ async def _execute_tool(
     return "\n".join(parts) or "(sem conteúdo)"
 
 
+def _limitar_saida(tool_output: str, descriptors: list[dict], limite: int) -> str:
+    """Corta o que a ferramenta devolve antes de virar prompt do especialista.
+
+    O resultado inteiro de uma consulta pode ter dezenas de milhares de linhas,
+    e ele entra no contexto a cada rodada seguinte do especialista. Cortar não
+    perde o dado: o payload continua materializado no artefato, e o artifact_id
+    encadeia para gráfico, planilha e sandbox sem passar pelo modelo.
+
+    O aviso é parte do corte. Truncar em silêncio faz o modelo somar uma coluna
+    pela metade e apresentar o número como total.
+    """
+    if limite <= 0 or len(tool_output) <= limite:
+        return tool_output
+    ids = ", ".join(d["artifact_id"] for d in descriptors)
+    onde = f" O resultado completo está no artefato {ids}." if ids else ""
+    return (
+        tool_output[:limite]
+        + f"\n\n[CORTADO PELA PLATAFORMA: a saída tinha {len(tool_output)} caracteres "
+        f"e só os primeiros {limite} chegam até você.{onde} NÃO some nem conte nada a "
+        "partir do trecho acima — ele está incompleto. Para números sobre o conjunto "
+        "todo, peça à consulta que agregue (SUM/COUNT/GROUP BY) ou encadeie o "
+        "artefato em outra ferramenta.]"
+    )
+
+
 def _nota_dos_artefatos(descriptors: list[dict]) -> str:
     """Conta ao supervisor o que já apareceu na tela do usuário.
 
@@ -293,6 +318,9 @@ async def _run_specialist(
     writer({"type": "agent_start", "name": agent["name"]})
     set_current_agent(agent["name"], agent.get("model"))
     config = ModelConfig(**agent["model"])
+    limite_saida = int(
+        run_config.get("tool_output_limit") or settings.tool_output_limit_default
+    )
     allowed_names = {t for t in agent.get("tools", []) if t in tool_defs}
     allowed = [tool_defs[t] for t in allowed_names] or None
     messages = [
@@ -354,12 +382,14 @@ async def _run_specialist(
                 # Materialized artifacts surface as their own stream event so
                 # the frontend can render/download them. Tools may return one
                 # descriptor or nest several (forecast, sandbox).
+                descriptors: list[dict] = []
                 if status == "ok" and '"artifact_id"' in tool_output:
                     try:
                         parsed = json.loads(tool_output)
                     except json.JSONDecodeError:
                         parsed = None
-                    for descriptor in _find_artifact_descriptors(parsed):
+                    descriptors = _find_artifact_descriptors(parsed)
+                    for descriptor in descriptors:
                         exibidos.append(descriptor)
                         writer(
                             {
@@ -369,8 +399,15 @@ async def _run_specialist(
                                 "title": descriptor.get("title", ""),
                             }
                         )
+                # O corte vem DEPOIS de publicar o artefato e de registrar a
+                # chamada: o que se limita é o que entra no prompt, não o que se
+                # guarda nem o que o usuário recebe.
                 messages.append(
-                    {"role": "tool", "tool_call_id": tc.id, "content": tool_output}
+                    {
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": _limitar_saida(tool_output, descriptors, limite_saida),
+                    }
                 )
             # O aviso precisa entrar aqui, e não só no retorno ao supervisor: quem
             # redige primeiro é o especialista, e era ele quem escrevia "não

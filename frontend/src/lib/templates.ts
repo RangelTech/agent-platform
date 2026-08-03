@@ -41,6 +41,8 @@ export interface VersionDetail {
   history_limit: number
   /** Resumir a metade antiga em vez de descartá-la ao passar do limite. */
   compress_history: boolean
+  /** Teto, em caracteres, do que uma ferramenta devolve para o especialista. */
+  tool_output_limit: number
   notes: string
   agents: AgentDraft[]
   datasource_ids: string[]

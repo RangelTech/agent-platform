@@ -21,6 +21,13 @@ class Settings(BaseSettings):
     max_steps_default: int = 6
     # Tool rounds a specialist may take before being forced to answer.
     specialist_max_tool_rounds: int = 7
+    # Teto, em caracteres, do que uma ferramenta devolve para dentro do prompt
+    # do especialista. É aqui que o contexto realmente estoura: numa conversa de
+    # 30 turnos o especialista `despesas` acumulou 889 mil tokens de prompt,
+    # contra 10 mil do supervisor — o histórico da conversa é o problema menor.
+    # O dataset inteiro não precisa voltar: o artifact_id encadeia para as
+    # ferramentas seguintes sem passar pelo modelo.
+    tool_output_limit_default: int = 24_000
 
     # Web search: Serper platform key (Secret Manager) + DuckDuckGo fallback.
     serper_api_key: str = ""

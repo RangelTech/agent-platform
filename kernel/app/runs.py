@@ -80,6 +80,8 @@ class RunRequest(BaseModel):
     history_limit: int = Field(default=100, ge=4, le=500)
     # Resumir o começo em vez de descartá-lo.
     compress_history: bool = False
+    # Teto do que uma ferramenta devolve para dentro do prompt do especialista.
+    tool_output_limit: int = Field(default=24_000, ge=2_000, le=200_000)
     tenant_id: str | None = None
     user_id: str | None = None
     # name -> value, resolved into {{secret:NAME}} references inside tools;
@@ -125,6 +127,7 @@ async def create_run(payload: RunRequest):
         "max_steps": payload.max_steps,
         "history_limit": payload.history_limit,
         "compress_history": payload.compress_history,
+        "tool_output_limit": payload.tool_output_limit,
         "tenant_id": payload.tenant_id,
         "user_id": payload.user_id,
         "thread_id": payload.thread_id,

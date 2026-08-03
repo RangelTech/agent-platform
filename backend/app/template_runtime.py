@@ -283,4 +283,5 @@ def build_run_payload(tenant_id, template_id: str | None) -> dict:
             "require_write_confirmation": version.get("require_write_confirmation", True),
             "history_limit": version.get("history_limit", 100),
             "compress_history": version.get("compress_history", False),
+            "tool_output_limit": version.get("tool_output_limit", 24_000),
         }

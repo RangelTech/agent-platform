@@ -54,6 +54,9 @@ class VersionIn(BaseModel):
     # Resumir o começo em vez de descartá-lo. Custa uma chamada a mais e
     # depende do resumo estar bom, por isso é escolha explícita.
     compress_history: bool = False
+    # Teto, em caracteres, do que uma ferramenta devolve para o especialista.
+    # É onde o contexto realmente estoura; ver migração 0023.
+    tool_output_limit: int = Field(default=24_000, ge=2_000, le=200_000)
     notes: str = ""
 
 
@@ -180,8 +183,9 @@ def create_version(
                     supervisor_ai_service_id, supervisor_model_override,
                     supervisor_reasoning_effort, max_steps, created_by, notes,
                     write_tables, require_write_confirmation,
-                    history_limit, compress_history)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *""",
+                    history_limit, compress_history, tool_output_limit)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+               RETURNING *""",
             (
                 template_id,
                 number,
@@ -196,6 +200,7 @@ def create_version(
                 payload.require_write_confirmation,
                 payload.history_limit,
                 payload.compress_history,
+                payload.tool_output_limit,
             ),
         ).fetchone()
         for order, agent in enumerate(payload.agents):
@@ -312,6 +317,7 @@ def get_version(
         "require_write_confirmation": version.get("require_write_confirmation", True),
         "history_limit": version.get("history_limit", 100),
         "compress_history": version.get("compress_history", False),
+        "tool_output_limit": version.get("tool_output_limit", 24_000),
         "notes": version["notes"],
         "agents": [
             {

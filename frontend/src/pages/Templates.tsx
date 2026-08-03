@@ -212,6 +212,7 @@ export default function Templates() {
   const [requireConfirm, setRequireConfirm] = useState(true)
   const [historyLimit, setHistoryLimit] = useState(100)
   const [compressHistory, setCompressHistory] = useState(false)
+  const [toolOutputLimit, setToolOutputLimit] = useState(24000)
 
   const { data: businessFiles = [] } = useQuery({
     queryKey: ['files'],
@@ -251,6 +252,7 @@ export default function Templates() {
       setRequireConfirm(v.require_write_confirmation ?? true)
       setHistoryLimit(v.history_limit ?? 100)
       setCompressHistory(v.compress_history ?? false)
+      setToolOutputLimit(v.tool_output_limit ?? 24000)
       setDatasourceIds(v.datasource_ids ?? [])
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -280,6 +282,7 @@ export default function Templates() {
         require_write_confirmation: requireConfirm,
         history_limit: historyLimit,
         compress_history: compressHistory,
+        tool_output_limit: toolOutputLimit,
         datasource_ids: datasourceIds,
       })
       return v
@@ -480,6 +483,17 @@ export default function Templates() {
               </span>
             </label>
           </div>
+          <Input
+            label="Tamanho máximo do resultado de uma ferramenta"
+            hint="Em caracteres. É o que mais pesa no custo: o resultado de uma consulta volta para o especialista a cada rodada seguinte. O corte não perde dado — o resultado completo fica no artefato e segue encadeando para gráfico e planilha."
+            type="number"
+            min={2000}
+            max={200000}
+            step={1000}
+            name="tool-output-limit"
+            value={toolOutputLimit}
+            onChange={(e) => setToolOutputLimit(Number(e.target.value))}
+          />
         </div>
       </Card>
 
