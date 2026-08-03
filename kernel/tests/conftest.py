@@ -23,6 +23,17 @@ def anyio_backend():
     return "asyncio"
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _isolate_local_storage(tmp_path_factory):
+    """Keep artifacts created by tests out of kernel/artifacts."""
+    from app.config import settings
+
+    settings.storage_backend = "local"
+    settings.s3_bucket = ""
+    settings.gcs_bucket = ""
+    settings.artifacts_local_dir = str(tmp_path_factory.mktemp("kernel-artifacts"))
+
+
 @pytest.fixture(scope="session")
 async def client(anyio_backend):
     from app.main import app

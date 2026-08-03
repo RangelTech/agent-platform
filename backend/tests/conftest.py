@@ -11,6 +11,15 @@ from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _isolate_local_storage(tmp_path_factory):
+    """Keep uploads created by tests out of the repository tree."""
+    settings.storage_backend = "local"
+    settings.s3_bucket = ""
+    settings.gcs_bucket = ""
+    settings.storage_local_dir = str(tmp_path_factory.mktemp("backend-storage"))
+
+
 @pytest.fixture(scope="session")
 def _schema():
     """Apply migrations once for the whole integration session."""

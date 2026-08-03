@@ -33,6 +33,12 @@ from app.routes import whatsapp as whatsapp_routes
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+BOOT_PENDING = {
+    "boot_ok": False,
+    "migrations_ok": False,
+    "detail": "startup has not run",
+}
+
 
 def _resolve_static_dir() -> Path | None:
     if settings.static_dir:
@@ -43,15 +49,52 @@ def _resolve_static_dir() -> Path | None:
     return p if p.is_dir() else None
 
 
+def _boot_status(application: FastAPI) -> dict:
+    return getattr(application.state, "boot_status", BOOT_PENDING.copy())
+
+
+def _sanitize_error(exc: Exception) -> str:
+    text = str(exc).splitlines()[0] if str(exc) else exc.__class__.__name__
+    return f"{exc.__class__.__name__}: {text}"[:500]
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    app.state.boot_status = BOOT_PENDING.copy()
     try:
         applied = run_migrations()
         if applied:
             logger.info("migrations applied: %s", applied)
-        bootstrap_master()
-    except Exception:
-        logger.exception("boot tasks failed — continuing so /health can report")
+        app.state.boot_status = {
+            "boot_ok": False,
+            "migrations_ok": True,
+            "detail": "migrations applied" if applied else "migrations already current",
+        }
+    except Exception as exc:
+        detail = _sanitize_error(exc)
+        app.state.boot_status = {
+            "boot_ok": False,
+            "migrations_ok": False,
+            "detail": detail,
+        }
+        logger.exception("MIGRATION_FAILED %s", detail)
+    else:
+        try:
+            bootstrap_master()
+        except Exception as exc:
+            detail = _sanitize_error(exc)
+            app.state.boot_status = {
+                "boot_ok": False,
+                "migrations_ok": True,
+                "detail": detail,
+            }
+            logger.exception("BOOT_FAILED %s", detail)
+        else:
+            app.state.boot_status = {
+                "boot_ok": True,
+                "migrations_ok": True,
+                "detail": "ready",
+            }
     yield
 
 
@@ -61,6 +104,22 @@ app = FastAPI(title="agent-platform backend", lifespan=lifespan)
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "backend"}
+
+
+@app.get("/health/ready")
+def health_ready():
+    status = _boot_status(app)
+    if status["boot_ok"] and status["migrations_ok"]:
+        return {"status": "ready", "service": "backend"}
+    return JSONResponse(
+        status_code=503,
+        content={
+            "status": "not_ready",
+            "service": "backend",
+            "migrations_ok": status["migrations_ok"],
+            "detail": status["detail"],
+        },
+    )
 
 
 # API routers are registered here, before the SPA fallback below. Route order
@@ -99,7 +158,7 @@ def _mount_spa(application: FastAPI) -> None:
             return JSONResponse(
                 {
                     "service": "backend",
-                    "hint": "frontend build not found — run npm run build",
+                    "hint": "frontend build not found - run npm run build",
                 }
             )
 

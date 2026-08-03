@@ -14,6 +14,15 @@ SHORT_SHA=$(git rev-parse --short HEAD)
 target=${1:-all}
 cd "$(dirname "$0")/.."
 
+# The image tag is the current commit SHA. Do not let an uncommitted source
+# change be deployed under a tag that cannot reproduce it later. Documentation
+# and QA evidence may still be dirty while a manual production deploy happens.
+if ! git diff --quiet -- backend kernel frontend infra .github ||
+   ! git diff --cached --quiet -- backend kernel frontend infra .github; then
+  echo "source tree is dirty; commit source changes before deploy" >&2
+  exit 1
+fi
+
 build() {
   local service=$1
   gcloud builds submit --project=$PROJECT \
