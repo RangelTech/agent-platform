@@ -174,6 +174,24 @@ def _catalogo(nomes: list[str], colunas_de) -> list[dict]:
     return catalogo
 
 
+def _escolhidas(datasource: dict, nomes: list[str]) -> list[str]:
+    """Filtra pelas tabelas que o dono da fonte declarou em `config.tables`.
+
+    Num lake de 180 tabelas onde 7 interessam, ordem alfabética decide o que o
+    modelo enxerga — e as 7 do caso real caíam fora. Declarar quais valem
+    resolve isso melhor do que qualquer limite: a lista fica curta e todas vêm
+    com coluna. Sem declaração, nada muda.
+
+    Aceita o nome com ou sem o prefixo do dataset, porque quem configura pensa
+    na tabela, não no caminho.
+    """
+    escolhidas = datasource.get("config", {}).get("tables") or []
+    if not escolhidas:
+        return nomes
+    querido = {str(t).strip() for t in escolhidas}
+    return [n for n in nomes if n in querido or n.split(".")[-1] in querido]
+
+
 async def list_tables(datasource: dict) -> list[dict]:
     """[{table, columns:[{name,type}]}] — capped, for the model's orientation."""
     kind = datasource["kind"]
@@ -181,7 +199,7 @@ async def list_tables(datasource: dict) -> list[dict]:
         _, linhas_nomes = await execute_query(
             datasource, _LIST_TABLE_NAMES_SQL[kind], max_rows=500
         )
-        nomes = [linha[0] for linha in linhas_nomes]
+        nomes = _escolhidas(datasource, [linha[0] for linha in linhas_nomes])
 
         _, rows = await execute_query(
             datasource, _LIST_TABLES_SQL[kind], max_rows=500
@@ -231,7 +249,7 @@ async def list_tables(datasource: dict) -> list[dict]:
                     schema = client.get_table(_por_nome[nome].reference).schema
                     return [{"name": f.name, "type": f.field_type} for f in schema]
 
-                out.extend(_catalogo(list(por_nome), colunas_de))
+                out.extend(_catalogo(_escolhidas(datasource, list(por_nome)), colunas_de))
             return out
 
         return await anyio.to_thread.run_sync(_bq)

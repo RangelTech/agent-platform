@@ -58,3 +58,24 @@ async def test_sql_lista_tabela_que_ficou_sem_coluna(monkeypatch):
     assert [t["table"] for t in catalogo] == ["public.larga", "public.esquecida"]
     assert catalogo[0]["columns"] == [{"name": "id", "type": "integer"}]
     assert "INFORMATION_SCHEMA" in catalogo[1]["columns"]
+
+
+def test_fonte_pode_declarar_quais_tabelas_valem():
+    """Num lake de 180 tabelas, quem configura sabe quais 7 interessam."""
+    nomes = ["semantic_zone.obt_a", "semantic_zone.obt_siope", "semantic_zone.obt_z"]
+    fonte = {"kind": "bigquery", "config": {"tables": ["obt_siope"]}}
+
+    assert datasources._escolhidas(fonte, nomes) == ["semantic_zone.obt_siope"]
+
+
+def test_nome_completo_tambem_serve():
+    nomes = ["semantic_zone.obt_siope", "semantic_zone.obt_z"]
+    fonte = {"config": {"tables": ["semantic_zone.obt_siope"]}}
+
+    assert datasources._escolhidas(fonte, nomes) == ["semantic_zone.obt_siope"]
+
+
+def test_sem_declaracao_nada_muda():
+    nomes = ["a", "b"]
+    assert datasources._escolhidas({"config": {}}, nomes) == nomes
+    assert datasources._escolhidas({}, nomes) == nomes
