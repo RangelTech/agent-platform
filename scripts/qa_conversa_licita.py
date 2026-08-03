@@ -354,13 +354,19 @@ def c6_pagamento(client, token, tpl):
         # cola, consulta de status e uma segunda cobrança — e muda tudo se
         # alguém pagar por engano. As cobranças são canceladas ao final por
         # `scripts/cancelar_cobrancas_qa.py`.
+        # A confirmação é um turno de verdade, não formalidade: o template exige
+        # confirmação para ação que mexe em dinheiro, e sem ela a conversa
+        # inteira passa "ok" sem nunca emitir cobrança nenhuma — foi o que
+        # aconteceu na primeira tentativa. O agente ainda estranha o valor,
+        # porque sabe da memória que a mensalidade é R$ 349,90.
         [
             "Preciso cobrar a mensalidade da consultoria. Gere uma cobrança PIX "
             "de R$ 0,01 para o cliente Porto Velho.",
+            "Sim, confirmo: R$ 0,01 mesmo, é um teste de integração. Pode gerar.",
             "Me mostre o código copia e cola dessa cobrança.",
             "Tem QR Code? Me mostre a imagem.",
             "Essa cobrança já foi paga?",
-            "Gere outra cobrança, agora de R$ 0,01 para Campinas.",
+            "Gere outra cobrança, agora de R$ 0,01 para Campinas. Confirmo desde já.",
             "Confirme os valores das duas cobranças que você gerou.",
         ],
     )
