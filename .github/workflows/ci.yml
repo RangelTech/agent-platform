@@ -37,7 +37,7 @@ jobs:
         working-directory: ${{ matrix.service }}
         env:
           DATABASE_URL: postgresql://agent:agent@localhost:5433/agent_llm
-        run: pytest -q -m "integration or not integration"
+        run: python -m pytest -q -m "integration or not integration"
 
   frontend:
     runs-on: ubuntu-latest
