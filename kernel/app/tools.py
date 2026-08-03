@@ -657,6 +657,47 @@ async def query_agent_rag(question: str) -> str:
     return "\n\n".join(parts)
 
 
+async def _publicar_qr(context: dict, qr_base64: str | None, valor) -> object | None:
+    """Publica a imagem do QR Code na conversa e devolve o artefato.
+
+    Falhar aqui não pode derrubar a cobrança: o copia-e-cola sozinho já paga.
+    Por isso o except engole o erro e só registra — quem chama trata `None`
+    como "não deu para mostrar a imagem".
+    """
+    if not qr_base64:
+        return None
+    try:
+        from app.storage import register_artifact
+
+        return await register_artifact(
+            tenant_id=context.get("tenant_id"),
+            chat_id=context.get("chat_id"),
+            agent_name=context.get("agent", ""),
+            kind="image",
+            title=f"QR Code PIX — R$ {valor}",
+            schema_json=None,
+            preview_json=None,
+            row_count=None,
+            payload=base64.b64decode(qr_base64),
+            content_type="image/png",
+            extension="png",
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("falha ao publicar o QR Code como artefato")
+        return None
+
+
+def _dados_do_pix(payment: dict) -> dict:
+    """Extrai copia-e-cola e QR de um pagamento já buscado no gateway.
+
+    O Mercado Pago devolve os dois em point_of_interaction.transaction_data; a
+    consulta traz os mesmos campos da criação. É isto que permite *mostrar* uma
+    cobrança existente em vez de criar outra só para exibir o código.
+    """
+    interacao = payment.get("point_of_interaction") or {}
+    return interacao.get("transaction_data") or {}
+
+
 @catalog.tool()
 async def generate_pix_charge(
     amount: str,
@@ -705,29 +746,7 @@ async def generate_pix_charge(
     except Exception as exc:  # noqa: BLE001 — o modelo precisa do motivo
         return f"ERRO ao gerar cobrança: {exc}"
 
-    # O QR chega do gateway como PNG em base64 e ficava só no banco: o modelo
-    # nunca via, e o cliente que pedia "me mostra o QR Code" recebia texto.
-    # Publicado como artefato, ele aparece na conversa como imagem.
-    qr_artifact = None
-    if charge.get("qr_code_base64"):
-        try:
-            from app.storage import register_artifact
-
-            qr_artifact = await register_artifact(
-                tenant_id=context.get("tenant_id"),
-                chat_id=context.get("chat_id"),
-                agent_name=context.get("agent", ""),
-                kind="image",
-                title=f"QR Code PIX — R$ {charge['amount']}",
-                schema_json=None,
-                preview_json=None,
-                row_count=None,
-                payload=base64.b64decode(charge["qr_code_base64"]),
-                content_type="image/png",
-                extension="png",
-            )
-        except Exception:  # noqa: BLE001 — cobrança válida não cai por causa da imagem
-            logger.exception("falha ao publicar o QR Code como artefato")
+    qr_artifact = await _publicar_qr(context, charge.get("qr_code_base64"), charge["amount"])
 
     return json.dumps(
         {
@@ -737,6 +756,12 @@ async def generate_pix_charge(
             "payment_status": charge["status"],
             "pix_copia_e_cola": charge["qr_code"],
             "ticket_url": charge["ticket_url"],
+            # O descriptor precisa VOLTAR no retorno da tool: o kernel só emite o
+            # evento de artefato para o cliente quando encontra um artifact_id
+            # aqui dentro. Publicar sem devolver gravava o QR e nunca o mostrava
+            # — e o modelo, sem ver imagem alguma, dizia ao usuário que não
+            # conseguia exibir QR Code.
+            "qr_code_artifact": qr_artifact,
             "qr_code_exibido": bool(qr_artifact),
             "sandbox": bool(credential.get("sandbox", True)),
         },
@@ -746,10 +771,17 @@ async def generate_pix_charge(
 
 @catalog.tool()
 async def check_payment_status(payment_id: str = "", reference_id: str = "") -> str:
-    """Consulta se uma cobrança PIX já foi paga. Informe o `payment_id`
-    devolvido por generate_pix_charge ou o `reference_id` do pedido. Use quando
-    o cliente perguntar se o pagamento caiu — a confirmação automática pode
-    demorar alguns segundos."""
+    """Consulta uma cobrança PIX já existente: status, valor e o código
+    copia-e-cola dela. Informe o `payment_id` devolvido por generate_pix_charge
+    ou o `reference_id` do pedido.
+
+    Use SEMPRE que o cliente pedir de novo o código, o QR ou os dados de uma
+    cobrança que você já criou — NUNCA chame generate_pix_charge para isso, pois
+    aquilo cria uma cobrança nova e pagável. generate_pix_charge é só para uma
+    cobrança que ainda não existe. Também use aqui para saber se o pagamento
+    caiu — a confirmação automática pode demorar alguns segundos. A imagem do QR
+    é republicada na conversa: com `qr_code_exibido` verdadeiro, o cliente já
+    está vendo o QR."""
     context = _context()
     credential = context.get("payment") or {}
     if not credential.get("access_token"):
@@ -782,6 +814,16 @@ async def check_payment_status(payment_id: str = "", reference_id: str = "") -> 
         status=status,
         payment=payment,
     )
+    pix = _dados_do_pix(payment)
+    # Só republica o QR enquanto dá para pagar: reexibir QR de cobrança paga ou
+    # cancelada convida um segundo pagamento.
+    qr_artifact = (
+        await _publicar_qr(
+            context, pix.get("qr_code_base64"), payment.get("transaction_amount")
+        )
+        if status == "pending"
+        else None
+    )
     return json.dumps(
         {
             "payment_id": external_id,
@@ -789,6 +831,9 @@ async def check_payment_status(payment_id: str = "", reference_id: str = "") -> 
             "gateway_status": payment.get("status"),
             "amount": payment.get("transaction_amount"),
             "paid": status == "paid",
+            "pix_copia_e_cola": pix.get("qr_code") or "",
+            "qr_code_artifact": qr_artifact,
+            "qr_code_exibido": bool(qr_artifact),
         },
         ensure_ascii=False,
     )

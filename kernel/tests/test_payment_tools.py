@@ -41,6 +41,20 @@ def _start_fake_gateway():
 
     @fake.get("/v1/payments/{payment_id}")
     async def read(payment_id: str):
+        # 999... = cobrança ainda pendente, como o gateway devolve de verdade:
+        # com o copia-e-cola e o QR junto do status.
+        if payment_id.startswith("999"):
+            return {
+                "id": int(payment_id),
+                "status": "pending",
+                "transaction_amount": 0.01,
+                "point_of_interaction": {
+                    "transaction_data": {
+                        "qr_code": "00020126PIX-COPIA-E-COLA",
+                        "qr_code_base64": "aGVsbG8=",
+                    }
+                },
+            }
         return {"id": int(payment_id), "status": "approved", "transaction_amount": 48.9}
 
     config = uvicorn.Config(fake, host="127.0.0.1", port=0, log_level="error")
@@ -118,6 +132,86 @@ async def test_check_status_reports_paid():
 
     assert payload["paid"] is True
     assert payload["status"] == "paid"
+
+
+async def test_o_qr_publicado_volta_como_descriptor_no_retorno(monkeypatch):
+    """Publicar o QR não basta: o descriptor precisa aparecer no retorno da tool.
+
+    O kernel só emite o evento `artifact` para o cliente quando acha um
+    `artifact_id` dentro do que a tool devolveu (`_find_artifact_descriptors`).
+    Sem isso o QR era gravado no storage e nunca chegava à tela — e o modelo,
+    não vendo imagem nenhuma, respondia ao usuário que não conseguia exibir QR
+    Code, exatamente o oposto do que tinha acabado de acontecer."""
+    publicados = []
+
+    async def falso_register(**kwargs):
+        publicados.append(kwargs)
+        return {"artifact_id": "art-1", "kind": kwargs["kind"], "title": kwargs["title"]}
+
+    import app.storage
+
+    monkeypatch.setattr(app.storage, "register_artifact", falso_register)
+
+    server, port, _ = _start_fake_gateway()
+    original = settings.mercado_pago_api
+    settings.mercado_pago_api = f"http://127.0.0.1:{port}"
+    try:
+        _context({"provider": "mercado_pago", "access_token": "TEST-token", "sandbox": True})
+        async with open_catalog_session() as session:
+            result = await session.call_tool("generate_pix_charge", {"amount": "0.01"})
+        payload = json.loads(_tool_text(result))
+    finally:
+        settings.mercado_pago_api = original
+        server.should_exit = True
+
+    from app.graph import _find_artifact_descriptors
+
+    assert publicados and publicados[0]["kind"] == "image"
+    assert payload["qr_code_exibido"] is True
+    assert [d["artifact_id"] for d in _find_artifact_descriptors(payload)] == ["art-1"]
+
+
+async def test_check_status_devolve_o_copia_e_cola_da_cobranca_existente():
+    """Consultar precisa entregar o código da cobrança que já existe.
+
+    Sem isto, "me mostre o código de novo" só tinha uma saída: chamar
+    generate_pix_charge outra vez — e cada repetição criava uma cobrança nova e
+    pagável. Foi exatamente o que aconteceu no QA (três cobranças para exibir
+    uma)."""
+    server, port, _ = _start_fake_gateway()
+    original = settings.mercado_pago_api
+    settings.mercado_pago_api = f"http://127.0.0.1:{port}"
+    try:
+        _context({"provider": "mercado_pago", "access_token": "TEST-token", "sandbox": True})
+        async with open_catalog_session() as session:
+            result = await session.call_tool("check_payment_status", {"payment_id": "999123"})
+        payload = json.loads(_tool_text(result))
+    finally:
+        settings.mercado_pago_api = original
+        server.should_exit = True
+
+    assert payload["status"] == "pending"
+    assert payload["paid"] is False
+    assert payload["pix_copia_e_cola"] == "00020126PIX-COPIA-E-COLA"
+
+
+async def test_check_status_pago_nao_reexibe_o_qr():
+    """Cobrança liquidada não pode voltar a mostrar QR — convidaria a pagar duas
+    vezes. O copia-e-cola some junto porque o gateway não o devolve mais."""
+    server, port, _ = _start_fake_gateway()
+    original = settings.mercado_pago_api
+    settings.mercado_pago_api = f"http://127.0.0.1:{port}"
+    try:
+        _context({"provider": "mercado_pago", "access_token": "TEST-token", "sandbox": True})
+        async with open_catalog_session() as session:
+            result = await session.call_tool("check_payment_status", {"payment_id": "1234567890"})
+        payload = json.loads(_tool_text(result))
+    finally:
+        settings.mercado_pago_api = original
+        server.should_exit = True
+
+    assert payload["paid"] is True
+    assert payload["qr_code_exibido"] is False
 
 
 async def test_check_status_requires_an_identifier():
