@@ -1,0 +1,37 @@
+.git/
+.github/
+
+# Local dependency/cache folders
+.venv/
+venv/
+backend/.venv/
+kernel/.venv/
+frontend/node_modules/
+frontend/dist/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Local runtime artifacts and uploaded payloads
+kernel/artifacts/
+backend/artifacts/
+artifacts/
+
+# Local-only configuration and generated reports
+.env
+*.local
+secrets/
+.openai_key.tmp
+*.tmp
+*.log
+docs/
+frontend/test-results/
+frontend/playwright-report/
+
+# Editor/OS noise
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

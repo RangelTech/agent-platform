@@ -9,10 +9,11 @@ PROJECT=eduk-prd-lake
 REGION=us-central1
 REPO=us-central1-docker.pkg.dev/$PROJECT/cloud-run-source-deploy
 RUNTIME_SA=devlake@eduk-prd-lake.iam.gserviceaccount.com
-SHORT_SHA=$(git rev-parse --short HEAD)
 
 target=${1:-all}
 cd "$(dirname "$0")/.."
+SHORT_SHA=$(git rev-parse --short HEAD)
+GCLOUD_BIN=${GCLOUD_BIN:-gcloud}
 
 # The image tag is the current commit SHA. Do not let an uncommitted source
 # change be deployed under a tag that cannot reproduce it later. Documentation
@@ -25,14 +26,14 @@ fi
 
 build() {
   local service=$1
-  gcloud builds submit --project=$PROJECT \
+  "$GCLOUD_BIN" builds submit --project=$PROJECT \
     --config=infra/cloudbuild-$service.yaml \
     --substitutions=SHORT_SHA=$SHORT_SHA .
 }
 
 deploy_kernel() {
   build kernel
-  gcloud run deploy teste-ia-kernel \
+  "$GCLOUD_BIN" run deploy teste-ia-kernel \
     --project=$PROJECT --region=$REGION \
     --image=$REPO/teste_ia-kernel:$SHORT_SHA \
     --service-account=$RUNTIME_SA \
@@ -42,7 +43,7 @@ deploy_kernel() {
     --memory=1Gi --cpu=1 --min-instances=0 --max-instances=3 \
     --timeout=600
   # Only the backend may invoke the kernel.
-  gcloud run services add-iam-policy-binding teste-ia-kernel \
+  "$GCLOUD_BIN" run services add-iam-policy-binding teste-ia-kernel \
     --project=$PROJECT --region=$REGION \
     --member=serviceAccount:$RUNTIME_SA --role=roles/run.invoker
 }
@@ -50,9 +51,9 @@ deploy_kernel() {
 deploy_backend() {
   build backend
   local kernel_url
-  kernel_url=$(gcloud run services describe teste-ia-kernel \
+  kernel_url=$("$GCLOUD_BIN" run services describe teste-ia-kernel \
     --project=$PROJECT --region=$REGION --format='value(status.url)')
-  gcloud run deploy teste-ia-backend \
+  "$GCLOUD_BIN" run deploy teste-ia-backend \
     --project=$PROJECT --region=$REGION \
     --image=$REPO/teste_ia-backend:$SHORT_SHA \
     --service-account=$RUNTIME_SA \
@@ -65,14 +66,14 @@ deploy_backend() {
   # PUBLIC_BASE_URL só é conhecida depois que o serviço existe; é ela que monta
   # a notification_url que o gateway de pagamento chama de volta (Fase D).
   local backend_url
-  backend_url=$(gcloud run services describe teste-ia-backend \
+  backend_url=$("$GCLOUD_BIN" run services describe teste-ia-backend \
     --project=$PROJECT --region=$REGION --format='value(status.url)')
   # A ponte omnichannel (repo chatwoot-rt) é opcional: quando o serviço não
   # existe, BRIDGE_URL fica vazia e a aba de atendimento simplesmente some.
   local bridge_url
-  bridge_url=$(gcloud run services describe chatwoot-bridge \
+  bridge_url=$("$GCLOUD_BIN" run services describe chatwoot-bridge \
     --project=$PROJECT --region=$REGION --format='value(status.url)' 2>/dev/null || echo "")
-  gcloud run services update teste-ia-backend \
+  "$GCLOUD_BIN" run services update teste-ia-backend \
     --project=$PROJECT --region=$REGION \
     --update-env-vars="PUBLIC_BASE_URL=$backend_url,BRIDGE_URL=$bridge_url"
 }
