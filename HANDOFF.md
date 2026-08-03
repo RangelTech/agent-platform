@@ -11,12 +11,12 @@ apareceu literalmente — ver 6.1.
 
 Atualizacao de 03/08/2026, fim da rodada: a spec unificada
 `docs/specs/pendencias-antes-do-primeiro-cliente.md` virou a fonte principal do
-que falta. O deploy manual fatiado ja foi feito no commit `7118a62`; kernel,
-backend, migracao 0023, readiness, UI de template, QA C1/C2/C5 e smokes
+que falta. O deploy manual fatiado foi feito no commit `7118a62`; depois o
+primeiro push/CI-CD real foi corrigido ate ficar verde no commit `8a67ba3`.
+Kernel, backend, migracao 0023, readiness, UI de template, QA C1/C2/C5 e smokes
 Chatwoot foram revalidados contra producao. O que continua pendente antes do
-primeiro cliente: primeiro `git push`/CI-CD real, limpeza das 215 memorias de QA,
-guardrails novos de runtime, capacidade/pool, segredos no banco e decisoes do
-dono.
+primeiro cliente: limpeza das 215 memorias de QA, guardrails novos de runtime,
+capacidade/pool, segredos no banco e decisoes do dono.
 
 ---
 
@@ -31,7 +31,7 @@ dono.
 | Fonte de dados | `lake_mindlab` → BigQuery `mi-prd-lake.semantic_zone` |
 | Template | `Inteligência de Licitações` (`e79281d2-d6a5-41ee-97b4-45b1f4632863`), versão 5 |
 | Backend | `https://teste-ia-backend-x27vtpiida-uc.a.run.app` |
-| Kernel | `https://teste-ia-kernel-x27vtpiida-uc.a.run.app` (revisão `00031` / imagem `7118a62`) |
+| Kernel | `https://teste-ia-kernel-x27vtpiida-uc.a.run.app` (revisão `00032` / imagem `8a67ba3`) |
 | Chatwoot | `chatwoot-web` / `chatwoot-worker` / `chatwoot-bridge` (Cloud Run, us-central1) |
 
 ### Deploy
@@ -269,18 +269,17 @@ de turnos.
 ## 7. Onde parei
 
 - [x] 7 defeitos do core corrigidos, com teste
-- [x] Kernel deployado até a revisão `00031` no commit `7118a62`
-- [x] Backend deployado até a revisão `00045` no commit `7118a62`
+- [x] Kernel deployado até a revisão `00032` no commit `8a67ba3`
+- [x] Backend deployado até a revisão `00047` no commit `8a67ba3`
 - [x] `/health/ready` 200 em produção
 - [x] Migração 0023 aplicada e coluna `template_versions.tool_output_limit` conferida
 - [x] C1, C2, C3, C4, C5, C6 verdes em rodadas de QA registradas
 - [x] QR do PIX provado de ponta a ponta; todas as cobranças canceladas
-- [x] CI/CD com deploy por Workload Identity (IAM aplicado)
+- [x] CI/CD com deploy por Workload Identity verde no run `30860519195`
 - [x] Chatwoot em português nas 10 contas
 - [x] Spec de segredos escrita: `docs/specs/segredos-no-banco.md`
 - [x] Smokes do Chatwoot contra produção (`scripts/smoke/omnichannel_e2e.py` e
       `scripts/smoke/atendimento_negocio.py`)
-- [ ] **`git push`** — 22 commits locais à frente do `origin/main`, nada pushado
 - [ ] Implementar a spec de segredos (fases 1 a 5)
 - [ ] 215 memórias antigas no tenant de teste:
       `DELETE FROM memories WHERE tenant_id = '31445557-8561-4b27-804d-0129a72b467d'`
@@ -293,8 +292,8 @@ Esta seção é a mais importante do documento. Nada aqui é hipótese confortá
 
 ### 8.1 O teto de saída (3.7) já está em produção
 
-O kernel em produção está na revisão `00031` e o backend na `00045`, ambos com
-imagem `7118a62`. C1, C2 e C5 rodaram depois do deploy sem erro e sem turno
+O kernel em produção está na revisão `00032` e o backend na `00047`, ambos com
+imagem `8a67ba3`. C1, C2 e C5 rodaram depois do deploy sem erro e sem turno
 vazio. O risco remanescente não é "código não deployado"; é qualidade de agente:
 em C2, alguns pedidos de gráfico/planilha/PDF foram respondidos em texto, não
 como artifact real.

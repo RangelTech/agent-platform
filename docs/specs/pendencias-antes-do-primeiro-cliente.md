@@ -14,17 +14,19 @@ Progresso da execucao em 03/08/2026:
 - validacao local: backend 128/128, kernel 107/107, Ruff backend/kernel limpo e
   build do frontend aprovado;
 - deploy manual fatiado executado em producao no commit `7118a62`;
-- kernel: `teste-ia-kernel-00031-ztx`, imagem
-  `teste_ia-kernel:7118a62`, 100% do trafego, `/health` autenticado 200 e
+- primeiro push/CI-CD exercitado e corrigido ate ficar verde no commit
+  `8a67ba3`;
+- kernel final: `teste-ia-kernel-00032-fkj`, imagem
+  `teste_ia-kernel:8a67ba3`, 100% do trafego, `/health` autenticado 200 e
   403 sem autenticacao;
-- backend: `teste-ia-backend-00045-2dl`, imagem
-  `teste_ia-backend:7118a62`, 100% do trafego, `/health` 200 e
+- backend final: `teste-ia-backend-00047-t8t`, imagem
+  `teste_ia-backend:8a67ba3`, 100% do trafego, `/health` 200 e
   `/health/ready` 200;
 - migracao `0023_teto_de_saida_de_ferramenta.sql` conferida no banco;
   `template_versions.tool_output_limit` existe como `integer NOT NULL DEFAULT
   24000`;
-- smoke real de chat passou: tenant ACME, eventos `chat`, `token`, `done`, sem
-  erro;
+- smoke real de chat passou depois do deploy manual e depois do deploy via CI:
+  tenant ACME, eventos `chat`, `token`, `done`, sem erro;
 - `scripts/regressao_fase1.py` passou 12/12 contra producao;
 - `scripts/super_qa.py` passou 22/22 contra producao;
 - smoke Playwright inline salvou e fez deploy de template pela SPA de producao;
@@ -42,8 +44,8 @@ cliente real. Ela junta:
 - `docs/specs/segredos-no-banco.md`;
 - as Mega Specs 1, 2 e 3;
 - a investigacao de `kernel/artifacts/`;
-- o estado local do repo: 22 commits a frente de `origin/main`, CI/CD ainda nao
-  exercitado em push, e pendencias de QA contra producao.
+- o estado local do repo foi enviado para `origin/main`; o CI/CD foi exercitado
+  em push e terminou verde depois de corrigir os problemas encontrados.
 
 O objetivo nao e listar tudo que seria bom fazer um dia. O objetivo e dizer o que
 precisa estar resolvido, aceito ou conscientemente adiado antes do primeiro
@@ -123,18 +125,17 @@ ser versionada e que precisa parar de crescer.
 
 Estado confirmado nesta trilha:
 
-- 22 commits locais a frente de `origin/main`;
 - job `deploy` no GitHub Actions dispara em push no `main`;
 - o job roda `./infra/deploy.sh all`;
-- WIF/IAM do deploy foi configurado, mas o job ainda nao foi exercitado por push;
+- WIF/IAM do deploy foi configurado e exercitado com sucesso;
 - o kernel com `tool_output_limit` foi deployado manualmente e validado em turno
   real;
 - a migracao `0023_teto_de_saida_de_ferramenta.sql` foi conferida em producao.
 
-Esse conjunto muda a ordem dos trabalhos: o primeiro `git push` nao e um simples
-envio de codigo. Ele tambem e o primeiro teste do CI, do deploy automatizado, do
-kernel novo e do backend novo. A migracao 0023 e o deploy manual ja foram
-provados nesta rodada.
+O primeiro `git push` encontrou tres problemas reais e todos foram corrigidos:
+`pytest` precisava rodar via `python -m pytest`, o job do kernel precisava aplicar
+migrations no banco fresco do CI, e `infra/deploy.sh` precisava ser executavel ou
+chamado via `bash`.
 
 ## 3. Ordem obrigatoria
 
@@ -365,6 +366,19 @@ Feito quando:
 - job `deploy` roda pelo menos uma vez;
 - revisoes finais continuam saudaveis;
 - comportamento validado nos blocos de QA nao regrediu.
+
+Evidencia de 03/08/2026:
+
+- run `30860519195` do GitHub Actions passou com jobs `frontend`, `python
+  (backend)`, `python (kernel)` e `deploy` verdes;
+- Cloud Build `016a64d8-ed42-4d4f-88db-c8287ee8a4ad` construiu o kernel
+  `8a67ba3`;
+- Cloud Build `28c56df2-c873-4b01-9dfa-d14d0e35c90c` construiu o backend
+  `8a67ba3`;
+- Cloud Run ficou em `teste-ia-kernel-00032-fkj` e
+  `teste-ia-backend-00047-t8t`;
+- `/health`, `/health/ready`, `/health` autenticado do kernel e
+  `scripts/smoke_chat_prod.py` passaram depois do deploy automatizado.
 
 ### 6.6 Documentar a ordem no `deploy.sh`
 
@@ -860,7 +874,7 @@ explicitamente aceitos como risco:
 - [x] Kernel deployado manualmente e validado.
 - [x] Backend deployado manualmente e migracao 0023 conferida.
 - [x] Coluna `tool_output_limit` existe em producao.
-- [ ] Primeiro push executa CI/CD verde.
+- [x] Primeiro push executa CI/CD verde.
 - [x] C1 e C2 reexecutados contra kernel novo.
 - [x] C5 lido e registrado.
 - [x] Smokes Chatwoot reexecutados contra producao.
