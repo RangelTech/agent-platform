@@ -348,13 +348,19 @@ def c6_pagamento(client, token, tpl):
         token,
         tpl,
         "C6 — cobrança PIX e QR Code",
+        # Um centavo, e não a mensalidade real: a credencial disponível é de
+        # produção, então cada cobrança daqui é pagável de verdade na conta do
+        # titular. O valor não muda nada do que o teste prova — QR, copia e
+        # cola, consulta de status e uma segunda cobrança — e muda tudo se
+        # alguém pagar por engano. As cobranças são canceladas ao final por
+        # `scripts/cancelar_cobrancas_qa.py`.
         [
             "Preciso cobrar a mensalidade da consultoria. Gere uma cobrança PIX "
-            "de R$ 349,90 para o cliente Porto Velho.",
+            "de R$ 0,01 para o cliente Porto Velho.",
             "Me mostre o código copia e cola dessa cobrança.",
             "Tem QR Code? Me mostre a imagem.",
             "Essa cobrança já foi paga?",
-            "Gere outra cobrança, agora de R$ 1.250,00 para Campinas.",
+            "Gere outra cobrança, agora de R$ 0,01 para Campinas.",
             "Confirme os valores das duas cobranças que você gerou.",
         ],
     )
