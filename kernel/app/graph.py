@@ -92,9 +92,13 @@ async def _historico_para_o_modelo(state: RunState, run_config: dict) -> list:
     if len(mensagens) <= limite:
         return [(None, m) for m in mensagens]
 
-    # Metade recente intacta; o resto vira resumo (ou é descartado).
-    recentes = mensagens[-(limite // 2):]
-    antigas = mensagens[: -(limite // 2)]
+    # Metade recente intacta; o resto vira resumo (ou é descartado). O piso de 1
+    # importa: com limite 1, `limite // 2` é 0 e `mensagens[-0:]` devolveria a
+    # conversa inteira — o oposto do que o corte pede. Hoje a API não aceita
+    # limite abaixo de 4, mas o kernel não deve depender disso.
+    metade = max(1, limite // 2)
+    recentes = mensagens[-metade:]
+    antigas = mensagens[:-metade]
 
     if not run_config.get("compress_history"):
         return [(None, m) for m in recentes]

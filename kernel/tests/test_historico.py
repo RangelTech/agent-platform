@@ -82,3 +82,15 @@ async def test_resumo_que_falha_nao_derruba_o_turno(monkeypatch):
 async def test_limite_padrao_quando_o_template_nao_diz():
     saida = await graph._historico_para_o_modelo(_conversa(150), {})
     assert len(saida) == 50, "padrão 100 -> metade recente"
+
+
+async def test_limite_de_um_nao_devolve_a_conversa_inteira():
+    """`limite // 2` vira 0 e `mensagens[-0:]` é a lista toda.
+
+    A API hoje recusa limite abaixo de 4, mas o kernel atende quem o chamar, e
+    um corte que devolve tudo é pior que corte nenhum: o dono do template pediu
+    o menor contexto possível e receberia o maior.
+    """
+    saida = await graph._historico_para_o_modelo(_conversa(30), {"history_limit": 1})
+    assert len(saida) == 1
+    assert saida[-1][1].content == "m29"
