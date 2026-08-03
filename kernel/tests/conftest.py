@@ -8,7 +8,9 @@ scoping the backend fixture to the session. Pools are closed once at the end.
 import asyncio
 import json
 import sys
+from pathlib import Path
 
+import psycopg
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -21,6 +23,32 @@ if sys.platform == "win32":
 @pytest.fixture(scope="session")
 def anyio_backend():
     return "asyncio"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _apply_schema_migrations():
+    """Kernel integration tests need the same Postgres schema as the backend."""
+    from app.config import settings
+
+    migrations_dir = Path(__file__).resolve().parents[2] / "backend" / "migrations"
+    bootstrap = """
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+        filename TEXT PRIMARY KEY,
+        applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+    """
+    with psycopg.connect(settings.database_url, connect_timeout=15) as conn:
+        conn.execute(bootstrap)
+        done = {
+            row[0] for row in conn.execute("SELECT filename FROM schema_migrations")
+        }
+        for path in sorted(migrations_dir.glob("*.sql")):
+            if path.name in done:
+                continue
+            conn.execute(path.read_text(encoding="utf-8"))
+            conn.execute(
+                "INSERT INTO schema_migrations (filename) VALUES (%s)", (path.name,)
+            )
 
 
 @pytest.fixture(scope="session", autouse=True)
