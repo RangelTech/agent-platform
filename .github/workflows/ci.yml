@@ -78,4 +78,4 @@ jobs:
           service_account: github-deployer@eduk-prd-lake.iam.gserviceaccount.com
       - uses: google-github-actions/setup-gcloud@v2
       - name: Deploy kernel and backend
-        run: ./infra/deploy.sh all
+        run: bash ./infra/deploy.sh all
