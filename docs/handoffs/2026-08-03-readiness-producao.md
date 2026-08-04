@@ -522,6 +522,10 @@ Falta implementar ou adiar conscientemente:
 Leia nesta ordem:
 
 1. `docs/handoffs/2026-08-03-readiness-producao.md` (este arquivo);
+1b. `docs/handoffs/2026-08-03-validacao-independente.md` - confere as alegacoes
+    deste documento contra o ambiente e corrige tres achados (guarda de banco
+    nos testes, vazamento no /health/ready, guarda de deploy cega a arquivo
+    novo);
 2. `docs/specs/pendencias-antes-do-primeiro-cliente.md`;
 3. `HANDOFF.md`;
 4. `docs/specs/segredos-no-banco.md`;
