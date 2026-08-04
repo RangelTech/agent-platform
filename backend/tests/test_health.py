@@ -34,6 +34,10 @@ def test_ready_reports_migration_failure(monkeypatch, caplog):
     body = r.json()
     assert body["status"] == "not_ready"
     assert body["migrations_ok"] is False
-    assert "RuntimeError" in body["detail"]
-    assert "database unavailable" in body["detail"]
     assert "MIGRATION_FAILED" in caplog.text
+    # O motivo é para quem lê o log, não para quem chama a URL: o endpoint é
+    # público e a mensagem de uma falha real do psycopg traz host, porta e
+    # usuário do banco. Casar o corpo inteiro é de propósito — um campo novo
+    # que carregue diagnóstico quebra este teste em vez de vazar em silêncio.
+    assert body == {"status": "not_ready", "service": "backend", "migrations_ok": False}
+    assert "database unavailable" in caplog.text

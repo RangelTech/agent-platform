@@ -18,9 +18,15 @@ GCLOUD_BIN=${GCLOUD_BIN:-gcloud}
 # The image tag is the current commit SHA. Do not let an uncommitted source
 # change be deployed under a tag that cannot reproduce it later. Documentation
 # and QA evidence may still be dirty while a manual production deploy happens.
-if ! git diff --quiet -- backend kernel frontend infra .github ||
-   ! git diff --cached --quiet -- backend kernel frontend infra .github; then
+# `git diff` só enxerga arquivo rastreado. Um arquivo NOVO em kernel/ ou
+# backend/ não aparece nele, e o Cloud Build envia o diretório inteiro — a
+# imagem sairia com código que o commit do nome dela não contém, que é
+# exatamente o que esta guarda promete impedir. `git status --porcelain` pega
+# rastreado, staged e novo de uma vez.
+SOURCE_DIRS=(backend kernel frontend infra .github)
+if [ -n "$(git status --porcelain --untracked-files=normal -- "${SOURCE_DIRS[@]}")" ]; then
   echo "source tree is dirty; commit source changes before deploy" >&2
+  git status --short --untracked-files=normal -- "${SOURCE_DIRS[@]}" >&2
   exit 1
 fi
 

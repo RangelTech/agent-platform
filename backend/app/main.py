@@ -111,13 +111,18 @@ def health_ready():
     status = _boot_status(app)
     if status["boot_ok"] and status["migrations_ok"]:
         return {"status": "ready", "service": "backend"}
+    # O motivo fica no log, não no corpo. Este endpoint é público (o backend
+    # sobe com --allow-unauthenticated) e o `detail` carrega a primeira linha da
+    # exceção: numa falha real do psycopg isso é "connection to server at
+    # <host>, port <porta> failed: ... for user <usuário>". Não vaza senha, mas
+    # entrega host, porta e usuário do banco a quem só chamou uma URL.
+    logger.error("READINESS_NOT_READY %s", status["detail"])
     return JSONResponse(
         status_code=503,
         content={
             "status": "not_ready",
             "service": "backend",
             "migrations_ok": status["migrations_ok"],
-            "detail": status["detail"],
         },
     )
 
