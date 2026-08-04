@@ -25,10 +25,30 @@ def anyio_backend():
     return "asyncio"
 
 
+def _guarda_de_banco():
+    """A regra de "onde é seguro escrever" mora no backend e é importada daqui.
+
+    Copiar as quinze linhas para cá deixaria duas versões da mesma decisão de
+    segurança, e a que ninguém lembrasse de atualizar seria a que falharia. O
+    kernel já depende de `backend/migrations` logo abaixo — depender também da
+    guarda que protege esse mesmo banco é coerente, não acoplamento novo.
+    """
+    import importlib.util
+
+    caminho = Path(__file__).resolve().parents[2] / "backend" / "tests" / "guardas.py"
+    spec = importlib.util.spec_from_file_location("guardas_do_backend", caminho)
+    modulo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(modulo)
+    return modulo.exigir_banco_descartavel
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _apply_schema_migrations():
     """Kernel integration tests need the same Postgres schema as the backend."""
     from app.config import settings
+
+    # Aplicar migração é escrita: vale a mesma recusa que protege o backend.
+    _guarda_de_banco()(settings.database_url)
 
     migrations_dir = Path(__file__).resolve().parents[2] / "backend" / "migrations"
     bootstrap = """

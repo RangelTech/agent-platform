@@ -9,6 +9,13 @@ from app.migrations import run_migrations
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
+from guardas import exigir_banco_descartavel
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _recusar_banco_de_producao():
+    """Primeira coisa da sessão, antes de qualquer fixture que escreva."""
+    exigir_banco_descartavel(settings.database_url)
 
 
 @pytest.fixture(scope="session", autouse=True)
