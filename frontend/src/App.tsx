@@ -17,6 +17,7 @@ import Chat from './pages/Chat'
 import Dashboard from './pages/Dashboard'
 import Datasources from './pages/Datasources'
 import Files from './pages/Files'
+import InstallationSecrets from './pages/InstallationSecrets'
 import Integrations from './pages/Integrations'
 import Login from './pages/Login'
 import McpStore from './pages/McpStore'
@@ -66,6 +67,9 @@ function Shell() {
     { to: '/pagamentos', label: 'Pagamentos', show: can('payments', 'view') },
     { to: '/mcp-store', label: 'MCP Store', show: can('mcp_store', 'view') },
     { to: '/atendimento', label: 'Atendimento', show: can('omnichannel', 'view') },
+    // Chave da instalação inteira (app da Meta, busca na web): é do master, não
+    // de uma empresa — por isso não aparece para quem administra um tenant.
+    { to: '/chaves-da-instalacao', label: 'Chaves da instalação', show: user?.is_master ?? false },
     { to: '/personalizar', label: 'Personalizar', show: !(user?.is_master ?? false) && can('users', 'edit') },
   ].filter((l) => l.show)
 
@@ -249,6 +253,10 @@ function Shell() {
               <Route path="/pagamentos" element={<Payments />} />
               <Route path="/mcp-store" element={<McpStore />} />
               <Route path="/atendimento" element={<Omnichannel />} />
+              <Route
+                path="/chaves-da-instalacao"
+                element={user?.is_master ? <InstallationSecrets /> : <Navigate to="/usuarios" />}
+              />
               <Route path="/personalizar" element={<Customize />} />
               <Route path="*" element={<Navigate to={links[0]?.to ?? '/usuarios'} replace />} />
             </Routes>

@@ -15,6 +15,7 @@ from app.routes import auth as auth_routes
 from app.routes import chats as chat_routes
 from app.routes import datasources as datasource_routes
 from app.routes import files as file_routes
+from app.routes import installation_secrets as installation_secret_routes
 from app.routes import integrations as integration_routes
 from app.routes import mcp_store as mcp_store_routes
 from app.routes import memories as memory_routes
@@ -150,6 +151,7 @@ app.include_router(mcp_store_routes.router)
 app.include_router(whatsapp_routes.router)
 app.include_router(omnichannel_routes.router)
 app.include_router(ai_router_routes.router)
+app.include_router(installation_secret_routes.router)
 
 
 def _mount_spa(application: FastAPI) -> None:
