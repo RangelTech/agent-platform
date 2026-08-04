@@ -102,3 +102,65 @@ testando por decisão consciente.
 Ela não atrapalha ninguém: banco local e serviço de CI passam direto, e nenhum
 comando desta rodada precisou da variável. O que ela impede é o acidente que só
 acontece uma vez.
+
+---
+
+## 4. O desenho de canais, fechado (04/08, madrugada)
+
+A dúvida que faltava responder era "1 app da Meta por instalação significa 1
+cliente?". Não. São dois níveis, e agora os dois estão implementados:
+
+| Camada | Escopo | Onde é configurada |
+|---|---|---|
+| App da Meta (`FB_APP_ID`, `FB_APP_SECRET`, verify tokens) | **um por instalação** | Nossa tela *Chaves da instalação* (master) |
+| Página do Facebook / conta do Instagram | **por cliente** | O próprio cliente, dentro do Chatwoot dele |
+| WhatsApp por W-API | por cliente | Ponte, canal de API |
+| WhatsApp oficial (Cloud API) | por cliente | O próprio cliente, dentro do Chatwoot |
+
+O app da Meta é infraestrutura de autorização: o cliente faz login com a conta
+Meta **dele**, autoriza o nosso app na página **dele**, e o Chatwoot cria uma
+inbox dentro da conta dele. Você não vê as mensagens dele e ele não vê as suas.
+
+### O que ficou pronto para isso funcionar
+
+1. **Cofre → Chatwoot, provado em produção.** Cadastrei `FB_VERIFY_TOKEN` pela
+   API do painel master, rodei `./infra/deploy.sh sync-secrets` e conferi:
+   valor gravado no `installation_configs` do Chatwoot, e a tela mostrando
+   `status: ok, synced_version: 1`. **Esse valor é de QA** (`qa-prova-de-sincronia`)
+   e precisa ser substituído pelo real quando o app da Meta existir.
+
+2. **Agent Bot associado automaticamente.** Era o elo que faltava e ninguém
+   tinha visto: o Chatwoot só avisa a ponte quando existe um Agent Bot
+   associado *àquela* caixa, e a ponte só associava nas caixas que ela mesma
+   criava (W-API). Caixa de Instagram criada dentro do Chatwoot nascia sem bot
+   — o cliente escolheria o agente na nossa tela e teria silêncio absoluto, sem
+   erro em lugar nenhum. Agora escolher o agente associa o bot, e escolher
+   "Somente atendimento humano" desassocia.
+
+3. **Tarefas do Chatwoot deixaram de depender de um job velho.** `deploy.sh
+   locale` e `sync-secrets` reusavam o job `chatwoot-migrate`, que ainda
+   carregava `S3_BUCKET_NAME` — nome que o Chatwoot abandonou. Todo script
+   morria no boot com `missing required option :name`, antes de rodar uma
+   linha. Agora cada tarefa sobe o próprio job com a imagem que o serviço está
+   servindo.
+
+4. **Provado em produção, 15/15**
+   (`scripts/smoke/caixas_com_agentes_diferentes.py`): duas caixas do mesmo
+   tenant, agentes diferentes, sem criar bot na mão. A caixa A respondeu com o
+   cardápio; a caixa B respondeu `SUPORTE-B: ...`. Se a associação automática
+   falhasse, as duas respostas simplesmente não chegariam.
+
+### O que só você pode fazer
+
+1. Criar o app Business na **sua** conta Meta for Developers, adicionar
+   Messenger e Instagram, apontar os webhooks para
+   `https://<chatwoot-web>/webhooks/facebook` e `.../webhooks/instagram`, e
+   passar pelo App Review das permissões (`pages_messaging`,
+   `pages_manage_metadata`, `pages_show_list`, `instagram_basic`,
+   `instagram_manage_messages`).
+2. Cadastrar `FB_APP_ID`, `FB_APP_SECRET`, `FB_VERIFY_TOKEN` e `IG_VERIFY_TOKEN`
+   em *Chaves da instalação*, com "enviar também para o atendimento" marcado.
+3. Rodar `./infra/deploy.sh sync-secrets` no repo do Chatwoot — ou esperar o
+   próximo deploy, que já faz isso.
+4. A partir daí, cada cliente conecta a página dele sozinho, escolhe o agente
+   por caixa na tela *Atendimento*, e a IA passa a responder ali.
