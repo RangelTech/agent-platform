@@ -112,3 +112,75 @@ async def sso(user: dict = Depends(require("omnichannel", "view"))):
         raise HTTPException(status_code=400, detail="Usuário master não opera atendimento")
     body = await _bridge("GET", f"/admin/sso/{user['tenant_id']}/{user['id']}")
     return {"url": body.get("url")}
+
+
+class CaixaIaIn(BaseModel):
+    """Qual agente atende esta caixa."""
+
+    template_id: str | None = None
+    autopilot: bool = True
+    handoff_team_id: int | None = None
+    tenant_id: str | None = None  # master only
+
+
+@router.get("/inboxes")
+async def list_inboxes(user: dict = Depends(require("omnichannel", "view"))):
+    """Caixas de atendimento da empresa e o template que atende cada uma.
+
+    Uma empresa tem várias caixas — WhatsApp, Instagram, site — e cada uma pode
+    ser atendida por um agente diferente do mesmo tenant. O vínculo por caixa já
+    existia na ponte; sem esta rota só dava para configurá-lo chamando a API na
+    mão, o que na prática significava que ninguém configurava.
+    """
+    tenant_id = resolve_target_tenant(user, None)
+    dados = await _bridge("GET", f"/admin/ai-config/{tenant_id}")
+
+    # O nome do template vem do nosso banco: a ponte guarda só o id, e uma tela
+    # que mostra UUID não ajuda ninguém a escolher.
+    with get_connection() as conn:
+        nomes = {
+            str(r["id"]): r["name"]
+            for r in conn.execute(
+                "SELECT id, name FROM templates WHERE tenant_id = %s AND NOT is_deleted",
+                (tenant_id,),
+            ).fetchall()
+        }
+    for caixa in dados.get("inboxes", []):
+        ia = caixa.get("ai") or {}
+        ia["template_name"] = nomes.get(ia.get("template_id") or "", "")
+    return dados
+
+
+@router.put("/inboxes/{inbox_id}/ia")
+async def set_inbox_ai(
+    inbox_id: int,
+    payload: CaixaIaIn,
+    user: dict = Depends(require("omnichannel", "edit")),
+):
+    """Liga (ou desliga) um template nesta caixa."""
+    tenant_id = resolve_target_tenant(user, payload.tenant_id)
+
+    # O template precisa ser do próprio tenant. Sem esta checagem, um id de
+    # outra empresa colado no request faria a IA de um cliente atender no canal
+    # de outro — o pior vazamento possível nesta camada.
+    if payload.template_id:
+        with get_connection() as conn:
+            existe = conn.execute(
+                """SELECT 1 FROM templates
+                    WHERE id = %s AND tenant_id = %s AND NOT is_deleted""",
+                (payload.template_id, tenant_id),
+            ).fetchone()
+        if existe is None:
+            raise HTTPException(status_code=404, detail="Template não é desta empresa")
+
+    return await _bridge(
+        "POST",
+        "/admin/ai-config",
+        json={
+            "tenant_id": str(tenant_id),
+            "chatwoot_inbox_id": inbox_id,
+            "template_id": payload.template_id,
+            "autopilot": payload.autopilot,
+            "handoff_team_id": payload.handoff_team_id,
+        },
+    )
