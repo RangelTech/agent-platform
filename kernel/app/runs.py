@@ -82,6 +82,8 @@ class RunRequest(BaseModel):
     compress_history: bool = False
     # Teto do que uma ferramenta devolve para dentro do prompt do especialista.
     tool_output_limit: int = Field(default=24_000, ge=2_000, le=200_000)
+    # Teto de chamadas de ferramenta no turno inteiro, somando especialistas.
+    max_tool_calls_per_turn: int = Field(default=40, ge=5, le=200)
     tenant_id: str | None = None
     user_id: str | None = None
     # name -> value, resolved into {{secret:NAME}} references inside tools;
@@ -128,6 +130,7 @@ async def create_run(payload: RunRequest):
         "history_limit": payload.history_limit,
         "compress_history": payload.compress_history,
         "tool_output_limit": payload.tool_output_limit,
+        "max_tool_calls_per_turn": payload.max_tool_calls_per_turn,
         "tenant_id": payload.tenant_id,
         "user_id": payload.user_id,
         "thread_id": payload.thread_id,
@@ -214,7 +217,17 @@ async def create_run(payload: RunRequest):
                             await queue.put(("limit", {"detail": chunk["detail"]}))
                     elif mode == "values" and chunk.get("messages"):
                         final_text = chunk["messages"][-1].content
-                await queue.put(("done", {"text": final_text}))
+                if not (final_text or "").strip():
+                    # Turno que termina sem texto é o pior jeito de falhar num
+                    # chat: o cliente manda a pergunta, não recebe nada e nada
+                    # dispara alarme. Aconteceu em campo (C1 t11) e passou como
+                    # sucesso, porque `done` com texto vazio é indistinguível de
+                    # resposta entregue. Aqui vira erro explícito, e o log
+                    # carrega a thread para dar para investigar depois.
+                    logger.error("EMPTY_ANSWER thread=%s", payload.thread_id)
+                    await queue.put(("error", {"detail": "empty_answer"}))
+                else:
+                    await queue.put(("done", {"text": final_text}))
             except Exception as exc:  # noqa: BLE001 — reported to the client as an event
                 logger.exception("run failed thread=%s", payload.thread_id)
                 await queue.put(("error", {"detail": str(exc)}))

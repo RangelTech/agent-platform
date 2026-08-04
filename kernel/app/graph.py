@@ -248,6 +248,21 @@ async def _execute_tool(
     return "\n".join(parts) or "(sem conteúdo)"
 
 
+def _estourou_o_teto(run_config: dict) -> bool:
+    """Conta as chamadas de ferramenta do turno inteiro e diz se passou.
+
+    O contador mora no `run_config` porque ele é o único objeto que atravessa
+    todos os especialistas de um mesmo turno — `specialist_max_tool_rounds`
+    limita um especialista de cada vez, e o supervisor pode chamar vários.
+    """
+    teto = int(run_config.get("max_tool_calls_per_turn") or settings.max_tool_calls_per_turn)
+    usadas = run_config.get("_tool_calls_no_turno", 0)
+    if usadas >= teto:
+        return True
+    run_config["_tool_calls_no_turno"] = usadas + 1
+    return False
+
+
 def _limitar_saida(tool_output: str, descriptors: list[dict], limite: int) -> str:
     """Corta o que a ferramenta devolve antes de virar prompt do especialista.
 
@@ -361,7 +376,18 @@ async def _run_specialist(
                 except json.JSONDecodeError:
                     arguments = {"_raw": tc.arguments}
                 started = time.monotonic()
-                if tc.name not in allowed_names:
+                if _estourou_o_teto(run_config):
+                    # O modelo precisa SABER que bateu no teto, senão tenta a
+                    # mesma chamada de novo até esgotar as rodadas. Devolver
+                    # como erro de ferramenta é o único canal que ele lê.
+                    tool_output = (
+                        "ERRO: teto de chamadas de ferramenta deste turno atingido. "
+                        "Responda agora com o que você já tem e diga o que ficou sem "
+                        "verificar — não tente outra consulta."
+                    )
+                    status = "error"
+                    writer({"type": "limit", "detail": "max_tool_calls_per_turn"})
+                elif tc.name not in allowed_names:
                     # A model may hallucinate a tool it was never offered;
                     # refuse without executing.
                     tool_output = f"ERRO: tool {tc.name} não disponível para este agente"

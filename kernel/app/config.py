@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     # O dataset inteiro não precisa voltar: o artifact_id encadeia para as
     # ferramentas seguintes sem passar pelo modelo.
     tool_output_limit_default: int = 24_000
+    # Teto de chamadas de ferramenta no turno inteiro, somando todos os
+    # especialistas. `specialist_max_tool_rounds` limita rodadas de UM
+    # especialista; com o supervisor delegando várias vezes, um único turno já
+    # disparou 30 chamadas e publicou 26 datasets para responder "faça um
+    # gráfico de linha". Nada errava — só custava demais e demorava demais.
+    max_tool_calls_per_turn: int = 40
 
     # Web search: Serper platform key (Secret Manager) + DuckDuckGo fallback.
     serper_api_key: str = ""

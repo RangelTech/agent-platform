@@ -219,3 +219,49 @@ async def test_check_status_requires_an_identifier():
     async with open_catalog_session() as session:
         result = await session.call_tool("check_payment_status", {})
     assert "informe payment_id ou reference_id" in _tool_text(result).lower()
+
+
+async def test_gateway_fora_do_ar_nao_vira_cobranca_fantasma():
+    """Gateway inacessível precisa virar erro legível, nunca "cobrança gerada".
+
+    É o modo de falha que custa dinheiro nos dois sentidos: se a tool responde
+    algo ambíguo, o modelo anuncia uma cobrança que não existe e o cliente
+    espera um PIX que nunca vai cair; se ela vaza o stacktrace, o modelo repete
+    a chamada achando que foi problema de formato.
+
+    A porta 9 é o descarte do TCP: conexão recusada na hora, sem espera.
+    """
+    original = settings.mercado_pago_api
+    settings.mercado_pago_api = "http://127.0.0.1:9"
+    try:
+        _context({"provider": "mercado_pago", "access_token": "TEST-token", "sandbox": True})
+        async with open_catalog_session() as session:
+            resultado = await session.call_tool("generate_pix_charge", {"amount": "10.00"})
+        texto = _tool_text(resultado)
+    finally:
+        settings.mercado_pago_api = original
+
+    assert texto.startswith("ERRO")
+    assert "cobrança" in texto.lower()
+    # Nada que o modelo possa ler como sucesso.
+    assert "payment_id" not in texto
+    assert '"status": "ok"' not in texto
+
+
+async def test_consulta_com_gateway_fora_do_ar_nao_inventa_status():
+    """Pior que não responder é responder "pago" quando ninguém sabe."""
+    original = settings.mercado_pago_api
+    settings.mercado_pago_api = "http://127.0.0.1:9"
+    try:
+        _context({"provider": "mercado_pago", "access_token": "TEST-token", "sandbox": True})
+        async with open_catalog_session() as session:
+            resultado = await session.call_tool(
+                "check_payment_status", {"payment_id": "1234567890"}
+            )
+        texto = _tool_text(resultado)
+    finally:
+        settings.mercado_pago_api = original
+
+    assert texto.startswith("ERRO")
+    assert "paid" not in texto
+    assert "pix_copia_e_cola" not in texto
