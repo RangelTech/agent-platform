@@ -1,8 +1,25 @@
 #!/usr/bin/env bash
-# Deploy agent-platform to Cloud Run (project eduk-prd-lake).
-# Production runtime is Cloud Run + external PostgreSQL + S3-compatible object
-# storage. Docker Compose is only a local development/testing convenience.
-# Usage: ./infra/deploy.sh [kernel|backend|all]
+# Deploy the agent-platform KERNEL to Cloud Run (project eduk-prd-lake).
+#
+# Backend + frontend no longer deploy from here (agent-llm mega spec,
+# infra-04): they moved to the VPS (rangeltech.net) via
+# vps_rt_infra/compose/docker-compose.yml + the agent-platform prod compose
+# (infra/docker-compose.prod.yml), applied by the vps_rt_infra Terraform/CI
+# pipeline, not by this script.
+#
+# The kernel stays here on purpose (infra-01): it's the one piece that keeps
+# using GPU/model-adjacent Cloud Run autoscaling. It used to be private
+# (--no-allow-unauthenticated, IAM invoker restricted to the backend's own
+# service account) because the backend called it from inside the same GCP
+# project. Now the backend calls it from the VPS, outside GCP, with no
+# metadata server to mint an OIDC token — so the kernel is now public
+# (--allow-unauthenticated) and protected instead by a shared secret
+# (INTERNAL_TOKEN / KERNEL_INTERNAL_TOKEN, see kernel/app/runs.py
+# require_internal_auth and backend/app/config.py). This is a deliberate
+# trade: simpler than wiring a GCP service account key onto the VPS, at the
+# cost of losing IAM-level access control on this endpoint.
+#
+# Usage: ./infra/deploy.sh kernel
 set -euo pipefail
 
 PROJECT=eduk-prd-lake
@@ -43,50 +60,22 @@ deploy_kernel() {
     --project=$PROJECT --region=$REGION \
     --image=$REPO/teste_ia-kernel:$SHORT_SHA \
     --service-account=$RUNTIME_SA \
-    --set-secrets=DATABASE_URL=teste-ia-database-url:latest,SERPER_API_KEY=teste-ia-serper-key:latest,S3_ACCESS_KEY_ID=teste-ia-s3-access-key:latest,S3_SECRET_ACCESS_KEY=teste-ia-s3-secret-key:latest \
+    --set-secrets=DATABASE_URL=teste-ia-database-url:latest,SERPER_API_KEY=teste-ia-serper-key:latest,S3_ACCESS_KEY_ID=teste-ia-s3-access-key:latest,S3_SECRET_ACCESS_KEY=teste-ia-s3-secret-key:latest,INTERNAL_TOKEN=teste-ia-kernel-internal-token:latest \
     --set-env-vars="ENABLE_STUB_CONTROL=false,STORAGE_BACKEND=s3,S3_BUCKET=teste-ia,S3_ENDPOINT_URL=https://storage.rangeltech.net,S3_PUBLIC_BASE_URL=https://storage.rangeltech.net/teste-ia,S3_REGION=us-east-1,S3_PREFIX=agent-llm" \
-    --no-allow-unauthenticated \
+    --allow-unauthenticated \
     --memory=1Gi --cpu=1 --min-instances=0 --max-instances=3 \
     --timeout=600
-  # Only the backend may invoke the kernel.
-  "$GCLOUD_BIN" run services add-iam-policy-binding teste-ia-kernel \
-    --project=$PROJECT --region=$REGION \
-    --member=serviceAccount:$RUNTIME_SA --role=roles/run.invoker
-}
-
-deploy_backend() {
-  build backend
-  local kernel_url
-  kernel_url=$("$GCLOUD_BIN" run services describe teste-ia-kernel \
-    --project=$PROJECT --region=$REGION --format='value(status.url)')
-  "$GCLOUD_BIN" run deploy teste-ia-backend \
-    --project=$PROJECT --region=$REGION \
-    --image=$REPO/teste_ia-backend:$SHORT_SHA \
-    --service-account=$RUNTIME_SA \
-    --set-secrets=DATABASE_URL=teste-ia-database-url:latest,ENCRYPTION_KEY=teste-ia-encryption-key:latest,S3_ACCESS_KEY_ID=teste-ia-s3-access-key:latest,S3_SECRET_ACCESS_KEY=teste-ia-s3-secret-key:latest,BRIDGE_ADMIN_TOKEN=teste-ia-bridge-admin-token:latest \
-    --set-env-vars="KERNEL_URL=$kernel_url,KERNEL_AUDIENCE=$kernel_url,STORAGE_BACKEND=s3,S3_BUCKET=teste-ia,S3_ENDPOINT_URL=https://storage.rangeltech.net,S3_REGION=us-east-1,S3_PREFIX=agent-llm" \
-    --allow-unauthenticated \
-    --memory=512Mi --cpu=1 --min-instances=0 --max-instances=5 \
-    --timeout=600
-
-  # PUBLIC_BASE_URL só é conhecida depois que o serviço existe; é ela que monta
-  # a notification_url que o gateway de pagamento chama de volta (Fase D).
-  local backend_url
-  backend_url=$("$GCLOUD_BIN" run services describe teste-ia-backend \
-    --project=$PROJECT --region=$REGION --format='value(status.url)')
-  # A ponte omnichannel (repo chatwoot-rt) é opcional: quando o serviço não
-  # existe, BRIDGE_URL fica vazia e a aba de atendimento simplesmente some.
-  local bridge_url
-  bridge_url=$("$GCLOUD_BIN" run services describe chatwoot-bridge \
-    --project=$PROJECT --region=$REGION --format='value(status.url)' 2>/dev/null || echo "")
-  "$GCLOUD_BIN" run services update teste-ia-backend \
-    --project=$PROJECT --region=$REGION \
-    --update-env-vars="PUBLIC_BASE_URL=$backend_url,BRIDGE_URL=$bridge_url"
+  # NOTA (infra-04): a proteção agora é o shared secret INTERNAL_TOKEN, não
+  # mais IAM. O secret `teste-ia-kernel-internal-token` precisa existir no
+  # Secret Manager ANTES desta primeira execução pós-migração
+  # (`gcloud secrets create teste-ia-kernel-internal-token --data-file=-`
+  # com o mesmo valor que vai em KERNEL_INTERNAL_TOKEN no compose da VPS).
+  # Sem esse secret criado, o deploy falha; se INTERNAL_TOKEN ficar vazio por
+  # engano, require_internal_auth() no kernel não bloqueia NADA — ver
+  # kernel/app/runs.py, é um fail-open por padrão (modo dev), não fail-closed.
 }
 
 case $target in
   kernel) deploy_kernel ;;
-  backend) deploy_backend ;;
-  all) deploy_kernel; deploy_backend ;;
-  *) echo "usage: $0 [kernel|backend|all]" >&2; exit 1 ;;
+  *) echo "usage: $0 kernel   (backend/frontend agora fazem deploy via vps_rt_infra, ver infra-04 da mega spec)" >&2; exit 1 ;;
 esac

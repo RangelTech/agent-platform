@@ -1,0 +1,45 @@
+# Produção na VPS rangeltech.net (agent-llm mega spec, infra-04). Serve o
+# backend + a SPA junta (backend/Dockerfile builda o frontend e serve estático
+# via _mount_spa — sem container de frontend separado, decisão infra-01).
+#
+# Entra na rede Docker externa criada pelo vps_rt_infra (compose/docker-compose.yml
+# networks: internal/public) — precisa desse stack já estar de pé antes.
+#
+# O kernel continua no Cloud Run (infra-01): não tem serviço de kernel aqui.
+#
+# Deploy real: `vps_rt_infra` faz upload deste compose + roda `docker compose
+# -f infra/docker-compose.prod.yml up -d` via Terraform/CI (mesmo padrão do
+# stack principal) — não é pra rodar isto manualmente via SSH numa VPS de
+# produção fora do pipeline.
+services:
+  agentllm-backend:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    container_name: agentllm-backend
+    restart: unless-stopped
+    env_file:
+      - .env.prod
+    networks:
+      - internal
+      - public
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=public
+      - traefik.http.routers.agentllm-backend.rule=Host(`${AGENTLLM_DOMAIN:-ia.rangeltech.net}`)
+      - traefik.http.routers.agentllm-backend.entrypoints=websecure
+      - traefik.http.routers.agentllm-backend.tls.certresolver=letsencrypt
+      - traefik.http.routers.agentllm-backend.middlewares=security-headers@file
+      - traefik.http.services.agentllm-backend.loadbalancer.server.port=8090
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+networks:
+  internal:
+    name: internal
+    external: true
+  public:
+    name: public
+    external: true

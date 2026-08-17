@@ -19,6 +19,7 @@ import Datasources from './pages/Datasources'
 import Files from './pages/Files'
 import InstallationSecrets from './pages/InstallationSecrets'
 import Integrations from './pages/Integrations'
+import Legal from './pages/Legal'
 import Login from './pages/Login'
 import McpStore from './pages/McpStore'
 import Memories from './pages/Memories'
@@ -289,7 +290,15 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <Router>
-          <Gate />
+          {/* Páginas legais (produto-01 da mega spec): públicas, sem login,
+              exigidas pelo App Review da Meta. Ficam FORA do Gate de propósito
+              — nunca devem depender de sessão autenticada. */}
+          <Routes>
+            <Route path="/politica-de-privacidade" element={<Legal page="privacidade" />} />
+            <Route path="/termos-de-uso" element={<Legal page="termos" />} />
+            <Route path="/exclusao-de-dados" element={<Legal page="exclusao" />} />
+            <Route path="*" element={<Gate />} />
+          </Routes>
         </Router>
       </AuthProvider>
     </QueryClientProvider>
