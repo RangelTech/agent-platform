@@ -16,9 +16,13 @@
 CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
--- Stub mínimo — só o suficiente pra ser alvo de FK, não a tabela real do backend.
+-- Stub mínimo — só o suficiente pra ser alvo de FK e pros testes de kernel
+-- inserirem uma linha completa (ver kernel/tests/test_rag.py, que insere
+-- tenant_key+name) — não é a tabela real do backend (sem is_active/timestamps).
 CREATE TABLE IF NOT EXISTS tenants (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid()
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_key TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS artifacts (
