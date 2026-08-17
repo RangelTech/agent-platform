@@ -77,5 +77,8 @@ jobs:
           workload_identity_provider: projects/188258617713/locations/global/workloadIdentityPools/github-actions/providers/github
           service_account: github-deployer@eduk-prd-lake.iam.gserviceaccount.com
       - uses: google-github-actions/setup-gcloud@v2
-      - name: Deploy kernel and backend
-        run: bash ./infra/deploy.sh all
+      - name: Deploy kernel
+        # Backend+frontend não deployam mais daqui (agent-llm mega spec,
+        # infra-04): saíram pro VPS (rangeltech.net), via
+        # .github/workflows/deploy-vps.yml. Só o kernel continua no Cloud Run.
+        run: bash ./infra/deploy.sh kernel
