@@ -1,5 +1,9 @@
 name: CI
 
+# Kernel saiu deste repo (agent-llm mega spec, infra-05) — virou o repo
+# kernel-llm, com seu próprio CI/CD (Cloud Run). Backend+frontend deployam na
+# VPS via .github/workflows/deploy-vps.yml, não daqui.
+
 on:
   push:
     branches: [main]
@@ -8,9 +12,6 @@ on:
 jobs:
   python:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        service: [backend, kernel]
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -28,13 +29,13 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install
-        working-directory: ${{ matrix.service }}
+        working-directory: backend
         run: pip install -r requirements-dev.txt
       - name: Lint
-        working-directory: ${{ matrix.service }}
+        working-directory: backend
         run: ruff check .
       - name: Test (unit + integration)
-        working-directory: ${{ matrix.service }}
+        working-directory: backend
         env:
           DATABASE_URL: postgresql://agent:agent@localhost:5433/agent_llm
         run: python -m pytest -q -m "integration or not integration"
@@ -51,34 +52,3 @@ jobs:
         run: |
           npm ci
           npm run build
-
-  # Deploy só depois que backend, kernel e frontend passam, e só no main.
-  # Antes disto o deploy era manual (`./infra/deploy.sh`), o que já custou duas
-  # falhas silenciosas: trabalhar com `bq` no lake troca a conta ativa do gcloud
-  # e o deploy morre com PERMISSION_DENIED no meio.
-  #
-  # A autenticação é por Workload Identity Federation — não há chave de service
-  # account guardada como secret. O provedor OIDC só aceita tokens deste
-  # repositório (attribute-condition), então um fork não consegue assumir a
-  # identidade. Setup em infra/ci-deploy-setup.sh.
-  deploy:
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    needs: [python, frontend]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - uses: actions/checkout@v4
-      - id: auth
-        uses: google-github-actions/auth@v2
-        with:
-          project_id: eduk-prd-lake
-          workload_identity_provider: projects/188258617713/locations/global/workloadIdentityPools/github-actions/providers/github
-          service_account: github-deployer@eduk-prd-lake.iam.gserviceaccount.com
-      - uses: google-github-actions/setup-gcloud@v2
-      - name: Deploy kernel
-        # Backend+frontend não deployam mais daqui (agent-llm mega spec,
-        # infra-04): saíram pro VPS (rangeltech.net), via
-        # .github/workflows/deploy-vps.yml. Só o kernel continua no Cloud Run.
-        run: bash ./infra/deploy.sh kernel
