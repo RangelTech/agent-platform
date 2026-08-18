@@ -24,6 +24,8 @@ import { api, ApiError } from '../lib/api'
 
 interface StatusRouter {
   provisionado: boolean
+  provisionamento?: 'pending' | 'provisioning' | 'ready' | 'failed'
+  provisionamento_erro?: string | null
   contas?: number
   combos?: number
 }
@@ -90,6 +92,10 @@ export function ContasIA() {
   const { data: status, isLoading } = useQuery({
     queryKey: ['ai-router-status'],
     queryFn: () => api<StatusRouter>('/ai-router/status'),
+    // Enquanto a instância está sendo provisionada em background, a tela se
+    // atualiza sozinha em vez de exigir um F5 manual do admin.
+    refetchInterval: (query) =>
+      query.state.data?.provisionamento === 'provisioning' ? 5000 : false,
   })
   const provisionado = status?.provisionado ?? false
 
@@ -147,12 +153,30 @@ export function ContasIA() {
   if (isLoading) return <Skeleton className="h-40" />
 
   if (!provisionado) {
+    const etapa = status?.provisionamento ?? 'pending'
+    const textos: Record<string, { title: string; description: string }> = {
+      provisioning: {
+        title: 'Provisionando sua instância de IA…',
+        description:
+          'Isso leva alguns minutos (criação do serviço e emissão do certificado). Volte a esta tela em instantes — ela atualiza sozinha.',
+      },
+      failed: {
+        title: 'Não foi possível provisionar a instância de IA',
+        description:
+          status?.provisionamento_erro
+            ? `Peça ao administrador da plataforma para tentar novamente. Detalhe: ${status.provisionamento_erro.slice(0, 200)}`
+            : 'Peça ao administrador da plataforma para tentar novamente.',
+      },
+      pending: {
+        title: 'Instância de IA ainda não provisionada',
+        description:
+          'Cada empresa atende com as próprias contas, numa instância dedicada. Peça ao administrador da plataforma para provisionar a desta empresa.',
+      },
+    }
+    const { title, description } = textos[etapa] ?? textos.pending
     return (
       <Card title="Contas de IA da empresa">
-        <EmptyState
-          title="Instância de IA ainda não provisionada"
-          description="Cada empresa atende com as próprias contas, numa instância dedicada. Peça ao administrador da plataforma para provisionar a desta empresa."
-        />
+        <EmptyState title={title} description={description} />
       </Card>
     )
   }

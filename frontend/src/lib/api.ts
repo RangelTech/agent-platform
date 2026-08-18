@@ -73,6 +73,8 @@ export interface Tenant {
   tenant_key: string
   name: string
   is_active: boolean
+  router_provisioning_status?: 'pending' | 'provisioning' | 'ready' | 'failed'
+  router_provisioning_error?: string | null
 }
 
 export interface Profile {

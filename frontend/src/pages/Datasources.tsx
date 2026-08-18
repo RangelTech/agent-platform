@@ -21,7 +21,18 @@ const KINDS = [
   { value: 'mysql', label: 'MySQL / MariaDB' },
   { value: 'bigquery', label: 'Google BigQuery' },
   { value: 'sqlite', label: 'SQLite (arquivo)' },
+  { value: 'sqlserver', label: 'SQL Server' },
+  { value: 'oracle', label: 'Oracle' },
+  { value: 'firebird', label: 'Firebird' },
 ]
+
+const DEFAULT_PORTS: Record<string, number> = {
+  mysql: 3306,
+  postgresql: 5432,
+  sqlserver: 1433,
+  oracle: 1521,
+  firebird: 3050,
+}
 
 export default function Datasources() {
   const { user } = useAuth()
@@ -59,7 +70,7 @@ export default function Datasources() {
     if (form.kind === 'sqlite') return { path: form.path }
     return {
       host: form.host,
-      port: Number(form.port) || (form.kind === 'mysql' ? 3306 : 5432),
+      port: Number(form.port) || DEFAULT_PORTS[form.kind] || 5432,
       database: form.database,
       user: form.user,
     }
@@ -116,7 +127,7 @@ export default function Datasources() {
     create.mutate()
   }
 
-  const isSql = form.kind === 'postgresql' || form.kind === 'mysql'
+  const isSql = ['postgresql', 'mysql', 'sqlserver', 'oracle', 'firebird'].includes(form.kind)
 
   const activeCount = sources.filter((source) => source.is_active).length
   const testedCount = sources.filter((source) => source.last_test_ok).length
@@ -171,7 +182,7 @@ export default function Datasources() {
             {isSql && (
               <>
                 <Input label="Host" hint="Hostname acessível pelo backend/kernel." required value={form.host} onChange={(e) => setForm({ ...form, host: e.target.value })} />
-                <Input label="Porta" hint="Use a porta padrão ou a exposta pelo ambiente." type="number" placeholder={form.kind === 'mysql' ? '3306' : '5432'} value={form.port} onChange={(e) => setForm({ ...form, port: e.target.value })} />
+                <Input label="Porta" hint="Use a porta padrão ou a exposta pelo ambiente." type="number" placeholder={String(DEFAULT_PORTS[form.kind] ?? 5432)} value={form.port} onChange={(e) => setForm({ ...form, port: e.target.value })} />
                 <Input label="Database" hint="Banco ou schema primário da conexão." required value={form.database} onChange={(e) => setForm({ ...form, database: e.target.value })} />
                 <Input label="Usuário" hint="Usuário técnico com o menor privilégio necessário." required value={form.user} onChange={(e) => setForm({ ...form, user: e.target.value })} />
                 <Input label="Senha" hint="Gravada como segredo e nunca retornada em listagens." type="password" value={form.secret} onChange={(e) => setForm({ ...form, secret: e.target.value })} className="lg:col-span-2" />

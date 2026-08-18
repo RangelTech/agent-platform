@@ -44,8 +44,11 @@ function Shell() {
   const brand = user?.branding
   useEffect(() => {
     const root = document.documentElement
-    root.dataset.theme = brand?.theme === 'light' ? 'light' : 'dark'
-    root.style.setProperty('--brand', brand?.color || '#4f46e5')
+    // Woot Blue — Chatwoot's own brand color (confirmed live at
+    // chat.rangeltech.net/app/login theme-color/msapplication-TileColor meta
+    // tags: #1f93ff), used here so the two products read as one system.
+    root.dataset.theme = brand?.theme === 'dark' ? 'dark' : 'light'
+    root.style.setProperty('--brand', brand?.color || '#1f93ff')
   }, [brand?.theme, brand?.color])
   const location = useLocation()
   const isChat = location.pathname === '/chat'
@@ -99,21 +102,6 @@ function Shell() {
     <div className="flex h-[100dvh] min-h-screen flex-col bg-[var(--bg)] text-[var(--text)]">
       <header className="sticky top-0 z-40 flex-none border-b border-[var(--border)] bg-[color-mix(in_srgb,var(--bg)_82%,transparent)] backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3 sm:px-6">
-          <Button
-            type="button"
-            variant="ghost"
-            className="h-11 w-11 rounded-2xl px-0"
-            onClick={() => setNavOpen((open) => !open)}
-            aria-label={navOpen ? 'Fechar navegação' : 'Abrir navegação'}
-            aria-expanded={navOpen}
-          >
-            <span className="flex flex-col gap-1.5">
-              <span className="h-0.5 w-4 rounded-full bg-current" />
-              <span className="h-0.5 w-4 rounded-full bg-current" />
-              <span className="h-0.5 w-4 rounded-full bg-current" />
-            </span>
-          </Button>
-
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-3">
               <span className="flex min-w-0 items-center gap-3 text-sm font-semibold text-[var(--text)]">
@@ -131,25 +119,6 @@ function Shell() {
                   </span>
                 </span>
               </span>
-              <div className="hidden min-w-0 flex-1 xl:flex">
-                <div data-testid="nav-top" className="flex flex-wrap gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] px-2 py-2">
-                  {links.slice(0, 5).map((l) => (
-                    <NavLink
-                      key={l.to}
-                      to={l.to}
-                      className={({ isActive }) =>
-                        `rounded-full px-4 py-2 text-sm transition ${
-                          isActive
-                            ? 'bg-[var(--brand-soft)] text-[var(--text)]'
-                            : 'text-[var(--text-muted)] hover:text-[var(--text)]'
-                        }`
-                      }
-                    >
-                      {l.label}
-                    </NavLink>
-                  ))}
-                </div>
-              </div>
             </div>
           </div>
 
@@ -164,6 +133,21 @@ function Shell() {
               Sair
             </Button>
           </div>
+
+          <Button
+            type="button"
+            variant="ghost"
+            className="h-11 w-11 rounded-2xl px-0"
+            onClick={() => setNavOpen((open) => !open)}
+            aria-label={navOpen ? 'Fechar navegação' : 'Abrir navegação'}
+            aria-expanded={navOpen}
+          >
+            <span className="flex flex-col gap-1.5">
+              <span className="h-0.5 w-4 rounded-full bg-current" />
+              <span className="h-0.5 w-4 rounded-full bg-current" />
+              <span className="h-0.5 w-4 rounded-full bg-current" />
+            </span>
+          </Button>
         </div>
       </header>
 

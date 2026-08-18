@@ -28,7 +28,7 @@ def me(user: dict = Depends(current_user)):
             "tenant_key": user.get("tenant_key") or "",
             "has_logo": bool(user.get("brand_logo_url")),
             "color": user.get("brand_color") or "",
-            "theme": user.get("brand_theme") or "dark",
+            "theme": user.get("brand_theme") or "light",
         },
     }
 

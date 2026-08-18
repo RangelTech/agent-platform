@@ -72,6 +72,13 @@ class Settings(BaseSettings):
     # Audience/SA for Cloud Tasks -> kernel OIDC calls.
     tasks_service_account: str = ""
 
+    # Automatic 9Router provisioning on tenant creation (infra-06). Off by
+    # default: it shells out to `scripts/provisionar_router.py`, which SSHes
+    # into the VPS and touches DNS/TLS — must never fire in dev/tests unless
+    # explicitly turned on where the VPS access actually exists.
+    router_auto_provision_enabled: bool = False
+    router_provision_timeout_seconds: int = 600
+
     # Master bootstrap. The password is only used when the master does not yet
     # exist; production must supply a real one via Secret Manager.
     # example.com is IANA-reserved for exactly this: a placeholder that is a

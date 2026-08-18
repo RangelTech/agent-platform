@@ -16,7 +16,7 @@ from app.tenancy import resolve_target_tenant
 
 router = APIRouter(prefix="/api/datasources", tags=["datasources"])
 
-KINDS = ("postgresql", "mysql", "bigquery", "sqlite")
+KINDS = ("postgresql", "mysql", "bigquery", "sqlite", "sqlserver", "oracle", "firebird")
 
 
 class DatasourceIn(BaseModel):

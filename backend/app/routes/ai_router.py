@@ -65,11 +65,22 @@ def _slug(valor: str) -> str:
 
 @router.get("/status")
 def status(user: dict = Depends(require("ai_router", "view"))):
-    """Se a empresa já tem instância dedicada e se ela está de pé."""
+    """Se a empresa já tem instância dedicada e se ela está de pé.
+
+    `provisionamento` reflete o que `create_tenant` disparou em background
+    (infra-06): pending/provisioning/ready/failed. Um tenant pode estar
+    'ready' aqui e ainda `registro is None` por um instante — o script marca
+    o status só depois de registrar a instância — mas nunca o contrário.
+    """
     if not user["tenant_id"]:
         return {"provisionado": False, "motivo": "master"}
     with get_connection() as conn:
         registro = _router_do_tenant(conn, user["tenant_id"])
+        tenant = conn.execute(
+            """SELECT router_provisioning_status, router_provisioning_error
+                 FROM tenants WHERE id = %s""",
+            (user["tenant_id"],),
+        ).fetchone()
         contas = conn.execute(
             "SELECT count(*) AS n FROM tenant_ai_accounts WHERE tenant_id = %s AND is_active",
             (user["tenant_id"],),
@@ -80,6 +91,8 @@ def status(user: dict = Depends(require("ai_router", "view"))):
         ).fetchone()["n"]
     return {
         "provisionado": registro is not None,
+        "provisionamento": (tenant or {}).get("router_provisioning_status", "pending"),
+        "provisionamento_erro": (tenant or {}).get("router_provisioning_error"),
         "contas": contas,
         "combos": combos,
     }

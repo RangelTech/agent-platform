@@ -3,7 +3,7 @@
 /* Semantic theme tokens. Dark is the default; [data-theme="light"] flips the
    surfaces; --brand is overridden per tenant at runtime. */
 :root {
-  --brand: #4f46e5;
+  --brand: #1f93ff;
   --brand-soft: color-mix(in srgb, var(--brand) 22%, transparent);
   --bg: #020617;
   --bg-elevated: #081120;

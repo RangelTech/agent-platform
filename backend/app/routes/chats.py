@@ -8,6 +8,7 @@ configured).
 
 import json
 import logging
+import os
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -179,12 +180,19 @@ async def _store_uploads(user: dict, uploads: list) -> list[dict]:
 
 def _transcription_spec(tenant_id) -> dict:
     """Whisper provider from the tenant's services: Groq (fast/cheap) first,
-    then OpenAI; stub otherwise (dev)."""
+    then OpenAI, then any `openai-compatible` service (ex.: um combo do
+    9Router) usando o `api_base` próprio do tenant.
+
+    Fora de teste automatizado, nunca cai num stub silencioso: se nenhuma
+    dessas specs existir, devolve um marcador que faz o kernel tentar (e
+    falhar de forma clara, via `litellm.atranscription`) em vez de decodificar
+    os bytes crus do áudio como texto.
+    """
     from app.crypto import decrypt
 
     with get_connection() as conn:
         rows = conn.execute(
-            """SELECT provider, api_key_encrypted FROM ai_services
+            """SELECT provider, api_key_encrypted, api_base, model FROM ai_services
                 WHERE tenant_id = %s AND is_active AND NOT is_deleted
                       AND api_key_encrypted IS NOT NULL
                 ORDER BY created_at""",
@@ -204,7 +212,26 @@ def _transcription_spec(tenant_id) -> dict:
                 "model": "whisper-1",
                 "api_key": decrypt(row["api_key_encrypted"]),
             }
-    return {"provider": "stub"}
+    for row in rows:
+        if row["provider"] == "openai-compatible" and row["api_base"]:
+            return {
+                "provider": "openai-compatible",
+                "model": row["model"] or "whisper-1",
+                "api_key": decrypt(row["api_key_encrypted"]),
+                "api_base": row["api_base"],
+            }
+    # O stub (decodifica bytes crus como texto) só existe para a suíte
+    # automatizada, onde os "bytes de áudio" do teste já são texto ASCII de
+    # propósito. `PYTEST_CURRENT_TEST` é setado pelo próprio pytest durante a
+    # execução — não depende de nenhuma configuração nova no conftest.
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return {"provider": "stub"}
+    # Nenhuma spec real: não inventa um provider furado. `transcribe()` no
+    # kernel vai tentar o caminho real do litellm sem api_key/api_base
+    # válidos, o que falha rápido e cai no mesmo formato de erro já usado
+    # para falha de transcrição (`attachments.py`: "[áudio {name}: falha na
+    # transcrição — {exc}]") — nunca um stub silencioso em produção.
+    return {"provider": "unavailable"}
 
 
 @router.post("/chat/send")

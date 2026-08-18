@@ -8,8 +8,8 @@ export default function Customize() {
   const { user, refresh } = useAuth()
   const brand = user?.branding
   const [name, setName] = useState(brand?.name ?? '')
-  const [color, setColor] = useState(brand?.color || '#4f46e5')
-  const [theme, setTheme] = useState(brand?.theme ?? 'dark')
+  const [color, setColor] = useState(brand?.color || '#1f93ff')
+  const [theme, setTheme] = useState(brand?.theme ?? 'light')
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
   const logoRef = useRef<HTMLInputElement>(null)

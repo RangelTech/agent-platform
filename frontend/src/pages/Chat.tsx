@@ -1,7 +1,8 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { ArtifactCard, type ArtifactRef } from '../components/ArtifactCard'
+import { ArtifactCard, downloadArtifact, type ArtifactRef } from '../components/ArtifactCard'
+import { MarkdownMessage } from '../components/MarkdownMessage'
 import { Button } from '../components/ui'
 import { api } from '../lib/api'
 import { sendMessage, type ChatMessage, type ChatSummary } from '../lib/chat'
@@ -33,6 +34,7 @@ const MAX_COMPOSER_PX = 220
 
 const SIDEBAR_KEY = 'chat.painel.conversas'
 const TILES_KEY = 'chat.painel.live-tiles'
+const ARTIFACTS_CARD_KEY = 'chat.painel.artefatos'
 
 function conversationTitle(chat: ChatSummary) {
   return chat.title?.trim() || 'Nova conversa'
@@ -59,6 +61,11 @@ export default function Chat() {
   const [tilesOpen, setTilesOpen] = useState(
     () => localStorage.getItem(TILES_KEY) !== 'closed',
   )
+  // Card de Artefatos tende a crescer muito (um item por artefato numa sessão
+  // longa) — toggle próprio, independente do painel inteiro. Começa aberto.
+  const [artifactsCardOpen, setArtifactsCardOpen] = useState(
+    () => localStorage.getItem(ARTIFACTS_CARD_KEY) !== 'closed',
+  )
 
   useEffect(() => {
     localStorage.setItem(SIDEBAR_KEY, sidebarOpen ? 'open' : 'closed')
@@ -66,6 +73,9 @@ export default function Chat() {
   useEffect(() => {
     localStorage.setItem(TILES_KEY, tilesOpen ? 'open' : 'closed')
   }, [tilesOpen])
+  useEffect(() => {
+    localStorage.setItem(ARTIFACTS_CARD_KEY, artifactsCardOpen ? 'open' : 'closed')
+  }, [artifactsCardOpen])
   const [templateId, setTemplateId] = useState<string>('')
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [draft, setDraft] = useState('')
@@ -82,6 +92,7 @@ export default function Chat() {
   const recorderRef = useRef<MediaRecorder | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const draftRef = useRef<HTMLTextAreaElement>(null)
+  const [highlightedArtifact, setHighlightedArtifact] = useState<string | null>(null)
 
   useEffect(() => {
     chatIdRef.current = activeChat
@@ -182,6 +193,24 @@ export default function Chat() {
     } catch {
       setError('Microfone indisponível')
     }
+  }
+
+  // Link inline `artifact:<id>` embutido pelo modelo na resposta (ux-05):
+  // arquivo baixa direto; imagem/dataset abrem o painel e rolam até o card.
+  function handleArtifactLink(artifact: ArtifactRef) {
+    if (artifact.kind === 'file') {
+      downloadArtifact(artifact.artifact_id, artifact.title)
+      return
+    }
+    setTilesOpen(true)
+    setArtifactsCardOpen(true)
+    setHighlightedArtifact(artifact.artifact_id)
+    window.setTimeout(() => {
+      document.getElementById(`artifact-${artifact.artifact_id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 50)
+    window.setTimeout(() => {
+      setHighlightedArtifact((current) => (current === artifact.artifact_id ? null : current))
+    }, 1800)
   }
 
   const activeTemplate = templates.find((t) => t.id === templateId)
@@ -433,9 +462,16 @@ export default function Chat() {
                             {formatRelativeDate(m.created_at)}
                           </span>
                         </div>
-                        <div className={`mt-3 whitespace-pre-wrap text-[15px] leading-7 ${isUser ? 'text-white' : 'text-[var(--text)]'}`}>
-                          {m.content}
-                        </div>
+                        {isUser ? (
+                          <div className="mt-3 whitespace-pre-wrap text-[15px] leading-7 text-white">{m.content}</div>
+                        ) : (
+                          <MarkdownMessage
+                            content={m.content}
+                            artifacts={artifacts}
+                            onArtifactLink={handleArtifactLink}
+                            className="mt-3 text-[15px] leading-7 text-[var(--text)]"
+                          />
+                        )}
 
                         {(m.attachments ?? []).length > 0 && (
                           <div className="mt-4 flex flex-wrap gap-2">
@@ -493,28 +529,14 @@ export default function Chat() {
                         Assistente respondendo
                         <span className="inline-block h-2 w-2 rounded-full bg-[var(--info)] animate-pulse" />
                       </div>
-                      {streaming}
+                      <MarkdownMessage
+                        content={streaming}
+                        artifacts={artifacts}
+                        onArtifactLink={handleArtifactLink}
+                        className="text-[15px] leading-7"
+                      />
                     </div>
                   </motion.article>
-                )}
-
-                {artifacts.length > 0 && (
-                  <section className="space-y-3 rounded-[28px] border border-[var(--border)] bg-[var(--surface)] p-4 backdrop-blur-sm">
-                    <div className="flex items-center justify-between gap-3 px-2">
-                      <div>
-                        <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-[var(--text-faint)]">Artefatos da sessão</p>
-                        <p className="mt-1 text-sm text-[var(--text-muted)]">Saídas geradas pelo fluxo atual.</p>
-                      </div>
-                      <span className="rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-1 text-xs text-[var(--text-muted)]">
-                        {metricLabel(artifacts.length, 'item', 'itens')}
-                      </span>
-                    </div>
-                    <div className="grid gap-3">
-                      {artifacts.map((artifact) => (
-                        <ArtifactCard key={artifact.artifact_id} artifact={artifact} />
-                      ))}
-                    </div>
-                  </section>
                 )}
 
                 {error && (
@@ -593,7 +615,7 @@ export default function Chat() {
                       </Button>
                       <span className="hidden text-xs text-[var(--text-faint)] sm:inline">
                         {busy
-                          ? 'Enviando'
+                          ? 'Pensando...'
                           : draft.trim().length > 0
                             ? `${draft.trim().length} caracteres`
                             : 'Ocioso'}
@@ -603,7 +625,7 @@ export default function Chat() {
                         disabled={readOnly || busy || (!draft.trim() && pendingFiles.length === 0)}
                         className="ml-auto rounded-2xl px-5 py-2 text-sm font-semibold shadow-[0_20px_60px_rgba(79,70,229,0.35)]"
                       >
-                        {busy ? 'Enviando…' : 'Enviar mensagem'}
+                        {busy ? 'Pensando...' : 'Enviar mensagem'}
                       </Button>
                     </div>
                     <div className="rounded-[20px] border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-2 transition focus-within:border-[var(--brand)] focus-within:bg-[var(--surface-elevated)]">
@@ -724,30 +746,46 @@ export default function Chat() {
           </div>
 
           <div className="rounded-[24px] border border-[var(--border)] bg-[var(--surface)] p-4">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Checklist da sessão</p>
-            <div className="mt-3 space-y-3 text-sm text-[var(--text-muted)]">
-              {[
-                {
-                  label: 'Contexto anexado',
-                  done: totalAttachments > 0,
-                },
-                {
-                  label: 'Template selecionado',
-                  done: Boolean(templateId),
-                },
-                {
-                  label: 'Primeira resposta gerada',
-                  done: assistantMessages > 0,
-                },
-              ].map((item) => (
-                <div key={item.label} className="flex items-center justify-between gap-3 rounded-2xl bg-[var(--surface-soft)] px-3 py-3">
-                  <span>{item.label}</span>
-                  <span className={`rounded-full px-2 py-1 text-[11px] ${item.done ? 'bg-[var(--success-soft)] text-[var(--success)]' : 'bg-[var(--surface-elevated)] text-[var(--text-faint)]'}`}>
-                    {item.done ? 'OK' : 'Pendente'}
-                  </span>
-                </div>
-              ))}
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Artefatos da sessão</p>
+                <p className="mt-1 text-sm text-[var(--text-muted)]">Saídas geradas pelo fluxo atual.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-1 text-xs text-[var(--text-muted)]">
+                  {metricLabel(artifacts.length, 'item', 'itens')}
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  data-testid="colapsar-artefatos"
+                  aria-label={artifactsCardOpen ? 'Ocultar artefatos da sessão' : 'Mostrar artefatos da sessão'}
+                  aria-expanded={artifactsCardOpen}
+                  title={artifactsCardOpen ? 'Ocultar artefatos' : 'Mostrar artefatos'}
+                  className="h-8 w-8 rounded-xl px-0"
+                  onClick={() => setArtifactsCardOpen((open) => !open)}
+                >
+                  {artifactsCardOpen ? '︿' : '﹀'}
+                </Button>
+              </div>
             </div>
+            {artifactsCardOpen && (
+              <div className="mt-3 grid gap-3">
+                {artifacts.length === 0 ? (
+                  <p className="rounded-2xl border border-dashed border-[var(--border)] bg-[var(--surface-soft)] px-4 py-6 text-sm text-[var(--text-faint)]">
+                    Nenhum artefato gerado ainda nesta sessão.
+                  </p>
+                ) : (
+                  artifacts.map((artifact) => (
+                    <ArtifactCard
+                      key={artifact.artifact_id}
+                      artifact={artifact}
+                      highlighted={highlightedArtifact === artifact.artifact_id}
+                    />
+                  ))
+                )}
+              </div>
+            )}
           </div>
         </div>
       </aside>
