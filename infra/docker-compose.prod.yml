@@ -11,6 +11,11 @@
 # -f infra/docker-compose.prod.yml up -d` via Terraform/CI (mesmo padrão do
 # stack principal) — não é pra rodar isto manualmente via SSH numa VPS de
 # produção fora do pipeline.
+# `name:` explícito — achado real em produção (17/08/2026): sem isso, os
+# projetos Compose deste repo e do chatwoot-rt colidiam (mesmo nome de
+# projeto inferido), e um `up -d --remove-orphans` de um apagava os
+# containers do outro (agentllm-backend sumiu inteiro assim uma vez).
+name: agentllm
 services:
   agentllm-backend:
     build:
