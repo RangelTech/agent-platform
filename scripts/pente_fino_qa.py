@@ -436,20 +436,59 @@ def _rodar_testes(client: httpx.Client, token: str, h: dict, template_id: str) -
                    f"tools={r['ferramentas']} texto={r['texto'][:200]!r}")
 
         print("\n-- execute_sql_transaction (falha no meio => rollback) --")
+        # Nota (achado no pente-fino 18-19/08, 3 rodadas):
+        # rodada 1 — o nome de coluna "coluna_que_nao_existe" era autoexplicativo
+        # o bastante para o modelo recusar a chamada e responder em prosa sem
+        # NUNCA invocar a ferramenta (chamou=False, mas o texto "parecia" um erro
+        # real). Não testava rollback nenhum, só a leitura do próprio prompt pelo
+        # modelo. Trocado por um nome plausível ("valor_desconto_aplicado").
+        # rodada 2 — com o nome plausível, o modelo CHAMOU a ferramenta, recebeu o
+        # erro real (coluna não existe, nada foi gravado), mas então chamou
+        # describe_datasources por conta própria e tentou de novo com uma coluna
+        # válida — bom senso de agente, não bug, mas poluía a asserção baseada só
+        # no texto final / no campo "status" do evento SSE.
+        # rodada 3 — descoberta com a prova definitiva (trace cru via
+        # GET /api/chats/{id}/tool-calls, não o SSE resumido): o campo "status"
+        # do evento de tool NUNCA fica "error" pra essa ferramenta — o código em
+        # kernel-llm captura a exceção do Postgres e RETORNA uma string "ERRO na
+        # transação (nada foi gravado): ...", então a chamada sempre "completa
+        # com sucesso" do ponto de vista do runtime (status="ok"); o que importa
+        # é o CONTEÚDO do output. Verificado manualmente: a 1a chamada real
+        # devolveu "ERRO na transação (nada foi gravado): column
+        # \"valor_desconto_aplicado\" of relation \"itens_pedido\" does not
+        # exist" — comportamento correto e atômico. Pedir ao modelo pra nunca
+        # tentar de novo é inútil (ele é livre pra usar qualquer tool permitida,
+        # e às vezes ignora a instrução) — então a asserção certa é: existiu
+        # PELO MENOS UMA chamada cujo output prova a rejeição atômica, sem exigir
+        # que seja a única.
         antes = enviar(client, token, "Rode: SELECT count(*) as n FROM public.pedidos WHERE status = 'qa-pente-fino-rollback';", template_id)
         r = enviar(
             client, token,
             "Execute exatamente esta transação com execute_sql_transaction, statements_json = "
             '["INSERT INTO public.pedidos (cliente_id, funcionario_id, data, status, total) '
             "VALUES (1, 1, CURRENT_DATE, 'qa-pente-fino-rollback', 1.00) RETURNING id\", "
-            '"INSERT INTO public.itens_pedido (pedido_id, coluna_que_nao_existe, quantidade, preco_unitario) '
-            'VALUES ({{returned:0}}, 1, 1, 1.00)"]. Não peça confirmação. Se der erro, me diga o erro exato.',
+            '"INSERT INTO public.itens_pedido (pedido_id, valor_desconto_aplicado, quantidade, preco_unitario) '
+            'VALUES ({{returned:0}}, 1, 1, 1.00)"]. Não valide o SQL você mesmo antes — chame a ferramenta '
+            "agora mesmo, sem pedir confirmação, e me diga o resultado exato que ela devolveu, mesmo se for erro.",
             template_id,
         )
         depois = enviar(client, token, "Rode: SELECT count(*) as n FROM public.pedidos WHERE status = 'qa-pente-fino-rollback';", template_id)
         chamou = "execute_sql_transaction" in r["ferramentas"]
-        registrar("execute_sql_transaction (rollback em falha)", "PASS" if chamou else "FAIL",
-                   f"tools={r['ferramentas']} resposta={r['texto'][:250]!r} antes={antes['texto'][:60]!r} depois={depois['texto'][:60]!r}")
+        trace = []
+        if r["chat_id"]:
+            try:
+                trace = client.get(f"/api/chats/{r['chat_id']}/tool-calls", headers=auth(token)).json()
+            except Exception:  # noqa: BLE001 — trace é só evidência extra
+                trace = []
+        chamadas_tx = [t for t in trace if t.get("tool") == "execute_sql_transaction"]
+        rejeitou_coluna_invalida = any(
+            "ERRO" in (t.get("output") or "") and "valor_desconto_aplicado" in (t.get("output") or "")
+            for t in chamadas_tx
+        )
+        ok = chamou and rejeitou_coluna_invalida
+        registrar("execute_sql_transaction (rollback em falha)", "PASS" if ok else "FAIL",
+                   f"tools={r['ferramentas']} chamadas_tx={chamadas_tx} resposta={r['texto'][:250]!r} "
+                   f"antes={antes['texto'][:60]!r} depois={depois['texto'][:60]!r}")
 
         # ----------------------------------------------------------- execute_python
         print("\n-- execute_python (sandbox básico) --")
@@ -535,10 +574,15 @@ def _rodar_testes(client: httpx.Client, token: str, h: dict, template_id: str) -
             ("pie", "Agora gere um gráfico de pizza (pie) do mesmo resultado: x=categoria, y=total."),
         ]:
             r = enviar(client, token, pergunta, template_id, chat_grafico)
-            if not (r["ferramentas"] and r["erro"] is None):
+            tem_imagem = any(a.get("kind") == "image" for a in r["artefatos"])
+            if not (r["ferramentas"] and r["erro"] is None and tem_imagem):
                 # Retry once — visto na prática: hiccup transiente do provedor
                 # (Gemini via chave emprestada) derruba o turno sem chegar a
-                # chamar nenhuma tool, não é bug da plataforma.
+                # chamar nenhuma tool, não é bug da plataforma. Achado
+                # 18-19/08: o hiccup também aparece como generate_chart
+                # CHAMADA mas sem nenhum artifact de imagem (tools=[...],
+                # artifacts=[]) — a checagem original só olhava se a tool
+                # tinha sido chamada, não se ela realmente produziu a imagem.
                 time.sleep(4)
                 r = enviar(client, token, pergunta, template_id, chat_grafico)
             chat_grafico = r["chat_id"] or chat_grafico
