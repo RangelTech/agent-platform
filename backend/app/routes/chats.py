@@ -15,6 +15,10 @@ from fastapi.responses import StreamingResponse
 from psycopg.types.json import Json
 from pydantic import BaseModel, Field
 
+# Shared with app/routes/public_api.py (Chatwoot bridge path) so both callers
+# use the exact same storage/transcription logic instead of duplicating it.
+from app.attachments import store_uploads as _store_uploads
+from app.attachments import transcription_spec as _transcription_spec
 from app.auth import current_user
 from app.config import settings
 from app.db import get_connection
@@ -145,13 +149,6 @@ def _ensure_chat(user: dict, payload: SendRequest, attachments: list[dict] | Non
         )
         conn.execute("UPDATE chats SET updated_at = now() WHERE id = %s", (chat["id"],))
     return chat
-
-
-# `_store_uploads`/`_transcription_spec` moved to `app/attachments.py` so the
-# public API (Chatwoot bridge path) can call the exact same logic instead of
-# duplicating it — see `app/routes/public_api.py`.
-from app.attachments import store_uploads as _store_uploads
-from app.attachments import transcription_spec as _transcription_spec
 
 
 @router.post("/chat/send")

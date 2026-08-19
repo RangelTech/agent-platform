@@ -283,7 +283,12 @@ def test_attachment_with_invalid_base64_is_a_client_error(client, integration, c
         "/v1/messages",
         json={
             "attachments": [
-                {"kind": "audio", "name": "x.ogg", "content_type": "audio/ogg", "data_base64": "***not-base64***"}
+                {
+                    "kind": "audio",
+                    "name": "x.ogg",
+                    "content_type": "audio/ogg",
+                    "data_base64": "***not-base64***",
+                }
             ]
         },
         headers=headers,

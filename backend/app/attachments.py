@@ -54,7 +54,9 @@ async def store_uploads(user: dict, uploads: list) -> list[dict]:
     return attachments
 
 
-def store_bytes(tenant_id, *, name: str, content_type: str, data: bytes, kind: str | None = None) -> dict:
+def store_bytes(
+    tenant_id, *, name: str, content_type: str, data: bytes, kind: str | None = None
+) -> dict:
     """Same persistence as `store_uploads`, but for bytes that already arrived
     in hand (base64 in a JSON body, e.g. from the Chatwoot bridge) instead of
     a multipart `UploadFile`. Returns the same kernel descriptor shape."""

@@ -116,7 +116,9 @@ async def _kernel_headers() -> dict:
     return {}
 
 
-def _store_public_attachments(integration: dict, payload: PublicMessageIn) -> tuple[list[dict], dict]:
+def _store_public_attachments(
+    integration: dict, payload: PublicMessageIn
+) -> tuple[list[dict], dict]:
     """Decode+persist the inline base64 attachments, resolving a transcription
     spec when any of them is audio. Reuses `app.attachments` — the exact same
     storage + Whisper-provider-lookup code the frontend chat path already
