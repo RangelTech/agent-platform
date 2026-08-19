@@ -52,9 +52,13 @@ def _embedding_spec(conn, tenant_id) -> dict:
     ).fetchall()
     for row in rows:
         if row["provider"] == "gemini":
+            # text-embedding-004 foi descontinuado pela Google (confirmado em
+            # produção 2026-08-19 — toda ingestão de RAG via Gemini falhava
+            # com 404). gemini-embedding-001 é o substituto ativo; ver
+            # kernel-llm/app/embeddings.py para o pedido de dimensão 768.
             return {
                 "provider": "gemini",
-                "model": "gemini/text-embedding-004",
+                "model": "gemini/gemini-embedding-001",
                 "api_key": decrypt(row["api_key_encrypted"]),
             }
         if row["provider"] == "openai":
