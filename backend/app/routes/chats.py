@@ -8,7 +8,6 @@ configured).
 
 import json
 import logging
-import os
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -148,90 +147,11 @@ def _ensure_chat(user: dict, payload: SendRequest, attachments: list[dict] | Non
     return chat
 
 
-_ATTACHMENT_KINDS = {"image": "image", "audio": "audio"}
-
-
-async def _store_uploads(user: dict, uploads: list) -> list[dict]:
-    """Persist chat attachments to object storage; returns kernel descriptors."""
-    import uuid as _uuid
-
-    from app.storage import save_bytes
-
-    attachments = []
-    for upload in uploads:
-        data = await upload.read()
-        if not data:
-            continue
-        if len(data) > settings.max_upload_bytes:
-            raise HTTPException(status_code=413, detail="Anexo grande demais")
-        content_type = upload.content_type or "application/octet-stream"
-        kind = _ATTACHMENT_KINDS.get(content_type.split("/", 1)[0], "file")
-        name = upload.filename or "anexo"
-        path = save_bytes(
-            f"tenants/{user['tenant_id']}/chats/attachments/{_uuid.uuid4()}/{name}",
-            data,
-            content_type,
-        )
-        attachments.append(
-            {"kind": kind, "name": name, "content_type": content_type, "storage_path": path}
-        )
-    return attachments
-
-
-def _transcription_spec(tenant_id) -> dict:
-    """Whisper provider from the tenant's services: Groq (fast/cheap) first,
-    then OpenAI, then any `openai-compatible` service (ex.: um combo do
-    9Router) usando o `api_base` próprio do tenant.
-
-    Fora de teste automatizado, nunca cai num stub silencioso: se nenhuma
-    dessas specs existir, devolve um marcador que faz o kernel tentar (e
-    falhar de forma clara, via `litellm.atranscription`) em vez de decodificar
-    os bytes crus do áudio como texto.
-    """
-    from app.crypto import decrypt
-
-    with get_connection() as conn:
-        rows = conn.execute(
-            """SELECT provider, api_key_encrypted, api_base, model FROM ai_services
-                WHERE tenant_id = %s AND is_active AND NOT is_deleted
-                      AND api_key_encrypted IS NOT NULL
-                ORDER BY created_at""",
-            (tenant_id,),
-        ).fetchall()
-    for row in rows:
-        if row["provider"] == "groq":
-            return {
-                "provider": "groq",
-                "model": "groq/whisper-large-v3-turbo",
-                "api_key": decrypt(row["api_key_encrypted"]),
-            }
-    for row in rows:
-        if row["provider"] == "openai":
-            return {
-                "provider": "openai",
-                "model": "whisper-1",
-                "api_key": decrypt(row["api_key_encrypted"]),
-            }
-    for row in rows:
-        if row["provider"] == "openai-compatible" and row["api_base"]:
-            return {
-                "provider": "openai-compatible",
-                "model": row["model"] or "whisper-1",
-                "api_key": decrypt(row["api_key_encrypted"]),
-                "api_base": row["api_base"],
-            }
-    # O stub (decodifica bytes crus como texto) só existe para a suíte
-    # automatizada, onde os "bytes de áudio" do teste já são texto ASCII de
-    # propósito. `PYTEST_CURRENT_TEST` é setado pelo próprio pytest durante a
-    # execução — não depende de nenhuma configuração nova no conftest.
-    if os.environ.get("PYTEST_CURRENT_TEST"):
-        return {"provider": "stub"}
-    # Nenhuma spec real: não inventa um provider furado. `transcribe()` no
-    # kernel vai tentar o caminho real do litellm sem api_key/api_base
-    # válidos, o que falha rápido e cai no mesmo formato de erro já usado
-    # para falha de transcrição (`attachments.py`: "[áudio {name}: falha na
-    # transcrição — {exc}]") — nunca um stub silencioso em produção.
-    return {"provider": "unavailable"}
+# `_store_uploads`/`_transcription_spec` moved to `app/attachments.py` so the
+# public API (Chatwoot bridge path) can call the exact same logic instead of
+# duplicating it — see `app/routes/public_api.py`.
+from app.attachments import store_uploads as _store_uploads
+from app.attachments import transcription_spec as _transcription_spec
 
 
 @router.post("/chat/send")

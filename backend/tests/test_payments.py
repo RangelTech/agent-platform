@@ -153,6 +153,43 @@ def test_webhook_with_wrong_signature_is_rejected(client, tenant_admin):
     assert signed.status_code != 401
 
 
+def test_webhook_is_idempotent_on_redelivery(client, tenant_admin):
+    """O Mercado Pago reentrega o mesmo webhook de verdade (retry de rede,
+    timeout no ACK, etc.) — processar 2x não pode duplicar/creditar em dobro.
+
+    A garantia aqui é estrutural: o handler faz um UPDATE idempotente (seta o
+    status a partir da releitura no gateway, não incrementa nada), então
+    entregar o mesmo webhook 2x deve deixar exatamente 1 linha de cobrança,
+    com o mesmo status final — não duas linhas, não um status "mais pago".
+    """
+    h = auth(tenant_admin["token"])
+    credential = client.put(
+        "/api/payments/credentials", json={"access_token": "APP_USR-x"}, headers=h
+    ).json()
+    external_id = str(uuid.uuid4().int % 10**9)
+    _charge(credential["tenant_id"], external_id)
+
+    server, port = _start_fake_gateway("approved")
+    original = settings.mercado_pago_api
+    settings.mercado_pago_api = f"http://127.0.0.1:{port}"
+    try:
+        first = client.post(credential["webhook_path"], json={"data": {"id": external_id}})
+        second = client.post(credential["webhook_path"], json={"data": {"id": external_id}})
+    finally:
+        settings.mercado_pago_api = original
+        server.should_exit = True
+
+    assert first.status_code == 200 and first.json()["charge_status"] == "paid"
+    assert second.status_code == 200 and second.json()["charge_status"] == "paid"
+
+    with psycopg.connect(settings.database_url) as conn:
+        rows = conn.execute(
+            "SELECT status FROM payment_charges WHERE external_id = %s", (external_id,)
+        ).fetchall()
+    assert len(rows) == 1, "webhook redelivery duplicated the charge row"
+    assert rows[0][0] == "paid"
+
+
 def test_run_payload_carries_the_payment_credential(client, tenant_admin):
     """A credencial é descriptografada só no template_runtime, como os secrets."""
     from app.template_runtime import build_run_payload
