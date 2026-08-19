@@ -24,6 +24,7 @@ const KINDS = [
   { value: 'sqlserver', label: 'SQL Server' },
   { value: 'oracle', label: 'Oracle' },
   { value: 'firebird', label: 'Firebird' },
+  { value: 'mongodb', label: 'MongoDB' },
 ]
 
 const DEFAULT_PORTS: Record<string, number> = {
@@ -32,6 +33,7 @@ const DEFAULT_PORTS: Record<string, number> = {
   sqlserver: 1433,
   oracle: 1521,
   firebird: 3050,
+  mongodb: 27017,
 }
 
 export default function Datasources() {
@@ -127,7 +129,12 @@ export default function Datasources() {
     create.mutate()
   }
 
-  const isSql = ['postgresql', 'mysql', 'sqlserver', 'oracle', 'firebird'].includes(form.kind)
+  // Nome histórico: na prática é "usa host/porta/database/user" — MongoDB
+  // entra aqui também (mesma forma de conexão), mesmo não sendo SQL (a
+  // consulta em si vai por query_mongo, tool própria, não run_sql_query).
+  const isSql = ['postgresql', 'mysql', 'sqlserver', 'oracle', 'firebird', 'mongodb'].includes(
+    form.kind
+  )
 
   const activeCount = sources.filter((source) => source.is_active).length
   const testedCount = sources.filter((source) => source.last_test_ok).length

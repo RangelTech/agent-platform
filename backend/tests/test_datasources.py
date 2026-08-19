@@ -31,7 +31,8 @@ def test_create_encrypts_secret_and_never_returns_it(client, tenant_admin):
 
 
 def test_invalid_kind_rejected(client, tenant_admin):
-    assert _create(client, tenant_admin["token"], kind="mongodb").status_code == 400
+    # mongodb virou kind válido (produto-02, kernel-llm ganhou tool query_mongo).
+    assert _create(client, tenant_admin["token"], kind="redis").status_code == 400
 
 
 def test_datasources_are_tenant_isolated(client, master_token, tenant_admin):
