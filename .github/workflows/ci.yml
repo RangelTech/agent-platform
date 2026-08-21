@@ -1,8 +1,15 @@
 name: CI
 
 # Kernel saiu deste repo (agent-llm mega spec, infra-05) — virou o repo
-# kernel-llm, com seu próprio CI/CD (Cloud Run). Backend+frontend deployam na
-# VPS via .github/workflows/deploy-vps.yml, não daqui.
+# kernel-llm, com seu próprio CI/CD (Cloud Run).
+#
+# Backend+frontend: migração pro Cloud Run em andamento (infra-01 seção 5,
+# 21/08/2026) — job `deploy-cloudrun` abaixo sobe em PARALELO ao que já roda
+# na VPS via `.github/workflows/deploy-vps.yml` (esse continua existindo e
+# recebendo tráfego real até o corte de DNS ser decidido à parte). Diferente
+# do deploy da VPS, este É gated por CI verde (`needs: [python, frontend]`) —
+# achado de processo (memoria.md): o deploy da VPS nunca foi, fica registrado
+# como pendência separada, não corrigido aqui.
 
 on:
   push:
@@ -52,3 +59,22 @@ jobs:
         run: |
           npm ci
           npm run build
+
+  deploy-cloudrun:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [python, frontend]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Deploy backend to Cloud Run
+        run: bash ./infra/deploy-cloudrun.sh
