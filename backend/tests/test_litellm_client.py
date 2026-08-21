@@ -109,11 +109,13 @@ def _fake_litellm():
         team = estado["teams"].get(corpo["team_id"])
         if not team:
             raise HTTPException(status_code=400, detail="team inexistente")
-        for model_name in corpo["models"]:
-            if model_name not in team["models"]:
-                raise HTTPException(status_code=403, detail=f"team não tem acesso a {model_name}")
+        modelos_pedidos = corpo.get("models")
+        if modelos_pedidos is not None:
+            for model_name in modelos_pedidos:
+                if model_name not in team["models"]:
+                    raise HTTPException(status_code=403, detail=f"team não tem acesso a {model_name}")
         key = f"sk-{uuid.uuid4().hex}"
-        estado["keys"][key] = {"team_id": corpo["team_id"], "models": corpo["models"], "alias": corpo.get("key_alias")}
+        estado["keys"][key] = {"team_id": corpo["team_id"], "models": modelos_pedidos, "alias": corpo.get("key_alias")}
         return {"key": key, "key_alias": corpo.get("key_alias")}
 
     @app.post("/key/delete")
@@ -193,6 +195,21 @@ async def test_key_generate_falha_se_team_nao_tem_acesso_ao_model(litellm):
     team = await create_team(base_url, MASTER_KEY, team_alias="tenant-x")
     with pytest.raises(LiteLLMError):
         await generate_key(base_url, MASTER_KEY, team_id=team["team_id"], model_name="tenant-y-gemini", key_alias="vazamento")
+
+
+@pytest.mark.asyncio
+async def test_gera_key_no_provisionamento_antes_de_ter_qualquer_model(litellm):
+    """Caso real do provisionamento: o Team nasce vazio (tenant ainda não
+    conectou conta própria nenhuma) e a plataforma precisa das 2 virtual
+    keys (bridge/AI Assist) mesmo assim — sem `model_name`, a key herda o
+    que o Team for ganhando depois via `add_model_to_team`."""
+    base_url, _ = litellm
+    team = await create_team(base_url, MASTER_KEY, team_alias="tenant-novo")
+    bridge_key = await generate_key(base_url, MASTER_KEY, team_id=team["team_id"], key_alias="bridge")
+    ai_assist_key = await generate_key(base_url, MASTER_KEY, team_id=team["team_id"], key_alias="ai-assist")
+    assert bridge_key.startswith("sk-")
+    assert ai_assist_key.startswith("sk-")
+    assert bridge_key != ai_assist_key
 
 
 @pytest.mark.asyncio

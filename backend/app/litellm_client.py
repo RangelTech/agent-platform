@@ -164,18 +164,23 @@ async def delete_deployment(base_url: str, master_key: str, *, deployment_id: st
 
 
 async def generate_key(
-    base_url: str, master_key: str, *, team_id: str, model_name: str, key_alias: str
+    base_url: str, master_key: str, *, team_id: str, key_alias: str, model_name: str | None = None
 ) -> str:
     """Devolve só a key em si (string) — quem chama decide onde/como
     encriptar e guardar, igual já era com `api_key_encrypted` no modelo
-    antigo."""
-    body = await _request(
-        base_url,
-        master_key,
-        "POST",
-        "/key/generate",
-        json_body={"team_id": team_id, "models": [model_name], "key_alias": key_alias},
-    )
+    antigo.
+
+    `model_name` é opcional de propósito: no provisionamento (`registrar
+    a instância`), o tenant ainda não conectou nenhuma conta própria — o Team
+    nasce sem `models` (seção "Team", acima) e a key tem que existir mesmo
+    assim, herdando o que o Team for ganhando depois (`add_model_to_team`),
+    sem precisar regenerar a key toda vez que um deployment novo é criado.
+    Só passar `model_name` quando quiser restringir a key a um subconjunto
+    específico do que o Team já tem acesso."""
+    body_json = {"team_id": team_id, "key_alias": key_alias}
+    if model_name is not None:
+        body_json["models"] = [model_name]
+    body = await _request(base_url, master_key, "POST", "/key/generate", json_body=body_json)
     key = body.get("key")
     if not key:
         raise LiteLLMError("LiteLLM não devolveu a virtual key gerada")
