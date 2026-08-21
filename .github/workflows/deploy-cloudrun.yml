@@ -19,6 +19,7 @@ on:
       - "backend/**"
       - "frontend/**"
       - "infra/cloudbuild-backend.yaml"
+      - "infra/terraform/**"
       - ".github/workflows/deploy-cloudrun.yml"
   workflow_dispatch: {}
 
