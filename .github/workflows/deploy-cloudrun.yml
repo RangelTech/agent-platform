@@ -122,5 +122,9 @@ jobs:
             --timeout=300
 
       - name: Smoke check
+        # min-instances=0 -- a revisao nova pode precisar de cold start logo
+        # apos o deploy, retry curto absorve isso sem marcar o CI como falho
+        # por flakiness de timing (achado real, 21/08/2026).
         run: |
-          curl -fsS "https://ia.rangeltech.net/health/ready" | grep -q '"status":"ready"'
+          curl -fsS --retry 5 --retry-delay 5 --retry-all-errors \
+            "https://ia.rangeltech.net/health/ready" | grep -q '"status":"ready"'
