@@ -134,6 +134,61 @@ def test_somente_o_master_registra_instancia(client, tenant_admin):
     assert r.status_code == 403
 
 
+def _registrar_litellm(client, master_token, tenant_id, *, team_id="team-x", bridge="sk-bridge", ai_assist="sk-ai-assist"):
+    return client.put(
+        "/api/ai-router/instancias-litellm",
+        json={
+            "tenant_id": tenant_id,
+            "litellm_team_id": team_id,
+            "bridge_key": bridge,
+            "ai_assist_key": ai_assist,
+        },
+        headers=auth(master_token),
+    )
+
+
+def test_somente_o_master_registra_instancia_litellm(client, tenant_admin):
+    r = _registrar_litellm(client, tenant_admin["token"], tenant_admin["user"]["tenant_id"])
+    assert r.status_code == 403
+
+
+def test_registra_instancia_litellm_e_status_reflete(client, master_token, tenant_admin):
+    """Achado de auditoria (infra-04 Fase C, achado durante o desenho): o
+    tenant LiteLLM não tem `base_url` nem senha — se `/status` ou o registro
+    dependessem desses campos sem querer, um tenant só-LiteLLM apareceria
+    como se nunca tivesse sido provisionado. Prova que não é o caso."""
+    r = _registrar_litellm(client, master_token, tenant_admin["user"]["tenant_id"])
+    assert r.status_code == 201, r.text
+    assert r.json()["litellm_team_id"] == "team-x"
+
+    status = client.get("/api/ai-router/status", headers=auth(tenant_admin["token"]))
+    assert status.status_code == 200
+    assert status.json()["provisionado"] is True
+
+
+def test_as_2_keys_do_tenant_litellm_nunca_voltam_na_api(client, master_token, tenant_admin):
+    r = _registrar_litellm(client, master_token, tenant_admin["user"]["tenant_id"], bridge="chave-bridge-secreta", ai_assist="chave-ai-assist-secreta")
+    assert "chave-bridge-secreta" not in r.text
+    assert "chave-ai-assist-secreta" not in r.text
+
+
+def test_registro_litellm_nao_preenche_campos_do_9router(client, master_token, tenant_admin):
+    """A constraint de banco (`0028_litellm_router_nullable.sql`) é a garantia
+    de verdade contra as duas formas ficarem pela metade — este teste prova
+    que o registro por aqui realmente deixa os campos do 9Router nulos, não
+    preenche com placeholder pra "passar" na constraint."""
+    from app.db import get_connection
+
+    _registrar_litellm(client, master_token, tenant_admin["user"]["tenant_id"])
+    with get_connection() as conn:
+        linha = conn.execute(
+            "SELECT base_url, litellm_team_id FROM tenant_routers WHERE tenant_id = %s",
+            (tenant_admin["user"]["tenant_id"],),
+        ).fetchone()
+    assert linha["base_url"] is None
+    assert linha["litellm_team_id"] == "team-x"
+
+
 def test_conta_conectada_aparece_e_a_chave_nao_volta(client, master_token, tenant_admin):
     server, porta, estado = _fake_router()
     try:

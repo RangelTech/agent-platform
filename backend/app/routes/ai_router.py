@@ -644,3 +644,60 @@ def registrar_instancia(payload: RouterIn, user: dict = Depends(require("ai_rout
         "tenant_id": str(linha["tenant_id"]),
         "base_url": linha["base_url"],
     }
+
+
+class LiteLLMRouterIn(BaseModel):
+    tenant_id: str
+    litellm_team_id: str
+    bridge_key: str
+    ai_assist_key: str
+
+
+@router.put("/instancias-litellm", status_code=201)
+def registrar_instancia_litellm(
+    payload: LiteLLMRouterIn, user: dict = Depends(require("ai_router", "edit"))
+):
+    """Registra o Team LiteLLM de um tenant. **Só o master.**
+
+    Rota nova, separada de `/instancias` (9Router) — de propósito, não um
+    campo discriminador no mesmo payload: os dois formatos não têm nenhum
+    campo em comum de verdade (`base_url`/`admin_password` vs.
+    `litellm_team_id`/2 keys), então misturar os dois na mesma rota só
+    obrigaria campos opcionais fantasmas e validação cruzada a mais.
+
+    O provisionamento em si roda via `scripts/provisionar_litellm.py`
+    (3 chamadas HTTP pro LiteLLM — sem SSH, sem DNS, sem container, ao
+    contrário do 9Router); aqui a plataforma só guarda o resultado, cifrado.
+
+    **Limitação conhecida, registrada em `memoria.md`**: as rotas de contas/
+    combos/OAuth abaixo ainda assumem o formato 9Router (`registro["base_url"]`
+    via `router_client`) — um tenant registrado só por aqui ainda não
+    consegue conectar conta própria pela tela até essas rotas ganharem o
+    branch pro `litellm_client`. Fica registrado como próximo passo, não
+    bloqueia esta rota em si."""
+    if not user.get("is_master"):
+        raise HTTPException(status_code=403, detail="Somente o administrador da plataforma")
+    with get_connection() as conn:
+        linha = conn.execute(
+            """INSERT INTO tenant_routers
+                   (tenant_id, litellm_team_id, bridge_key_encrypted, ai_assist_key_encrypted)
+               VALUES (%s, %s, %s, %s)
+               ON CONFLICT (tenant_id) DO UPDATE
+                   SET litellm_team_id = EXCLUDED.litellm_team_id,
+                       bridge_key_encrypted = EXCLUDED.bridge_key_encrypted,
+                       ai_assist_key_encrypted = EXCLUDED.ai_assist_key_encrypted,
+                       is_active = TRUE,
+                       updated_at = now()
+               RETURNING *""",
+            (
+                payload.tenant_id,
+                payload.litellm_team_id,
+                encrypt(payload.bridge_key),
+                encrypt(payload.ai_assist_key),
+            ),
+        ).fetchone()
+    return {
+        "id": str(linha["id"]),
+        "tenant_id": str(linha["tenant_id"]),
+        "litellm_team_id": linha["litellm_team_id"],
+    }
