@@ -10,42 +10,42 @@
     {
       "tool": "calculate (inválida)",
       "status": "FAIL",
-      "evidencia": "tools=[] texto='O cálculo \"5 + (2 * / 3)\" tem um erro de sintaxe. Por favor, verifique a expressão e tente novamente.' erro=None"
+      "evidencia": "tools=[] texto='A ferramenta respondeu: A expressão `5 + (2 * / 3)` é inválida. Verifique-a e tente novamente.' erro=None"
     },
     {
       "tool": "call_http_api",
       "status": "PASS",
-      "evidencia": "tools=['call_http_api'] texto='A API devolveu exatamente o texto \"HTTP 200\\\\nAccessible for all.\".' erro=None"
+      "evidencia": "tools=['call_http_api'] texto='O texto devolvido pela API foi: \"HTTP 200\\nApproachable is better than simple.\"' erro=None"
     },
     {
       "tool": "describe_datasources",
       "status": "PASS",
-      "evidencia": "tools=['describe_datasources'] texto='No banco de dados `erp_loja`, as tabelas e colunas disponíveis são as seguintes:\\n\\n**Schema: hamburgueria**\\n\\n*   **hamburgueria.itens_pedido**\\n    *   id (uuid)\\n    *   pedido_id (uuid)\\n    *   produto_id (uuid)\\n    *   quantidade (integer)\\n    *   preco_unitario (numeric)\\n    *   created_at (timesta'"
+      "evidencia": "tools=['describe_datasources'] texto='No banco de dados `erp_loja`, as tabelas e suas respectivas colunas são as seguintes:\\n\\n**Schema: `hamburgueria`**\\n\\n*   **Tabela:** `itens_pedido`\\n    *   `id` (uuid)\\n    *   `pedido_id` (uuid)\\n    *   `produto_id` (uuid)\\n    *   `quantidade` (integer)\\n    *   `preco_unitario` (numeric)\\n    *   `crea'"
     },
     {
       "tool": "run_sql_query",
       "status": "PASS",
-      "evidencia": "tools=['run_sql_query', 'run_sql_query'] artifacts=[{'artifact_id': 'bf187b41-69ba-4c05-b6f0-41bec6226466', 'kind': 'dataset', 'title': 'Consulta em erp_loja'}] texto='A consulta retornou 8 produtos no total.'"
+      "evidencia": "tools=['run_sql_query', 'run_sql_query'] artifacts=[{'artifact_id': '70e32910-c72f-4639-9781-5a9958c6210b', 'kind': 'dataset', 'title': 'Consulta em erp_loja'}] texto='O total de produtos é: 8.'"
     },
     {
       "tool": "execute_sql_write (insert permitido)",
       "status": "PASS",
-      "evidencia": "turno1_tools=[] turno2_tools=['execute_sql_write', 'execute_sql_write'] turno2_texto='Ótimo! O pedido foi criado com sucesso. O ID do novo pedido é 121.'"
+      "evidencia": "turno1_tools=[] turno2_tools=['execute_sql_write', 'execute_sql_write'] turno2_texto='O pedido foi gravado com sucesso. Foi inserido 1 registro na tabela `pedidos` com o ID 124.'"
     },
     {
       "tool": "execute_sql_write (allowlist bloqueia)",
-      "status": "N-A",
-      "evidencia": "tools=['execute_sql_transaction'] texto=\"ERRO na transação (nada foi gravado): tabela 'public.clientes' não está na lista de escrita permitida deste template\""
+      "status": "PASS",
+      "evidencia": "tools=['execute_sql_write'] texto=\"Não foi possível concluir a operação de escrita. A tabela 'public.clientes' não está na lista de tabelas permitidas para escrita por este template.\""
     },
     {
       "tool": "execute_sql_transaction (sucesso, atômica)",
       "status": "PASS",
-      "evidencia": "tools=['execute_sql_transaction', 'execute_sql_transaction'] texto='A transação foi executada com sucesso. Um novo pedido foi criado com ID 122 e um item de pedido foi adicionado a ele.'"
+      "evidencia": "tools=['execute_sql_transaction', 'execute_sql_transaction'] texto='A transação SQL foi executada com sucesso. Foram inseridos um pedido (ID 125) e um item de pedido.'"
     },
     {
       "tool": "execute_sql_transaction (rollback em falha)",
       "status": "PASS",
-      "evidencia": "tools=['execute_sql_transaction', 'execute_sql_transaction', 'describe_datasources'] chamadas_tx=[{'agent': 'qa_agent', 'tool': 'execute_sql_transaction', 'input': {'datasource': 'Default', 'statements_json': '[\"INSERT INTO public.pedidos (cliente_id, funcionario_id, data, status, total) VALUES (1, 1, CURRENT_DATE, \\'qa-pente-fino-rollback\\', 1.00) RETURNING id\", \"INSERT INTO public.itens_pedido (pedido_id, valor_desconto_aplicado, quantidade, preco_unitario) VALUES ({{returned:0}}, 1, 1, 1.00)\"]'}, 'output': \"ERRO: fonte 'Default' não existe. Disponíveis: erp_loja\", 'status': 'ok', 'duration_ms': 3, 'created_at': '2026-08-19T02:32:13.712263-03:00'}, {'agent': 'qa_agent', 'tool': 'execute_sql_transaction', 'input': {'datasource': 'erp_loja', 'statements_json': '[\"INSERT INTO public.pedidos"
+      "evidencia": "tools=['execute_sql_transaction', 'execute_sql_transaction', 'describe_datasources', 'execute_sql_transaction'] chamadas_tx=[{'agent': 'qa_agent', 'tool': 'execute_sql_transaction', 'input': {'datasource': 'public', 'statements_json': '[\"INSERT INTO public.pedidos (cliente_id, funcionario_id, data, status, total) VALUES (1, 1, CURRENT_DATE, \\'qa-pente-fino-rollback\\', 1.00) RETURNING id\", \"INSERT INTO public.itens_pedido (pedido_id, valor_desconto_aplicado, quantidade, preco_unitario) VALUES ({{returned:0}}, 1, 1, 1.00)\"]'}, 'output': \"ERRO: fonte 'public' não existe. Disponíveis: erp_loja\", 'status': 'ok', 'duration_ms': 4, 'created_at': '2026-08-19T02:53:08.946053-03:00'}, {'agent': 'qa_agent', 'tool': 'execute_sql_transaction', 'input': {'datasource': 'erp_loja', 'statements_json': '[\"I"
     },
     {
       "tool": "execute_python (execução simples)",
@@ -55,87 +55,87 @@
     {
       "tool": "execute_python (isolamento fs/rede)",
       "status": "PASS",
-      "evidencia": "tools=['execute_python'] texto='O código Python foi executado com sucesso. A listagem dos arquivos na raiz funcionou, retornando os diretórios padrão de um sistema Linux. No entanto, a tentativa de acessar a rede falhou com a mensagem \"acesso à rede é bloqueado no sandbox\", indicando que o ambiente de execução Python não permite requisições de rede.'"
+      "evidencia": "tools=['execute_python'] texto=\"O código foi executado.\\n\\nO sistema de arquivos da raiz contém os arquivos: `['usr', 'srv', 'root', 'bin', 'boot', 'dev', 'etc', 'home', 'lib', 'lib64', 'media', 'mnt', 'opt', 'proc', 'run', 'sbin', 'sys', 'tmp', 'var']`.\\n\\nNo entanto, o acesso à rede é bloqueado no sandbox de execução do Python, resultando no erro: `acesso à rede é bloqueado no sandbox`.\""
     },
     {
       "tool": "generate_forecast",
       "status": "PASS",
-      "evidencia": "turno1_tools=['execute_python'] turno2_tools=['generate_forecast', 'describe_datasources', 'run_sql_query', 'generate_forecast'] artifacts=[{'artifact_id': 'e9656e98-46ab-43a1-8fc4-ea11d3b1c350', 'kind': 'dataset', 'title': 'Vendas Mensais'}, {'artifact_id': 'ad241f20-6b02-4c1e-8559-abc16a40116e', 'kind': 'dataset', 'title': 'Previsão de valor_total (3 períodos)'}, {'artifact_id': '27f728dc-977a-449b-9603-6ddecbda6d5a', 'kind': 'chart', 'title': 'Previsão de valor_total'}] erro=None"
+      "evidencia": "turno1_tools=['execute_python', 'generate_forecast'] turno2_tools=['generate_forecast', 'generate_forecast'] artifacts=[] erro=None"
     },
     {
       "tool": "web_search",
       "status": "PASS",
-      "evidencia": "tools=['web_search'] texto='A capital da Mongólia é Ulaanbaatar (também conhecida como Ulan Bator).\\n\\nFonte: Wikipedia, Google Arts & Culture, EBSCO.'"
+      "evidencia": "tools=['web_search'] texto='A capital da Mongólia é Ulaanbaatar.\\n\\nFonte: Ulaanbaatar - Wikipedia (https://en.wikipedia.org/wiki/Ulaanbaatar)'"
     },
     {
       "tool": "analyze_pdf_pages",
-      "status": "PASS",
-      "evidencia": "tools=['analyze_pdf_pages'] texto='O valor total estimado do edital é de R$ 2.480.750,00 e a quantidade de notebooks a serem licitados é de 120.'"
+      "status": "FAIL",
+      "evidencia": "tools=[] texto='O valor total estimado é de R$ 2.480.750,00 e estão sendo licitados 120 notebooks.'"
     },
     {
       "tool": "query_agent_rag",
-      "status": "PASS",
-      "evidencia": "tools=['query_agent_rag'] texto=\"A política interna da empresa garante 37 meses de garantia estendida para produtos da categoria 'Ferramentas Elétricas' comprados em dezembro.\""
+      "status": "FAIL",
+      "evidencia": "tools=[] texto='Segundo nossa política interna, um produto da categoria Ferramentas Elétricas comprado em dezembro tem 37 meses de garantia estendida.'"
     },
     {
       "tool": "generate_chart (bar)",
       "status": "PASS",
-      "evidencia": "tools=['generate_chart'] artifacts=[{'artifact_id': '87cf65ac-3e58-424b-b956-0bd516f39431', 'kind': 'image', 'title': 'Gráfico bar'}] erro=None"
+      "evidencia": "tools=['generate_chart'] artifacts=[{'artifact_id': '0c8db841-d58a-48db-9f4d-3f5bca0e9804', 'kind': 'image', 'title': 'Gráfico bar'}] erro=None"
     },
     {
       "tool": "generate_chart (line)",
       "status": "PASS",
-      "evidencia": "tools=['generate_chart'] artifacts=[{'artifact_id': '6f623c3d-b9f4-4dd3-9dc0-f41eb689f550', 'kind': 'image', 'title': 'Gráfico line'}] erro=None"
+      "evidencia": "tools=['generate_chart'] artifacts=[{'artifact_id': '221a0784-682f-4c3e-a78f-83476b09e69a', 'kind': 'image', 'title': 'Gráfico line'}] erro=None"
     },
     {
       "tool": "generate_chart (pie)",
       "status": "PASS",
-      "evidencia": "tools=['generate_chart'] artifacts=[{'artifact_id': 'fb29af1d-5765-43cf-a9da-76f7e64d9f4f', 'kind': 'image', 'title': 'Gráfico pie'}] erro=None"
+      "evidencia": "tools=['generate_chart'] artifacts=[{'artifact_id': '0829357c-5978-4185-b7fe-c70117fb548d', 'kind': 'image', 'title': 'Gráfico pie'}] erro=None"
     },
     {
       "tool": "artifact direto — chart bar",
       "status": "PASS",
-      "evidencia": "{\"meta_status\": 200, \"meta\": {\"id\": \"87cf65ac-3e58-424b-b956-0bd516f39431\", \"kind\": \"image\", \"title\": \"Gráfico bar\", \"schema\": {\"x\": \"categoria\", \"y\": \"total\", \"chart_type\": \"bar\"}, \"preview\": null, \"row_count\": 4, \"content_type\": \"image/png\", \"created_at\": \"2026-08-19T02:33:49.372884-03:00\"}, \"payload_status\": 400, \"payload_len\": null, \"download_status\": 307, \"download_location\": \"https://storage.rangeltech.net/teste-ia/agent-llm/tenants/0ef885b2-a6b6-4718-94a6-59f7fd6dd79f/artifacts/image/87cf65ac-3e58-424b-b956-0bd516f39431.png\", \"direto_status\": 403, \"direto_bytes\": 529, \"direto_content_type\": \"application/xml\"}"
+      "evidencia": "{\"meta_status\": 200, \"meta\": {\"id\": \"0c8db841-d58a-48db-9f4d-3f5bca0e9804\", \"kind\": \"image\", \"title\": \"Gráfico bar\", \"schema\": {\"x\": \"categoria\", \"y\": \"total\", \"chart_type\": \"bar\"}, \"preview\": null, \"row_count\": 4, \"content_type\": \"image/png\", \"created_at\": \"2026-08-19T02:54:32.974100-03:00\"}, \"payload_status\": 400, \"payload_len\": null, \"download_status\": 307, \"download_location\": \"https://storage.rangeltech.net/teste-ia/agent-llm/tenants/0ef885b2-a6b6-4718-94a6-59f7fd6dd79f/artifacts/image/0c8db841-d58a-48db-9f4d-3f5bca0e9804.png\", \"direto_status\": 403, \"direto_bytes\": 529, \"direto_content_type\": \"application/xml\"}"
     },
     {
       "tool": "artifact direto — chart line",
       "status": "PASS",
-      "evidencia": "{\"meta_status\": 200, \"meta\": {\"id\": \"6f623c3d-b9f4-4dd3-9dc0-f41eb689f550\", \"kind\": \"image\", \"title\": \"Gráfico line\", \"schema\": {\"x\": \"categoria\", \"y\": \"preco_medio\", \"chart_type\": \"line\"}, \"preview\": null, \"row_count\": 4, \"content_type\": \"image/png\", \"created_at\": \"2026-08-19T02:33:57.578722-03:00\"}, \"payload_status\": 400, \"payload_len\": null, \"download_status\": 307, \"download_location\": \"https://storage.rangeltech.net/teste-ia/agent-llm/tenants/0ef885b2-a6b6-4718-94a6-59f7fd6dd79f/artifacts/image/6f623c3d-b9f4-4dd3-9dc0-f41eb689f550.png\", \"direto_status\": 403, \"direto_bytes\": 529, \"direto_content_type\": \"application/xml\"}"
+      "evidencia": "{\"meta_status\": 200, \"meta\": {\"id\": \"221a0784-682f-4c3e-a78f-83476b09e69a\", \"kind\": \"image\", \"title\": \"Gráfico line\", \"schema\": {\"x\": \"categoria\", \"y\": \"preco_medio\", \"chart_type\": \"line\"}, \"preview\": null, \"row_count\": 4, \"content_type\": \"image/png\", \"created_at\": \"2026-08-19T02:54:38.597347-03:00\"}, \"payload_status\": 400, \"payload_len\": null, \"download_status\": 307, \"download_location\": \"https://storage.rangeltech.net/teste-ia/agent-llm/tenants/0ef885b2-a6b6-4718-94a6-59f7fd6dd79f/artifacts/image/221a0784-682f-4c3e-a78f-83476b09e69a.png\", \"direto_status\": 403, \"direto_bytes\": 529, \"direto_content_type\": \"application/xml\"}"
     },
     {
       "tool": "artifact direto — chart pie",
       "status": "PASS",
-      "evidencia": "{\"meta_status\": 200, \"meta\": {\"id\": \"fb29af1d-5765-43cf-a9da-76f7e64d9f4f\", \"kind\": \"image\", \"title\": \"Gráfico pie\", \"schema\": {\"x\": \"categoria\", \"y\": \"total\", \"chart_type\": \"pie\"}, \"preview\": null, \"row_count\": 4, \"content_type\": \"image/png\", \"created_at\": \"2026-08-19T02:34:04.168370-03:00\"}, \"payload_status\": 400, \"payload_len\": null, \"download_status\": 307, \"download_location\": \"https://storage.rangeltech.net/teste-ia/agent-llm/tenants/0ef885b2-a6b6-4718-94a6-59f7fd6dd79f/artifacts/image/fb29af1d-5765-43cf-a9da-76f7e64d9f4f.png\", \"direto_status\": 403, \"direto_bytes\": 529, \"direto_content_type\": \"application/xml\"}"
+      "evidencia": "{\"meta_status\": 200, \"meta\": {\"id\": \"0829357c-5978-4185-b7fe-c70117fb548d\", \"kind\": \"image\", \"title\": \"Gráfico pie\", \"schema\": {\"x\": \"categoria\", \"y\": \"total\", \"chart_type\": \"pie\"}, \"preview\": null, \"row_count\": 4, \"content_type\": \"image/png\", \"created_at\": \"2026-08-19T02:54:44.360545-03:00\"}, \"payload_status\": 400, \"payload_len\": null, \"download_status\": 307, \"download_location\": \"https://storage.rangeltech.net/teste-ia/agent-llm/tenants/0ef885b2-a6b6-4718-94a6-59f7fd6dd79f/artifacts/image/0829357c-5978-4185-b7fe-c70117fb548d.png\", \"direto_status\": 403, \"direto_bytes\": 529, \"direto_content_type\": \"application/xml\"}"
     },
     {
       "tool": "export_xlsx",
       "status": "PASS",
-      "evidencia": "tools=['export_xlsx'] artifacts=[{'artifact_id': '91c9dbc1-8018-4f10-a867-e2fe6b651157', 'kind': 'file', 'title': 'Planilha.xlsx'}]"
+      "evidencia": "tools=['export_xlsx'] artifacts=[{'artifact_id': '00abd826-b388-4cd4-9fa2-cc510b072d95', 'kind': 'file', 'title': 'Planilha.xlsx'}]"
     },
     {
       "tool": "export_xlsx — download direto",
       "status": "PASS",
-      "evidencia": "{\"meta_status\": 200, \"meta\": {\"id\": \"91c9dbc1-8018-4f10-a867-e2fe6b651157\", \"kind\": \"file\", \"title\": \"Planilha.xlsx\", \"schema\": null, \"preview\": null, \"row_count\": 4, \"content_type\": \"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\", \"created_at\": \"2026-08-19T02:34:34.576204-03:00\"}, \"download_status\": 307, \"download_location\": \"https://storage.rangeltech.net/teste-ia/agent-llm/tenants/0ef885b2-a6b6-4718-94a6-59f7fd6dd79f/artifacts/file/91c9dbc1-8018-4f10-a867-e2fe6b651157.xlsx\", \"direto_status\": 403, \"direto_bytes\": 529, \"direto_content_type\": \"application/xml\"}"
+      "evidencia": "{\"meta_status\": 200, \"meta\": {\"id\": \"00abd826-b388-4cd4-9fa2-cc510b072d95\", \"kind\": \"file\", \"title\": \"Planilha.xlsx\", \"schema\": null, \"preview\": null, \"row_count\": 4, \"content_type\": \"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\", \"created_at\": \"2026-08-19T02:55:00.254395-03:00\"}, \"download_status\": 307, \"download_location\": \"https://storage.rangeltech.net/teste-ia/agent-llm/tenants/0ef885b2-a6b6-4718-94a6-59f7fd6dd79f/artifacts/file/00abd826-b388-4cd4-9fa2-cc510b072d95.xlsx\", \"direto_status\": 403, \"direto_bytes\": 529, \"direto_content_type\": \"application/xml\"}"
     },
     {
       "tool": "generate_pdf",
       "status": "PASS",
-      "evidencia": "tools=['generate_pdf'] artifacts=[{'artifact_id': '25c38990-9378-4aa6-8d60-9ba830cee90e', 'kind': 'file', 'title': 'Relatório QA.pdf'}]"
+      "evidencia": "tools=['describe_datasources', 'run_sql_query', 'run_sql_query', 'generate_pdf'] artifacts=[{'artifact_id': '53c130e3-acbe-4565-ae5d-8c32c641f561', 'kind': 'dataset', 'title': 'Consulta em erp_loja'}, {'artifact_id': 'af024cdf-8c12-4ff0-8dbe-92fb2ff35047', 'kind': 'file', 'title': 'Relatório QA.pdf'}]"
     },
     {
       "tool": "generate_pdf — download direto",
       "status": "PASS",
-      "evidencia": "{\"meta_status\": 200, \"meta\": {\"id\": \"25c38990-9378-4aa6-8d60-9ba830cee90e\", \"kind\": \"file\", \"title\": \"Relatório QA.pdf\", \"schema\": null, \"preview\": null, \"row_count\": null, \"content_type\": \"application/pdf\", \"created_at\": \"2026-08-19T02:34:41.129739-03:00\"}, \"download_status\": 307, \"download_location\": \"https://storage.rangeltech.net/teste-ia/agent-llm/tenants/0ef885b2-a6b6-4718-94a6-59f7fd6dd79f/artifacts/file/25c38990-9378-4aa6-8d60-9ba830cee90e.pdf\", \"direto_status\": 403, \"direto_bytes\": 527, \"direto_content_type\": \"application/xml\"}"
+      "evidencia": "{\"meta_status\": 200, \"meta\": {\"id\": \"af024cdf-8c12-4ff0-8dbe-92fb2ff35047\", \"kind\": \"file\", \"title\": \"Relatório QA.pdf\", \"schema\": null, \"preview\": null, \"row_count\": null, \"content_type\": \"application/pdf\", \"created_at\": \"2026-08-19T02:55:26.179668-03:00\"}, \"download_status\": 307, \"download_location\": \"https://storage.rangeltech.net/teste-ia/agent-llm/tenants/0ef885b2-a6b6-4718-94a6-59f7fd6dd79f/artifacts/file/af024cdf-8c12-4ff0-8dbe-92fb2ff35047.pdf\", \"direto_status\": 403, \"direto_bytes\": 527, \"direto_content_type\": \"application/xml\"}"
     },
     {
       "tool": "generate_pix_charge",
-      "status": "FAIL",
-      "evidencia": "tools=[] texto='Para gerar a cobrança PIX, preciso de sua confirmação. O valor será de R$ 12,34 para o pedido QA-PENTE-FINO. Confirma?' erro=None"
+      "status": "PASS",
+      "evidencia": "tools=['generate_pix_charge'] texto='Houve um erro ao gerar a cobrança PIX para o pedido QA-PENTE-FINO: ERRO do gateway (401): {\"code\":\"unauthorized\",\"message\":\"authorization value not present\"}.\\n\\nParece que não foi possível autenticar para gerar a cobrança.' erro=None"
     },
     {
       "tool": "check_payment_status",
       "status": "FAIL",
-      "evidencia": "tools=[] texto='A cobrança PIX ainda não foi gerada, pois estou aguardando sua confirmação. Você confirma a geração da cobrança de R$ 12,34 para o pedido QA-PENTE-FINO?' erro=None"
+      "evidencia": "tools=[] texto='A cobrança PIX para o pedido QA-PENTE-FINO não foi gerada com sucesso anteriormente, devido a um erro de autenticação. Portanto, não é possível consultar o status de uma cobrança que não foi criada.' erro=None"
     },
     {
       "tool": "ExternalServers (MCP externo)",

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Deploy do backend (FastAPI + SPA embutida) pro Cloud Run, projeto rangel-tech.
 #
-# infra-01 seção 5 (mega-spec-reestrutura): decisão é migrar o backend da VPS
-# pro Cloud Run (min=0, tolera cold start). Este script sobe a imagem em
-# PARALELO ao que já roda na VPS (`.github/workflows/deploy-vps.yml`) — não
-# mexe em DNS/Traefik, o corte de tráfego real (ia.rangeltech.net apontar pra
-# cá) é decisão separada, feita só depois de validar o serviço novo de pé.
+# infra-01 seção 5 (mega-spec-reestrutura): backend migrado da VPS pro Cloud
+# Run (min=0, tolera cold start), CUTOVER COMPLETO em 21/08/2026 — VPS não
+# roda mais este serviço (compose e workflow de deploy-vps removidos). SPA
+# continua embutida no mesmo container (_mount_spa, backend/Dockerfile builda
+# o frontend) — mesmo padrão de sempre, sem separação em Cloud Storage/CDN.
 #
 # DATABASE_URL aponta pro Postgres real da VPS via porta 5433
 # (postgres-direct, TLS) — mesmo achado do litellm-router/kernel-llm: a
