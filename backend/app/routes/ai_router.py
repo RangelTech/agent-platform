@@ -16,10 +16,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from psycopg.types.json import Json
 from pydantic import BaseModel, Field
 
-from app import router_catalog, router_client
+from app import litellm_client, router_catalog, router_client
 from app.auth import require
-from app.crypto import encrypt
+from app.crypto import decrypt, encrypt
 from app.db import get_connection
+from app.installation_secrets import resolver as resolver_segredo
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,21 @@ def _slug(valor: str) -> str:
     return _SLUG.sub("_", valor.strip().lower()).strip("_")[:40] or "combo"
 
 
+def _modo_litellm(registro: dict) -> bool:
+    """Tenant no LiteLLM (infra-04) não tem instância própria de 9Router —
+    `tenant_routers` distingue os dois modos pela coluna que veio preenchida
+    (migration 0028, CHECK garante que é sempre um dos dois, nunca nenhum)."""
+    return registro.get("litellm_team_id") is not None
+
+
+def _config_litellm() -> tuple[str, str]:
+    base_url = resolver_segredo("LITELLM_BASE_URL")
+    master_key = resolver_segredo("LITELLM_MASTER_KEY")
+    if not base_url or not master_key:
+        raise HTTPException(status_code=500, detail="LiteLLM não configurado nesta instalação")
+    return base_url, master_key
+
+
 @router.get("/status")
 def status(user: dict = Depends(require("ai_router", "view"))):
     """Se a empresa já tem instância dedicada e se ela está de pé.
@@ -101,17 +117,36 @@ def status(user: dict = Depends(require("ai_router", "view"))):
 @router.get("/contas")
 async def listar_contas(user: dict = Depends(require("ai_router", "view"))):
     registro = _exigir_router(user)
-    try:
-        conexoes = {c["id"]: c for c in await router_client.list_connections(registro)}
-    except router_client.RouterError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-
     with get_connection() as conn:
         linhas = conn.execute(
             """SELECT * FROM tenant_ai_accounts
                 WHERE tenant_id = %s AND is_active ORDER BY created_at""",
             (user["tenant_id"],),
         ).fetchall()
+
+    if _modo_litellm(registro):
+        # Sem instância própria não há "conexão remota" pra checar saúde —
+        # a conta só existe cifrada aqui até um combo criar um deployment
+        # de verdade com ela (infra-04 seção 2d).
+        return [
+            {
+                "id": str(r["id"]),
+                "provider": r["provider"],
+                "provider_nome": (router_catalog.POR_ID.get(r["provider"], {})).get("nome")
+                or r["provider"],
+                "auth_type": r["auth_type"],
+                "label": r["label"],
+                "conectada": True,
+                "situacao": "armazenada",
+            }
+            for r in linhas
+        ]
+
+    try:
+        conexoes = {c["id"]: c for c in await router_client.list_connections(registro)}
+    except router_client.RouterError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
     def _saude(remota: dict | None) -> dict:
         """Estado real da conta, como a instância enxerga.
 
@@ -154,6 +189,21 @@ async def criar_conta(payload: ContaIn, user: dict = Depends(require("ai_router"
     instância do tenant (o consentimento tem que acontecer lá) e depois
     sincronizada por `POST /sincronizar`."""
     registro = _exigir_router(user)
+
+    if _modo_litellm(registro):
+        # Sem instância própria pra guardar a key: a plataforma guarda a
+        # credencial cifrada e só cria o deployment no LiteLLM quando um
+        # combo passar a usá-la (infra-04 seção 2d — decisão de adiar pra
+        # não inflar o catálogo com modelo que nenhum combo usa).
+        with get_connection() as conn:
+            linha = conn.execute(
+                """INSERT INTO tenant_ai_accounts
+                       (tenant_id, provider, auth_type, label, api_key_encrypted)
+                   VALUES (%s, %s, 'apikey', %s, %s) RETURNING *""",
+                (user["tenant_id"], payload.provider, payload.label, encrypt(payload.api_key)),
+            ).fetchone()
+        return {"id": str(linha["id"]), "provider": linha["provider"], "label": linha["label"]}
+
     try:
         conexao = await router_client.create_api_key_connection(
             registro, provider=payload.provider, api_key=payload.api_key, label=payload.label
@@ -219,10 +269,14 @@ async def remover_conta(conta_id: str, user: dict = Depends(require("ai_router",
         ).fetchone()
     if conta is None:
         raise HTTPException(status_code=404, detail="Conta não encontrada")
-    try:
-        await router_client.delete_connection(registro, conta["router_connection_id"])
-    except router_client.RouterError as exc:
-        logger.warning("conta removida da plataforma mas não da instância: %s", exc)
+    if not _modo_litellm(registro):
+        try:
+            await router_client.delete_connection(registro, conta["router_connection_id"])
+        except router_client.RouterError as exc:
+            logger.warning("conta removida da plataforma mas não da instância: %s", exc)
+    # Modo LiteLLM: não apaga deployment nenhum automaticamente (mesmo
+    # princípio de `provisionar_litellm.py.remover` — apagar de vez é ação
+    # deliberada separada, infra-04 seção 2d).
     with get_connection() as conn:
         conn.execute("DELETE FROM tenant_ai_accounts WHERE id = %s", (conta_id,))
     return {"status": "ok"}
@@ -497,6 +551,89 @@ def listar_combos(user: dict = Depends(require("ai_router", "view"))):
     ]
 
 
+async def _criar_combo_litellm(payload: ComboIn, user: dict, registro: dict, tenant: dict) -> dict:
+    """Um combo É o grupo de revezamento (infra-04 seção 2d, decisão final):
+    1 combo -> 1 `model_name` do LiteLLM, 1 deployment por modelo do combo,
+    usando a conta ativa do tenant pra aquele provider. O Router do LiteLLM
+    reveza entre os deployments do `model_name` na hora da chamada, mesmo
+    comportamento que o combo tinha no 9Router."""
+    nome_grupo = f"tenant_{_slug(tenant['tenant_key'])}_combo_{_slug(payload.name)}"
+    base_url, master_key = _config_litellm()
+
+    with get_connection() as conn:
+        contas = conn.execute(
+            """SELECT * FROM tenant_ai_accounts
+                WHERE tenant_id = %s AND is_active AND api_key_encrypted IS NOT NULL""",
+            (user["tenant_id"],),
+        ).fetchall()
+    conta_por_provider = {}
+    for conta in contas:
+        conta_por_provider.setdefault(conta["provider"], conta)
+
+    fora = []
+    para_criar = []
+    for modelo in payload.models:
+        provider = router_catalog.provedor_de_modelo(modelo)
+        conta = conta_por_provider.get(provider) if provider else None
+        if conta is None:
+            fora.append(modelo)
+        else:
+            para_criar.append((modelo, conta))
+    if fora:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Modelos não disponíveis nas contas desta empresa: {', '.join(fora)}",
+        )
+
+    try:
+        for modelo, conta in para_criar:
+            await litellm_client.create_deployment(
+                base_url,
+                master_key,
+                model_name=nome_grupo,
+                provider_model=modelo,
+                api_key=decrypt(conta["api_key_encrypted"]),
+                tenant_id=str(user["tenant_id"]),
+            )
+        await litellm_client.add_model_to_team(
+            base_url, master_key, team_id=registro["litellm_team_id"], model_name=nome_grupo
+        )
+    except litellm_client.LiteLLMError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    with get_connection() as conn:
+        servico = conn.execute(
+            """INSERT INTO ai_services (tenant_id, name, provider, model, api_base,
+                                        api_key_encrypted, is_active)
+               VALUES (%s, %s, 'openai-compatible', %s, %s, %s, TRUE) RETURNING *""",
+            (
+                user["tenant_id"],
+                f"Combo: {payload.name}",
+                nome_grupo,
+                f"{base_url.rstrip('/')}/v1",
+                registro["bridge_key_encrypted"],
+            ),
+        ).fetchone()
+        combo = conn.execute(
+            """INSERT INTO tenant_ai_combos
+                   (tenant_id, name, router_combo_name, models, ai_service_id)
+               VALUES (%s, %s, %s, %s, %s) RETURNING *""",
+            (
+                user["tenant_id"],
+                payload.name,
+                nome_grupo,
+                Json(payload.models),
+                servico["id"],
+            ),
+        ).fetchone()
+    return {
+        "id": str(combo["id"]),
+        "name": combo["name"],
+        "models": combo["models"],
+        "ai_service_id": str(servico["id"]),
+    }
+
+
 @router.post("/combos", status_code=201)
 async def criar_combo(payload: ComboIn, user: dict = Depends(require("ai_router", "create"))):
     """Cria o combo na instância do tenant e o publica como serviço de IA.
@@ -510,6 +647,10 @@ async def criar_combo(payload: ComboIn, user: dict = Depends(require("ai_router"
         tenant = conn.execute(
             "SELECT tenant_key FROM tenants WHERE id = %s", (user["tenant_id"],)
         ).fetchone()
+
+    if _modo_litellm(registro):
+        return await _criar_combo_litellm(payload, user, registro, tenant)
+
     nome_no_router = f"t_{_slug(tenant['tenant_key'])}_{_slug(payload.name)}"
 
     # Um combo só pode usar modelo que as contas do próprio tenant habilitam.
@@ -575,13 +716,18 @@ async def remover_combo(combo_id: str, user: dict = Depends(require("ai_router",
     if combo is None:
         raise HTTPException(status_code=404, detail="Combo não encontrado")
 
-    try:
-        remotos = await router_client.list_combos(registro)
-        alvo = next((c for c in remotos if c["name"] == combo["router_combo_name"]), None)
-        if alvo:
-            await router_client.delete_combo(registro, alvo["id"])
-    except router_client.RouterError as exc:
-        logger.warning("combo removido da plataforma mas não da instância: %s", exc)
+    if _modo_litellm(registro):
+        # Não apaga deployment nenhum automaticamente (mesmo princípio da
+        # remoção de conta acima — infra-04 seção 2d).
+        pass
+    else:
+        try:
+            remotos = await router_client.list_combos(registro)
+            alvo = next((c for c in remotos if c["name"] == combo["router_combo_name"]), None)
+            if alvo:
+                await router_client.delete_combo(registro, alvo["id"])
+        except router_client.RouterError as exc:
+            logger.warning("combo removido da plataforma mas não da instância: %s", exc)
 
     with get_connection() as conn:
         if combo["ai_service_id"]:

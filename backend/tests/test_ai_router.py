@@ -254,6 +254,145 @@ def test_combo_nao_aceita_modelo_fora_das_contas_da_empresa(client, master_token
     assert "não disponíveis" in r.json()["detail"]
 
 
+# --------------------------------------------------------------------------
+# Modo LiteLLM (infra-04 seção 2d) — conta sem instância própria, combo é
+# quem cria o deployment de verdade.
+# --------------------------------------------------------------------------
+
+from tests.test_litellm_client import MASTER_KEY as LITELLM_MASTER_KEY  # noqa: E402
+from tests.test_litellm_client import _fake_litellm  # noqa: E402
+
+
+def _com_litellm_ativo(monkeypatch, porta):
+    monkeypatch.setenv("LITELLM_BASE_URL", f"http://127.0.0.1:{porta}")
+    monkeypatch.setenv("LITELLM_MASTER_KEY", LITELLM_MASTER_KEY)
+
+
+def _time_real_no_fake_litellm(porta):
+    """`/instancias-litellm` só grava o que recebe, não cria Team nenhum (quem
+    cria é `provisionar_litellm.py`, separado) — os testes de combo precisam
+    de um `team_id` que exista de verdade no servidor de mentira, senão
+    `add_model_to_team` bate um 404 real de `/team/info`."""
+    import httpx
+
+    resposta = httpx.post(
+        f"http://127.0.0.1:{porta}/team/new",
+        json={"team_alias": "tenant-de-teste"},
+        headers={"Authorization": f"Bearer {LITELLM_MASTER_KEY}"},
+    )
+    return resposta.json()["team_id"]
+
+
+def test_conta_litellm_nao_chama_o_litellm_so_guarda_cifrada(
+    client, master_token, tenant_admin, monkeypatch
+):
+    """Achado central da seção 2d: conectar conta não provisiona nada no
+    LiteLLM ainda — só o combo, quando souber o modelo, cria o deployment."""
+    server, porta, estado = _fake_litellm()
+    try:
+        _com_litellm_ativo(monkeypatch, porta)
+        _registrar_litellm(client, master_token, tenant_admin["user"]["tenant_id"])
+        segredo = f"chave-{uuid.uuid4().hex}"
+        criada = client.post(
+            "/api/ai-router/contas",
+            json={"provider": "gemini", "api_key": segredo, "label": "Gemini do cliente"},
+            headers=auth(tenant_admin["token"]),
+        )
+        listagem = client.get("/api/ai-router/contas", headers=auth(tenant_admin["token"]))
+    finally:
+        server.should_exit = True
+
+    assert criada.status_code == 201, criada.text
+    assert segredo not in criada.text
+    assert segredo not in listagem.text
+    assert listagem.json()[0]["conectada"] is True
+    assert listagem.json()[0]["situacao"] == "armazenada"
+    assert estado["models"] == []  # nada criado no LiteLLM ainda
+
+
+def test_combo_litellm_cria_deployment_e_adiciona_no_team(
+    client, master_token, tenant_admin, monkeypatch
+):
+    server, porta, estado = _fake_litellm()
+    try:
+        _com_litellm_ativo(monkeypatch, porta)
+        team_id = _time_real_no_fake_litellm(porta)
+        _registrar_litellm(client, master_token, tenant_admin["user"]["tenant_id"], team_id=team_id)
+        client.post(
+            "/api/ai-router/contas",
+            json={"provider": "gemini", "api_key": "chave-gemini-real", "label": "Gemini"},
+            headers=auth(tenant_admin["token"]),
+        )
+        combo = client.post(
+            "/api/ai-router/combos",
+            json={"name": "Principal", "models": ["gemini/gemini-2.5-flash"]},
+            headers=auth(tenant_admin["token"]),
+        )
+    finally:
+        server.should_exit = True
+
+    assert combo.status_code == 201, combo.text
+    grupo = [m for m in estado["models"] if m["model_name"].endswith("_combo_principal")]
+    assert len(grupo) == 1
+    assert grupo[0]["litellm_params"]["model"] == "gemini/gemini-2.5-flash"
+    assert grupo[0]["litellm_params"]["api_key"] == "chave-gemini-real"
+    assert grupo[0]["model_name"] in estado["teams"][team_id]["models"]
+
+
+def test_combo_litellm_nao_aceita_modelo_sem_conta_correspondente(
+    client, master_token, tenant_admin, monkeypatch
+):
+    server, porta, _ = _fake_litellm()
+    try:
+        _com_litellm_ativo(monkeypatch, porta)
+        _registrar_litellm(client, master_token, tenant_admin["user"]["tenant_id"])
+        r = client.post(
+            "/api/ai-router/combos",
+            json={"name": "Sem conta", "models": ["gemini/gemini-2.5-flash"]},
+            headers=auth(tenant_admin["token"]),
+        )
+    finally:
+        server.should_exit = True
+    assert r.status_code == 400
+    assert "não disponíveis" in r.json()["detail"]
+
+
+def test_remover_conta_e_combo_litellm_nao_chama_o_litellm(
+    client, master_token, tenant_admin, monkeypatch
+):
+    """Remoção no modo LiteLLM só apaga do nosso banco — nunca apaga
+    deployment/Team, mesmo princípio já usado em `provisionar_litellm.py`."""
+    server, porta, estado = _fake_litellm()
+    try:
+        _com_litellm_ativo(monkeypatch, porta)
+        team_id = _time_real_no_fake_litellm(porta)
+        _registrar_litellm(client, master_token, tenant_admin["user"]["tenant_id"], team_id=team_id)
+        conta = client.post(
+            "/api/ai-router/contas",
+            json={"provider": "gemini", "api_key": "k", "label": "Gemini"},
+            headers=auth(tenant_admin["token"]),
+        ).json()
+        combo = client.post(
+            "/api/ai-router/combos",
+            json={"name": "Principal", "models": ["gemini/gemini-2.5-flash"]},
+            headers=auth(tenant_admin["token"]),
+        ).json()
+        n_models_antes = len(estado["models"])
+
+        removeu_conta = client.delete(
+            f"/api/ai-router/contas/{conta['id']}", headers=auth(tenant_admin["token"])
+        )
+        removeu_combo = client.delete(
+            f"/api/ai-router/combos/{combo['id']}", headers=auth(tenant_admin["token"])
+        )
+    finally:
+        server.should_exit = True
+
+    assert removeu_conta.status_code == 200
+    assert removeu_combo.status_code == 200
+    assert len(estado["models"]) == n_models_antes  # nada apagado do lado do LiteLLM
+
+
 def test_uma_empresa_nao_alcanca_a_instancia_da_outra(client, master_token, tenant_admin):
     """O ponto que decidiu a arquitetura: a instância vem do tenant da sessão."""
     server, porta, _ = _fake_router()
