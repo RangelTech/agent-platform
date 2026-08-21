@@ -96,7 +96,7 @@ export interface User {
 }
 
 export const login = (email: string, password: string) =>
-  api<{ token: string }>('/auth/login', {
+  api<{ token: string; chatwoot_sso_url: string | null }>('/auth/login', {
     method: 'POST',
     body: JSON.stringify({ email, password }),
   })

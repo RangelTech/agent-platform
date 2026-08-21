@@ -35,9 +35,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   async function signIn(email: string, password: string) {
-    const { token } = await apiLogin(email, password)
+    const { token, chatwoot_sso_url } = await apiLogin(email, password)
     setToken(token)
     setUser(await fetchMe())
+    // Sessão sincronizada RAgentes<->RAtende (produto-05 seção 6c): o
+    // RAtende manda `X-Frame-Options: DENY` (proteção de clickjacking do
+    // próprio login dele, não é bug) — iframe oculto não carrega, o
+    // navegador recusa. Alternativa sem mexer nesse header: popup pequena
+    // que se auto-fecha. Fica visível por ~1s (flash de janela), é o preço
+    // de não enfraquecer a proteção de clickjacking do RAtende só por
+    // conveniência — trade-off pra revisar com o dono se quiser algo mais
+    // discreto no futuro (ex. relaxar frame-ancestors só nessa rota).
+    if (chatwoot_sso_url) stampChatwootSession(chatwoot_sso_url)
+  }
+
+  function stampChatwootSession(url: string) {
+    const popup = window.open(url, 'ratende-sso-stamp', 'width=1,height=1,left=-1000,top=-1000')
+    if (!popup) return // bloqueado pelo navegador -- sem sync automático desta vez, sem quebrar o login
+    setTimeout(() => {
+      try {
+        popup.close()
+      } catch {
+        // já fechada ou cross-origin recusou -- sem problema, é best-effort
+      }
+    }, 3000)
   }
 
   async function signOut() {

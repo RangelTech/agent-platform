@@ -47,6 +47,34 @@ def test_logout_revokes_the_session(client, master_token):
     assert client.get("/api/auth/me", headers=auth(master_token)).status_code == 401
 
 
+def test_login_response_has_no_chatwoot_sso_url_when_the_bridge_is_not_configured(
+    client, tenant_admin
+):
+    # Sessão sincronizada RAgentes<->RAtende (produto-05 seção 6c): sem
+    # BRIDGE_URL/BRIDGE_ADMIN_TOKEN configurados (padrão de teste), o campo
+    # fica None em vez de a chamada de login quebrar.
+    r = client.post(
+        "/api/auth/login",
+        json={"email": tenant_admin["email"], "password": "senha-forte-123"},
+    )
+    assert r.status_code == 200
+    assert r.json()["chatwoot_sso_url"] is None
+
+
+def test_master_login_never_gets_a_chatwoot_sso_url(client):
+    r = client.post(
+        "/api/auth/login",
+        json={"email": settings.master_email, "password": settings.master_password},
+    )
+    assert r.status_code == 200
+    assert r.json()["chatwoot_sso_url"] is None
+
+
+def test_logout_does_not_fail_when_the_bridge_is_not_configured(client, tenant_admin):
+    r = client.post("/api/auth/logout", headers=auth(tenant_admin["token"]))
+    assert r.status_code == 200
+
+
 def _age_session(token: str, *, expires_at=None, last_activity_at=None):
     sets, values = [], []
     if expires_at is not None:

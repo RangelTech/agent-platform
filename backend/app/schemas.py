@@ -8,6 +8,10 @@ class LoginRequest(BaseModel):
 
 class LoginResponse(BaseModel):
     token: str
+    # Sessão sincronizada RAgentes<->RAtende (produto-05 seção 6c): link de
+    # SSO de uso único pro frontend estampar a sessão do RAtende num iframe
+    # oculto. None quando não há tenant/RAtende configurado (ex. master).
+    chatwoot_sso_url: str | None = None
 
 
 class TenantIn(BaseModel):
