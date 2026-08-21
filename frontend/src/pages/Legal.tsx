@@ -72,7 +72,7 @@ function Privacidade({ lang }: { lang: Lang }) {
           </p>
         </Section>
         <Section title="Connected channels">
-          <p>Instagram (Business Login), Facebook Messenger, and WhatsApp Cloud API (Embedded Signup).</p>
+          <p>Instagram (Business Login), Facebook Messenger, WhatsApp Cloud API (Embedded Signup), and TikTok (when enabled for a client).</p>
         </Section>
         <Section title="How messages are used">
           <p>
@@ -99,7 +99,8 @@ function Privacidade({ lang }: { lang: Lang }) {
         <Section title="Sharing">
           <p>
             We do not sell or share end-customer data with third parties, except: (a) the messaging
-            provider itself (Meta), as required to deliver/receive the message; (b) the AI provider
+            provider itself (Meta or TikTok, depending on the connected channel), as required to
+            deliver/receive the message; (b) the AI provider
             configured by the client (e.g. an LLM API) strictly to generate a reply, under that provider's
             own data-processing terms; (c) when required by law.
           </p>
@@ -157,7 +158,7 @@ function Privacidade({ lang }: { lang: Lang }) {
         </p>
       </Section>
       <Section title="Canais integrados">
-        <p>Instagram (Business Login), Facebook Messenger e WhatsApp Cloud API (Embedded Signup).</p>
+        <p>Instagram (Business Login), Facebook Messenger, WhatsApp Cloud API (Embedded Signup) e TikTok (quando habilitado para um cliente).</p>
       </Section>
       <Section title="Uso das mensagens">
         <p>
@@ -185,7 +186,8 @@ function Privacidade({ lang }: { lang: Lang }) {
       <Section title="Compartilhamento">
         <p>
           Não vendemos nem compartilhamos dados do cliente final com terceiros, exceto: (a) o próprio
-          provedor de mensageria (Meta), na medida necessária para entregar/receber a mensagem; (b) o
+          provedor de mensageria (Meta ou TikTok, dependendo do canal conectado), na medida necessária
+          para entregar/receber a mensagem; (b) o
           provedor de IA configurado pelo cliente (ex.: uma API de LLM), estritamente para gerar a
           resposta, sob os próprios termos de tratamento de dados desse provedor; (c) quando exigido por
           lei.
