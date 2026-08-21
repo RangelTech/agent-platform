@@ -6,9 +6,9 @@ import { api, ApiError } from '../lib/api'
 /**
  * Contas de IA da empresa e os combos que revezam entre elas.
  *
- * Cada empresa tem uma instância de roteamento própria — é isso que garante
- * que a conta de um cliente nunca atenda a chamada de outro. O cliente não vê
- * essa instância: ele vê contas e combos.
+ * Cada empresa é isolada por Team no roteador de IA (LiteLLM) — é isso que
+ * garante que a conta de um cliente nunca atenda a chamada de outro. O
+ * cliente não vê o roteador em si: ele vê contas e combos.
  *
  * Duas coisas explicam o formato da tela:
  *
@@ -81,7 +81,8 @@ const SITUACAO: Record<string, { texto: string; ok: boolean }> = {
   active: { texto: 'Ativa', ok: true },
   unknown: { texto: 'Sem uso ainda', ok: true },
   unavailable: { texto: 'Indisponível', ok: false },
-  ausente: { texto: 'Pendente na instância', ok: false },
+  ausente: { texto: 'Pendente no roteador', ok: false },
+  armazenada: { texto: 'Conectada', ok: true },
 }
 
 export function ContasIA() {
@@ -92,7 +93,7 @@ export function ContasIA() {
   const { data: status, isLoading } = useQuery({
     queryKey: ['ai-router-status'],
     queryFn: () => api<StatusRouter>('/ai-router/status'),
-    // Enquanto a instância está sendo provisionada em background, a tela se
+    // Enquanto a conexão está sendo feita em background, a tela se
     // atualiza sozinha em vez de exigir um F5 manual do admin.
     refetchInterval: (query) =>
       query.state.data?.provisionamento === 'provisioning' ? 5000 : false,
@@ -156,21 +157,21 @@ export function ContasIA() {
     const etapa = status?.provisionamento ?? 'pending'
     const textos: Record<string, { title: string; description: string }> = {
       provisioning: {
-        title: 'Provisionando sua instância de IA…',
+        title: 'Conectando sua empresa ao roteador de IA…',
         description:
-          'Isso leva alguns minutos (criação do serviço e emissão do certificado). Volte a esta tela em instantes — ela atualiza sozinha.',
+          'Isso leva só alguns instantes. Volte a esta tela em breve — ela atualiza sozinha.',
       },
       failed: {
-        title: 'Não foi possível provisionar a instância de IA',
+        title: 'Não foi possível conectar sua empresa ao roteador de IA',
         description:
           status?.provisionamento_erro
             ? `Peça ao administrador da plataforma para tentar novamente. Detalhe: ${status.provisionamento_erro.slice(0, 200)}`
             : 'Peça ao administrador da plataforma para tentar novamente.',
       },
       pending: {
-        title: 'Instância de IA ainda não provisionada',
+        title: 'Sua empresa ainda não está conectada ao roteador de IA',
         description:
-          'Cada empresa atende com as próprias contas, numa instância dedicada. Peça ao administrador da plataforma para provisionar a desta empresa.',
+          'Cada empresa atende com as próprias contas, isoladas das demais. Peça ao administrador da plataforma para conectar esta empresa.',
       },
     }
     const { title, description } = textos[etapa] ?? textos.pending
