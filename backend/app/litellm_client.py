@@ -84,7 +84,9 @@ async def create_team(base_url: str, master_key: str, *, team_alias: str) -> dic
     )
 
 
-async def add_model_to_team(base_url: str, master_key: str, *, team_id: str, model_name: str) -> dict:
+async def add_model_to_team(
+    base_url: str, master_key: str, *, team_id: str, model_name: str
+) -> dict:
     """Autoriza o Team a enxergar mais um `model_name` (ex.: um combo novo).
 
     Idempotente na prática: se `model_name` já estiver na lista, o LiteLLM

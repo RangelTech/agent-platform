@@ -51,7 +51,11 @@ def _fake_litellm():
         _auth(request)
         corpo = await request.json()
         team_id = str(uuid.uuid4())
-        estado["teams"][team_id] = {"team_id": team_id, "team_alias": corpo.get("team_alias"), "models": []}
+        estado["teams"][team_id] = {
+            "team_id": team_id,
+            "team_alias": corpo.get("team_alias"),
+            "models": [],
+        }
         return {"team_id": team_id, "team_alias": corpo.get("team_alias")}
 
     @app.get("/team/info")
@@ -113,9 +117,15 @@ def _fake_litellm():
         if modelos_pedidos is not None:
             for model_name in modelos_pedidos:
                 if model_name not in team["models"]:
-                    raise HTTPException(status_code=403, detail=f"team não tem acesso a {model_name}")
+                    raise HTTPException(
+                        status_code=403, detail=f"team não tem acesso a {model_name}"
+                    )
         key = f"sk-{uuid.uuid4().hex}"
-        estado["keys"][key] = {"team_id": corpo["team_id"], "models": modelos_pedidos, "alias": corpo.get("key_alias")}
+        estado["keys"][key] = {
+            "team_id": corpo["team_id"],
+            "models": modelos_pedidos,
+            "alias": corpo.get("key_alias"),
+        }
         return {"key": key, "key_alias": corpo.get("key_alias")}
 
     @app.post("/key/delete")
@@ -160,14 +170,20 @@ async def test_master_key_errada_falha_explicito(litellm):
 async def test_deployment_so_aparece_pro_model_name_certo(litellm):
     base_url, _ = litellm
     await create_deployment(
-        base_url, MASTER_KEY,
-        model_name="tenant-x-gemini", provider_model="gemini/gemini-flash-latest",
-        api_key="AIza-fake", tenant_id="tenant-x",
+        base_url,
+        MASTER_KEY,
+        model_name="tenant-x-gemini",
+        provider_model="gemini/gemini-flash-latest",
+        api_key="AIza-fake",
+        tenant_id="tenant-x",
     )
     await create_deployment(
-        base_url, MASTER_KEY,
-        model_name="tenant-y-gemini", provider_model="gemini/gemini-flash-latest",
-        api_key="AIza-fake-2", tenant_id="tenant-y",
+        base_url,
+        MASTER_KEY,
+        model_name="tenant-y-gemini",
+        provider_model="gemini/gemini-flash-latest",
+        api_key="AIza-fake-2",
+        tenant_id="tenant-y",
     )
     deployments_x = await list_deployments(base_url, MASTER_KEY, model_name="tenant-x-gemini")
     assert len(deployments_x) == 1
@@ -194,7 +210,13 @@ async def test_key_generate_falha_se_team_nao_tem_acesso_ao_model(litellm):
     base_url, _ = litellm
     team = await create_team(base_url, MASTER_KEY, team_alias="tenant-x")
     with pytest.raises(LiteLLMError):
-        await generate_key(base_url, MASTER_KEY, team_id=team["team_id"], model_name="tenant-y-gemini", key_alias="vazamento")
+        await generate_key(
+            base_url,
+            MASTER_KEY,
+            team_id=team["team_id"],
+            model_name="tenant-y-gemini",
+            key_alias="vazamento",
+        )
 
 
 @pytest.mark.asyncio
@@ -205,8 +227,12 @@ async def test_gera_key_no_provisionamento_antes_de_ter_qualquer_model(litellm):
     que o Team for ganhando depois via `add_model_to_team`."""
     base_url, _ = litellm
     team = await create_team(base_url, MASTER_KEY, team_alias="tenant-novo")
-    bridge_key = await generate_key(base_url, MASTER_KEY, team_id=team["team_id"], key_alias="bridge")
-    ai_assist_key = await generate_key(base_url, MASTER_KEY, team_id=team["team_id"], key_alias="ai-assist")
+    bridge_key = await generate_key(
+        base_url, MASTER_KEY, team_id=team["team_id"], key_alias="bridge"
+    )
+    ai_assist_key = await generate_key(
+        base_url, MASTER_KEY, team_id=team["team_id"], key_alias="ai-assist"
+    )
     assert bridge_key.startswith("sk-")
     assert ai_assist_key.startswith("sk-")
     assert bridge_key != ai_assist_key
@@ -220,12 +246,17 @@ async def test_ciclo_completo_team_deployment_key(litellm):
     model_name = "tenant-x-gemini"
 
     await create_deployment(
-        base_url, MASTER_KEY,
-        model_name=model_name, provider_model="gemini/gemini-flash-latest",
-        api_key="AIza-fake", tenant_id="tenant-x",
+        base_url,
+        MASTER_KEY,
+        model_name=model_name,
+        provider_model="gemini/gemini-flash-latest",
+        api_key="AIza-fake",
+        tenant_id="tenant-x",
     )
     await add_model_to_team(base_url, MASTER_KEY, team_id=team_id, model_name=model_name)
-    key = await generate_key(base_url, MASTER_KEY, team_id=team_id, model_name=model_name, key_alias="bridge")
+    key = await generate_key(
+        base_url, MASTER_KEY, team_id=team_id, model_name=model_name, key_alias="bridge"
+    )
 
     assert key.startswith("sk-")
 
@@ -235,9 +266,12 @@ async def test_delete_deployment_e_delete_team(litellm):
     base_url, estado = litellm
     team = await create_team(base_url, MASTER_KEY, team_alias="tenant-x")
     dep = await create_deployment(
-        base_url, MASTER_KEY,
-        model_name="tenant-x-gemini", provider_model="gemini/gemini-flash-latest",
-        api_key="AIza-fake", tenant_id="tenant-x",
+        base_url,
+        MASTER_KEY,
+        model_name="tenant-x-gemini",
+        provider_model="gemini/gemini-flash-latest",
+        api_key="AIza-fake",
+        tenant_id="tenant-x",
     )
     await delete_deployment(base_url, MASTER_KEY, deployment_id=dep["model_info"]["id"])
     assert estado["models"] == []
@@ -250,8 +284,16 @@ async def test_delete_deployment_e_delete_team(litellm):
 async def test_delete_key(litellm):
     base_url, estado = litellm
     team = await create_team(base_url, MASTER_KEY, team_alias="tenant-x")
-    await add_model_to_team(base_url, MASTER_KEY, team_id=team["team_id"], model_name="tenant-x-gemini")
-    key = await generate_key(base_url, MASTER_KEY, team_id=team["team_id"], model_name="tenant-x-gemini", key_alias="bridge")
+    await add_model_to_team(
+        base_url, MASTER_KEY, team_id=team["team_id"], model_name="tenant-x-gemini"
+    )
+    key = await generate_key(
+        base_url,
+        MASTER_KEY,
+        team_id=team["team_id"],
+        model_name="tenant-x-gemini",
+        key_alias="bridge",
+    )
     await delete_key(base_url, MASTER_KEY, key=key)
     assert key not in estado["keys"]
 

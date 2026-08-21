@@ -134,7 +134,15 @@ def test_somente_o_master_registra_instancia(client, tenant_admin):
     assert r.status_code == 403
 
 
-def _registrar_litellm(client, master_token, tenant_id, *, team_id="team-x", bridge="sk-bridge", ai_assist="sk-ai-assist"):
+def _registrar_litellm(
+    client,
+    master_token,
+    tenant_id,
+    *,
+    team_id="team-x",
+    bridge="sk-bridge",
+    ai_assist="sk-ai-assist",
+):
     return client.put(
         "/api/ai-router/instancias-litellm",
         json={
@@ -167,7 +175,13 @@ def test_registra_instancia_litellm_e_status_reflete(client, master_token, tenan
 
 
 def test_as_2_keys_do_tenant_litellm_nunca_voltam_na_api(client, master_token, tenant_admin):
-    r = _registrar_litellm(client, master_token, tenant_admin["user"]["tenant_id"], bridge="chave-bridge-secreta", ai_assist="chave-ai-assist-secreta")
+    r = _registrar_litellm(
+        client,
+        master_token,
+        tenant_admin["user"]["tenant_id"],
+        bridge="chave-bridge-secreta",
+        ai_assist="chave-ai-assist-secreta",
+    )
     assert "chave-bridge-secreta" not in r.text
     assert "chave-ai-assist-secreta" not in r.text
 
