@@ -195,9 +195,8 @@ async def _run_to_completion(kernel_payload: dict) -> tuple[str, list[dict]]:
     `artifact` events — before this, `/v1/messages` (sync/webhook modes) threw
     them away and only kept the `done` text. That is the reason artifacts
     like the PIX QR code never reached channels that go through this
-    machine-to-machine API (Chatwoot/WhatsApp via the bridge), while they
-    worked fine on the web chat (which talks to the kernel's own SSE stream
-    directly, not through here).
+    machine-to-machine API, while they worked fine on the web chat (which
+    talks to the kernel's own SSE stream directly, not through here).
     """
     reply = ""
     artifacts: list[dict] = []

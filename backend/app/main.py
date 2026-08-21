@@ -29,7 +29,6 @@ from app.routes import tenants as tenant_routes
 from app.routes import toolkits as toolkit_routes
 from app.routes import usage as usage_routes
 from app.routes import users as user_routes
-from app.routes import whatsapp as whatsapp_routes
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -148,7 +147,6 @@ app.include_router(public_routes.router)
 app.include_router(toolkit_routes.router)
 app.include_router(payment_routes.router)
 app.include_router(mcp_store_routes.router)
-app.include_router(whatsapp_routes.router)
 app.include_router(omnichannel_routes.router)
 app.include_router(ai_router_routes.router)
 app.include_router(installation_secret_routes.router)

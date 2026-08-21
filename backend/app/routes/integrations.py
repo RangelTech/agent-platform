@@ -18,8 +18,7 @@ router = APIRouter(prefix="/api/integrations", tags=["integrations"])
 
 class IntegrationIn(BaseModel):
     name: str = Field(min_length=1, max_length=100)
-    # 'api' = máquina-a-máquina; 'whatsapp' = canal servido pela W-API.
-    channel: str = Field(default="api", pattern="^(api|whatsapp)$")
+    channel: str = Field(default="api", pattern="^(api)$")
     template_id: str | None = None
     webhook_url: str | None = None
     rate_limit_per_minute: int = Field(default=60, ge=1, le=6000)
