@@ -72,3 +72,13 @@ def test_runner_wrapper_blocks_metadata_network_destination():
     )
     assert result.returncode != 0
     assert "bloqueado" in result.stderr
+
+
+def test_runner_wrapper_blocks_ipv4_mapped_metadata_over_ipv6():
+    """Mapped IPv6 must not become an alternate path to Cloud Run metadata."""
+    result = _run(
+        "import requests\ndef main(inputs, context):\n"
+        "    return {'status': requests.get('http://[::ffff:169.254.169.254]').status_code}"
+    )
+    assert result.returncode != 0
+    assert "bloqueado" in result.stderr

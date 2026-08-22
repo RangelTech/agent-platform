@@ -83,7 +83,9 @@ import sys
 
 BLOCKED_NETS = tuple(ipaddress.ip_network(value) for value in (
     "127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
-    "169.254.0.0/16", "::1/128", "fe80::/10",
+    "169.254.0.0/16", "::1/128", "fe80::/10", "fc00::/7",
+    # IPv4-mapped IPv6 can otherwise bypass the IPv4 metadata/private ranges.
+    "::ffff:0:0/96",
 ))
 _connect = socket.socket.connect
 _create_connection = socket.create_connection
