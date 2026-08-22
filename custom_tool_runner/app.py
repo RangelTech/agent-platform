@@ -9,6 +9,7 @@ import asyncio
 import hashlib
 import json
 import os
+import signal
 import subprocess
 import sys
 import tempfile
@@ -198,6 +199,8 @@ def _run_python(
         resource.setrlimit(resource.RLIMIT_CPU, (timeout, timeout + 1))
         resource.setrlimit(resource.RLIMIT_AS, (32 * 1024**3, 32 * 1024**3))
 
+    # Keep the directory alive until an optional artifact has been uploaded.
+    # TemporaryDirectory cleans it at function exit, including error returns.
     temp_holder = tempfile.TemporaryDirectory(prefix="custom-tool-")
     with nullcontext(temp_holder.name) as temp:
         payload_path = Path(temp) / "payload.json"
@@ -212,18 +215,27 @@ def _run_python(
                 # service account or runner credential can leak into code.
                 "CUSTOM_TOOL_SECRETS_JSON": json.dumps(secrets),
             }
-            process = subprocess.run(
+            process = subprocess.Popen(
                 [sys.executable, "-I", str(wrapper_path), str(payload_path)],
                 cwd=temp,
                 env=child_env,
                 stdin=subprocess.DEVNULL,
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                timeout=timeout,
                 start_new_session=True,
                 preexec_fn=limits if os.name == "posix" else None,
             )
+            stdout, stderr = process.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
+            if os.name == "posix":
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            else:
+                process.kill()
+            process.communicate()
             return {
                 "success": False,
                 "data": None,
@@ -235,11 +247,11 @@ def _run_python(
             "data": None,
             "error": {
                 "code": "execution_error",
-                "message": process.stderr[-1000:] or "Falha ao executar ferramenta",
+                "message": stderr[-1000:] or "Falha ao executar ferramenta",
             },
         }
     try:
-        result = json.loads(process.stdout)
+        result = json.loads(stdout)
     except json.JSONDecodeError:
         return {
             "success": False,

@@ -8,23 +8,12 @@ from psycopg.types.json import Json
 from app.config import settings
 from app.db import get_connection
 from app.permissions import has_permission
+from app.guide_catalog import ragentes_guide
 
 router = APIRouter(prefix="/api/internal/tenant-guide", tags=["tenant-guide"])
 _AGENT = re.compile(r"^[a-z][a-z0-9_]{1,60}$")
 _CONFIRMATION = re.compile(r"\b(confirmo|confirmar|pode criar|sim,? pode|aprovo)\b", re.I)
-GUIDE = {
-    "version": "1",
-    "links": {
-        "templates": "/templates",
-        "ai_services": "/servicos-ia",
-        "datasources": "/fontes-de-dados",
-        "files": "/arquivos",
-        "custom_tools": "/custom-tools",
-        "integrations": "/integracoes",
-        "atendimento": "/atendimento",
-    },
-    "summary": "Templates combinam supervisor, especialistas, modelos e tools.",
-}
+GUIDE = ragentes_guide()
 
 
 def _internal(request: Request) -> None:

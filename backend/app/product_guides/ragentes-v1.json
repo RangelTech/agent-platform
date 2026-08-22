@@ -1,0 +1,43 @@
+{
+  "product": "RAgentes",
+  "version": "1.0.0",
+  "compatibility": {"min_platform_version": "1", "rollback_supported": true},
+  "links": {
+    "inicio": "/dashboard",
+    "templates": "/templates",
+    "ai_services": "/servicos-ia",
+    "datasources": "/fontes-de-dados",
+    "files": "/arquivos",
+    "custom_tools": "/custom-tools",
+    "integrations": "/integracoes",
+    "atendimento": "/atendimento",
+    "users": "/usuarios"
+  },
+  "sections": [
+    {
+      "id": "templates",
+      "title": "Templates e agentes",
+      "summary": "Um template combina um supervisor, especialistas, modelos e tools. O supervisor coordena o trabalho e os especialistas executam tarefas delimitadas."
+    },
+    {
+      "id": "data-and-secrets",
+      "title": "Dados e segurança",
+      "summary": "Fontes de dados, arquivos/RAG e secrets pertencem ao tenant. Secrets são gravados criptografados e não são exibidos novamente. Escritas exigem a permissão e a confirmação previstas no template."
+    },
+    {
+      "id": "custom-tools",
+      "title": "Custom Tools",
+      "summary": "Custom Tools executam Python isolado por tenant e podem ser vinculadas aos agentes no editor de templates. Teste a ferramenta antes de habilitá-la."
+    },
+    {
+      "id": "ratende",
+      "title": "RAtende",
+      "summary": "O RAtende centraliza canais e inboxes. O guia mostra somente o status permitido do tenant, sem expor tokens, conversas ou dados de outros clientes."
+    },
+    {
+      "id": "next-steps",
+      "title": "Próximos passos",
+      "summary": "Conecte um serviço de IA, configure fontes ou arquivos quando necessário e monte uma prévia antes de criar um novo template."
+    }
+  ]
+}

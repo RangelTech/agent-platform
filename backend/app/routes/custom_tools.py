@@ -27,7 +27,9 @@ class ToolIn(BaseModel):
     description: str = Field(min_length=1, max_length=2000)
     input_schema: dict = Field(default_factory=dict)
     python_code: str = Field(min_length=1, max_length=200_000)
-    secrets: dict[str, str] = Field(default_factory=dict)
+    # ``None`` preserves the existing map during PUT. An explicit empty
+    # object clears it, so a tenant can revoke saved tool credentials.
+    secrets: dict[str, str] | None = None
     timeout_seconds: int = Field(default=60, ge=1, le=3600)
     enabled: bool = True
 
@@ -137,7 +139,9 @@ def update_tool(tool_id: str, payload: ToolIn, user: dict = Depends(require("tem
     with get_connection() as conn:
         old = _owned(conn, tool_id, user["tenant_id"])
         encrypted = (
-            encrypt(json.dumps(payload.secrets)) if payload.secrets else old["secrets_encrypted"]
+            old["secrets_encrypted"]
+            if payload.secrets is None
+            else encrypt(json.dumps(payload.secrets)) if payload.secrets else None
         )
         row = conn.execute(
             """UPDATE custom_tools

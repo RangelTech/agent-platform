@@ -3,6 +3,7 @@
 from psycopg.types.json import Json
 
 from app.db import get_connection
+from app.guide_catalog import ragentes_guide
 
 SYSTEM_KEY = "assistente-ragentes"
 TEMPLATE_NAME = "Assistente RAgentes"
@@ -37,7 +38,11 @@ def ensure_for_tenant(conn, tenant_id) -> str:
         """INSERT INTO template_versions
            (template_id, version_number, supervisor_prompt, max_steps, notes)
            VALUES (%s, 1, %s, 6, %s) RETURNING id""",
-        (template["id"], SUPERVISOR_PROMPT, "Sistema Rangel Tech: onboarding v1"),
+        (
+            template["id"],
+            SUPERVISOR_PROMPT,
+            f"Sistema Rangel Tech: onboarding guia v{ragentes_guide()['version']}",
+        ),
     ).fetchone()
     conn.execute(
         """INSERT INTO template_agents

@@ -68,3 +68,26 @@ def test_guide_plan_is_tenant_scoped_and_audited(client, tenant_admin):
         settings.kernel_internal_token = old_token
     assert response.status_code == 200, response.text
     assert response.json()["requires_explicit_confirmation"] is True
+
+
+def test_platform_guide_is_a_versioned_structured_package(client, tenant_admin):
+    chat = client.post("/api/chats/ragentes-guide", headers=auth(tenant_admin["token"])).json()
+    old_token = settings.kernel_internal_token
+    settings.kernel_internal_token = "test-guide-token"
+    try:
+        response = client.post(
+            "/api/internal/tenant-guide/platform-guide",
+            headers={"Authorization": "Bearer test-guide-token"},
+            json={
+                "tenant_id": tenant_admin["user"]["tenant_id"],
+                "user_id": tenant_admin["user"]["id"],
+                "chat_id": chat["id"],
+            },
+        )
+    finally:
+        settings.kernel_internal_token = old_token
+    assert response.status_code == 200, response.text
+    guide = response.json()
+    assert guide["version"] == "1.0.0"
+    assert guide["compatibility"]["rollback_supported"] is True
+    assert any(section["id"] == "custom-tools" for section in guide["sections"])
