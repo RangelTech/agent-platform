@@ -86,7 +86,13 @@ def open_ragentes_guide(user: dict = Depends(current_user)):
                VALUES (%s, %s, %s, 'open')""",
             (user["tenant_id"], user["id"], chat["id"]),
         )
-    return _serialize_chat(chat)
+        ai_ready = conn.execute(
+            """SELECT EXISTS(
+                   SELECT 1 FROM ai_services WHERE tenant_id=%s AND NOT is_deleted
+               ) AS ready""",
+            (user["tenant_id"],),
+        ).fetchone()["ready"]
+    return {**_serialize_chat(chat), "ai_ready": ai_ready}
 
 
 @router.get("/chats/{chat_id}/messages")

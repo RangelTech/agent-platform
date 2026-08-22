@@ -37,6 +37,7 @@ def test_open_guide_creates_only_the_callers_tenant_chat(client, tenant_admin):
     opened = response.json()
     assert opened["title"] == "Assistente RAgentes"
     assert opened["template_id"]
+    assert opened["ai_ready"] is False
     second = client.post("/api/chats/ragentes-guide", headers=auth(tenant_admin["token"]))
     assert second.status_code == 200
     assert second.json()["id"] == opened["id"]

@@ -1,11 +1,12 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { ArtifactCard, downloadArtifact, type ArtifactRef } from '../components/ArtifactCard'
 import { MarkdownMessage } from '../components/MarkdownMessage'
 import { Button } from '../components/ui'
 import { api } from '../lib/api'
+import { useAuth } from '../lib/auth'
 import { sendMessage, type ChatMessage, type ChatSummary } from '../lib/chat'
 import { fadeUp } from '../lib/motion'
 import { listTemplates } from '../lib/templates'
@@ -47,6 +48,8 @@ function metricLabel(total: number, singular: string, plural: string) {
 
 export default function Chat() {
   const location = useLocation()
+  const navigate = useNavigate()
+  const { can } = useAuth()
   const qc = useQueryClient()
   const { data: chats = [] } = useChats()
   const { data: templates = [] } = useQuery({
@@ -98,7 +101,15 @@ export default function Chat() {
 
   async function openRagentesGuide() {
     try {
-      const chat = await api<ChatSummary>('/chats/ragentes-guide', { method: 'POST' })
+      const chat = await api<ChatSummary & { ai_ready?: boolean }>('/chats/ragentes-guide', { method: 'POST' })
+      if (chat.ai_ready === false) {
+        if (can('ai_services', 'edit')) {
+          setError('Conecte um serviço de IA antes da primeira conversa com o Assistente RAgentes.')
+          navigate('/servicos-ia')
+          return
+        }
+        setError('Este tenant ainda não tem serviço de IA. Peça a um administrador para configurá-lo.')
+      }
       setTemplateId(chat.template_id ?? '')
       setActiveChat(chat.id)
       setDraft('Olá! Quero entender como configurar meu ambiente.')
