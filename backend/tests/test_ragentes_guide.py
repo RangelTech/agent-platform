@@ -200,3 +200,65 @@ def test_guide_plan_requires_confirmation_after_the_preview(client, tenant_admin
     finally:
         settings.kernel_internal_token = old_token
     assert denied.status_code == 409
+
+
+def test_guide_rejects_a_forged_cross_tenant_chat_and_audits_the_attempt(
+    client, tenant_admin, tenant, master_token
+):
+    """The internal token cannot turn a foreign guide chat into our context."""
+    other_tenant = client.post(
+        "/api/tenants",
+        json={"name": "Outra empresa", "tenant_key": "outra-empresa"},
+        headers=auth(master_token),
+    ).json()
+    profiles = client.get("/api/user-profiles", headers=auth(master_token)).json()
+    profile = next(
+        item
+        for item in profiles
+        if item["tenant_id"] == other_tenant["id"] and item["name"] == "Administrador"
+    )
+    created_user = client.post(
+        "/api/users",
+        json={
+                "email": "outra-admin@empresa.com",
+            "name": "Outra Admin",
+            "password": "senha-forte-123",
+            "profile_id": profile["id"],
+            "tenant_id": other_tenant["id"],
+        },
+        headers=auth(master_token),
+    )
+    assert created_user.status_code == 201, created_user.text
+    login = client.post(
+        "/api/auth/login",
+        json={"email": "outra-admin@empresa.com", "password": "senha-forte-123"},
+    )
+    assert login.status_code == 200, login.text
+    other_token = login.json()["token"]
+    foreign_chat = client.post("/api/chats/ragentes-guide", headers=auth(other_token)).json()
+    own_chat = client.post("/api/chats/ragentes-guide", headers=auth(tenant_admin["token"])).json()
+
+    old_token = settings.kernel_internal_token
+    settings.kernel_internal_token = "test-guide-token"
+    try:
+        denied = client.post(
+            "/api/internal/tenant-guide/overview",
+            headers={"Authorization": "Bearer test-guide-token"},
+            json={
+                "tenant_id": tenant["id"],
+                "user_id": tenant_admin["user"]["id"],
+                "chat_id": foreign_chat["id"],
+            },
+        )
+    finally:
+        settings.kernel_internal_token = old_token
+    assert denied.status_code == 403
+    with get_connection() as conn:
+        denied_audit = conn.execute(
+            """SELECT action, error_message FROM tenant_guide_audit
+                 WHERE tenant_id=%s AND user_id=%s ORDER BY created_at DESC LIMIT 1""",
+            (tenant["id"], tenant_admin["user"]["id"]),
+        ).fetchone()
+    assert denied_audit["action"] == "context_denied"
+    assert "fora do escopo" in denied_audit["error_message"]
+    assert own_chat["id"] != foreign_chat["id"]

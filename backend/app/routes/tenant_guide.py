@@ -40,6 +40,37 @@ def _actor(conn, tenant_id: str, user_id: str) -> dict:
     }
 
 
+def _guide_chat(conn, *, tenant_id: str, user_id: str, chat_id: str) -> None:
+    """Bind every toolkit call to the caller's own system-guide chat.
+
+    The kernel receives its execution context from the backend, but this
+    additional database check makes a forged/replayed ``chat_id`` harmless as
+    well.  In particular, a guide call must never use another tenant's chat as
+    an audit trail or confirmation source.
+    """
+    chat = conn.execute(
+        """SELECT c.id FROM chats c
+             JOIN templates t ON t.id=c.template_id
+            WHERE c.id=%s AND c.tenant_id=%s AND c.user_id=%s
+              AND NOT c.is_hidden AND t.system_key='assistente-ragentes'
+              AND NOT t.is_deleted""",
+        (chat_id, tenant_id, user_id),
+    ).fetchone()
+    if chat is None:
+        _audit(
+            conn,
+            tenant_id,
+            user_id,
+            None,
+            "context_denied",
+            error="Chat do guia fora do escopo do solicitante",
+        )
+        # The caller receives a 403, which rolls the surrounding request
+        # transaction back. Persist the security audit before raising.
+        conn.commit()
+        raise HTTPException(403, "Chat do guia fora do escopo do solicitante")
+
+
 def _audit(conn, tenant_id, user_id, chat_id, action: str, plan=None, result=None, error=None):
     return conn.execute(
         """INSERT INTO tenant_guide_audit
@@ -125,6 +156,7 @@ async def tenant_guide(action: str, request: Request):
         raise HTTPException(400, "Contexto de execução inválido")
     with get_connection() as conn:
         actor = _actor(conn, tenant_id, user_id)
+        _guide_chat(conn, tenant_id=tenant_id, user_id=user_id, chat_id=chat_id)
         if action == "platform-guide":
             _audit(conn, tenant_id, user_id, chat_id, "platform_guide")
             return GUIDE
