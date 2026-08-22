@@ -106,7 +106,7 @@ export default function Chat() {
       if (chat.ai_ready === false) {
         if (can('ai_services', 'edit')) {
           setError('Conecte um serviço de IA antes da primeira conversa com o Assistente RAgentes.')
-          navigate('/servicos-ia')
+          navigate('/servicos-ia?notice=guide-needs-ai')
           return
         }
         setError('Este tenant ainda não tem serviço de IA. Peça a um administrador para configurá-lo.')

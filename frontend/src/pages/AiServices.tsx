@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
+import { useLocation } from 'react-router-dom'
 import { Badge, Button, Card, EmptyState, ErrorText, Input, PageHeader, SectionIntro, Select, StatCard, Table, TableSkeleton } from '../components/ui'
 import { ContasIA } from '../components/ContasIA'
 import { api, listTenants } from '../lib/api'
@@ -30,6 +31,7 @@ const PROVIDERS = [
 
 export default function AiServices() {
   const { user } = useAuth()
+  const location = useLocation()
   const qc = useQueryClient()
   const isMaster = user?.is_master ?? false
 
@@ -53,6 +55,7 @@ export default function AiServices() {
   })
   const [error, setError] = useState('')
   const [testResult, setTestResult] = useState<Record<string, string>>({})
+  const guideNeedsAi = new URLSearchParams(location.search).get('notice') === 'guide-needs-ai'
 
   const create = useMutation({
     mutationFn: () =>
@@ -214,7 +217,12 @@ export default function AiServices() {
               </Select>
             )}
             <div className="lg:col-span-2">
-              <ErrorText>{error}</ErrorText>
+              <ErrorText>
+                {error ||
+                  (guideNeedsAi
+                    ? 'Conecte um serviço de IA antes da primeira conversa com o Assistente RAgentes.'
+                    : '')}
+              </ErrorText>
             </div>
           </form>
         </div>
