@@ -37,7 +37,7 @@ export default function Login() {
       const user = await signIn(email, password)
       // Never leave a newly authenticated user on a stale deep link such as
       // /usuarios. Every login begins at the workspace's initial screen.
-      navigate(user.is_master ? '/empresas' : '/dashboard', { replace: true })
+      navigate('/dashboard', { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha no login')
     } finally {

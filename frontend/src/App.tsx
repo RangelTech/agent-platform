@@ -57,7 +57,7 @@ function Shell() {
 
   const links = [
     // The master administers the platform and has no tenant to chat in.
-    { to: '/dashboard', label: 'Início', show: !(user?.is_master ?? false) },
+    { to: '/dashboard', label: 'Início', show: true },
     { to: '/chat', label: 'Chat', show: !(user?.is_master ?? false) },
     { to: '/chat?guide=1', label: 'Ajuda RAgentes', show: !(user?.is_master ?? false) },
     { to: '/empresas', label: 'Empresas', show: user?.is_master ?? false },
@@ -226,7 +226,7 @@ function Shell() {
             className={isChat ? 'flex min-h-0 w-full flex-1' : undefined}
           >
             <Routes location={location}>
-              <Route path="/dashboard" element={user?.is_master ? <Navigate to="/empresas" /> : <Dashboard />} />
+              <Route path="/dashboard" element={user?.is_master ? <Tenants /> : <Dashboard />} />
               <Route path="/chat" element={<Chat />} />
               <Route path="/empresas" element={user?.is_master ? <Tenants /> : <Navigate to="/usuarios" />} />
               <Route path="/usuarios" element={<Users />} />
