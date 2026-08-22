@@ -126,6 +126,11 @@ export default function Tenants() {
             <div className="lg:col-span-2">
               <ErrorText>{error}</ErrorText>
             </div>
+            <div className="flex justify-end lg:col-span-2">
+              <Button type="submit" disabled={create.isPending}>
+                {create.isPending ? 'Criando empresa…' : 'Salvar e criar empresa'}
+              </Button>
+            </div>
           </form>
         </div>
       </Card>
