@@ -13,6 +13,7 @@ from app.routes import ai_services as ai_service_routes
 from app.routes import artifacts as artifact_routes
 from app.routes import auth as auth_routes
 from app.routes import chats as chat_routes
+from app.routes import custom_tools as custom_tool_routes
 from app.routes import datasources as datasource_routes
 from app.routes import files as file_routes
 from app.routes import installation_secrets as installation_secret_routes
@@ -134,6 +135,7 @@ app.include_router(tenant_routes.router)
 app.include_router(profile_routes.router)
 app.include_router(user_routes.router)
 app.include_router(chat_routes.router)
+app.include_router(custom_tool_routes.router)
 app.include_router(ai_service_routes.router)
 app.include_router(template_routes.router)
 app.include_router(secret_routes.router)
