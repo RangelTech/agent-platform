@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { Badge, Button, Card, EmptyState, ErrorText, Input, PageHeader, Textarea } from '../components/ui'
-import { createCustomTool, deleteCustomTool, listCustomTools } from '../lib/customTools'
+import { createCustomTool, deleteCustomTool, listCustomTools, testCustomTool } from '../lib/customTools'
 
 const EXAMPLE_CODE = `def main(inputs, context):
     # context["secrets"] contains only this tool's own saved secrets.
@@ -26,6 +26,8 @@ export default function CustomTools() {
   const [secrets, setSecrets] = useState('{}')
   const [timeout, setTimeout] = useState(60)
   const [enabled, setEnabled] = useState(true)
+  const [testInputs, setTestInputs] = useState('{}')
+  const [testResult, setTestResult] = useState('')
   const [error, setError] = useState('')
 
   const create = useMutation({
@@ -60,6 +62,19 @@ export default function CustomTools() {
     mutationFn: deleteCustomTool,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['custom-tools'] }),
   })
+  const test = useMutation({
+    mutationFn: (id: string) => {
+      let inputs: Record<string, unknown>
+      try {
+        inputs = JSON.parse(testInputs) as Record<string, unknown>
+      } catch {
+        throw new Error('O input do teste precisa ser JSON válido.')
+      }
+      return testCustomTool(id, inputs)
+    },
+    onSuccess: (result) => setTestResult(JSON.stringify(result, null, 2)),
+    onError: (reason: Error) => setTestResult(`Erro: ${reason.message}`),
+  })
 
   function submit(event: FormEvent) {
     event.preventDefault()
@@ -91,6 +106,11 @@ export default function CustomTools() {
       <Card title="Ferramentas cadastradas">
         {isLoading ? <p className="text-sm text-[var(--text-muted)]">Carregando…</p> : loadError ? <ErrorText>Não foi possível carregar as ferramentas.</ErrorText> : tools.length === 0 ? <EmptyState title="Nenhuma Custom Tool" description="Cadastre uma ferramenta acima; ela aparecerá no editor de Templates." /> : <div className="space-y-3">{tools.map((tool) => <div key={tool.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--border)] p-4"><div><p className="font-mono text-sm font-semibold">{tool.name}</p><p className="mt-1 text-sm text-[var(--text-muted)]">{tool.description}</p><p className="mt-1 text-xs text-[var(--text-faint)]">timeout: {tool.timeout_seconds}s</p></div><div className="flex items-center gap-3"><Badge ok={tool.enabled}>{tool.enabled ? 'Habilitada' : 'Desabilitada'}</Badge><Button variant="danger" onClick={() => remove.mutate(tool.id)}>Excluir</Button></div></div>)}</div>}
       </Card>
+      {tools.length > 0 && <Card title="Executar teste">
+        <Textarea label="Input de teste (JSON)" rows={5} value={testInputs} onChange={(event) => setTestInputs(event.target.value)} className="font-mono" />
+        <div className="mt-4 flex flex-wrap gap-3">{tools.map((tool) => <Button key={tool.id} variant="ghost" disabled={test.isPending} onClick={() => test.mutate(tool.id)}>Testar {tool.name}</Button>)}</div>
+        {testResult && <pre className="mt-4 overflow-x-auto rounded-2xl bg-[var(--surface-soft)] p-4 text-xs text-[var(--text)]">{testResult}</pre>}
+      </Card>}
     </div>
   )
 }

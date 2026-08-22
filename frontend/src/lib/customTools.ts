@@ -26,3 +26,8 @@ export const createCustomTool = (body: CustomToolInput) =>
   api<CustomTool>('/custom-tools', { method: 'POST', body: JSON.stringify(body) })
 export const deleteCustomTool = (id: string) =>
   api<void>(`/custom-tools/${id}`, { method: 'DELETE' })
+export const testCustomTool = (id: string, inputs: Record<string, unknown>) =>
+  api<Record<string, unknown>>(`/custom-tools/${id}/test`, {
+    method: 'POST',
+    body: JSON.stringify({ inputs }),
+  })

@@ -103,7 +103,11 @@ socket.create_connection = _safe_create_connection
 payload = json.load(open(sys.argv[1], encoding="utf-8"))
 namespace = {"__name__": "tenant_tool"}
 exec(payload["code"], namespace, namespace)
-result = namespace["main"](payload["inputs"], payload["context"])
+context = {
+    "tenant_id": payload["tenant_id"],
+    "secrets": json.loads(os.environ.get("CUSTOM_TOOL_SECRETS_JSON", "{}")),
+}
+result = namespace["main"](payload["inputs"], context)
 print(json.dumps({"success": True, "data": result, "error": None}, default=str))
 """
 
@@ -114,7 +118,7 @@ def _run_python(tool: dict, tenant_id: str, inputs: dict[str, Any]) -> dict[str,
     payload = {
         "code": tool["python_code"],
         "inputs": inputs,
-        "context": {"tenant_id": tenant_id, "secrets": secrets},
+        "tenant_id": tenant_id,
     }
     timeout = int(tool["timeout_seconds"])
 
@@ -134,10 +138,17 @@ def _run_python(tool: dict, tenant_id: str, inputs: dict[str, Any]) -> dict[str,
         payload_path.write_text(json.dumps(payload), encoding="utf-8")
         wrapper_path.write_text(textwrap.dedent(_WRAPPER), encoding="utf-8")
         try:
+            child_env = {
+                "PATH": os.environ.get("PATH", ""),
+                "PYTHONUNBUFFERED": "1",
+                # This is the complete child environment: no database,
+                # service account or runner credential can leak into code.
+                "CUSTOM_TOOL_SECRETS_JSON": json.dumps(secrets),
+            }
             process = subprocess.run(
                 [sys.executable, "-I", str(wrapper_path), str(payload_path)],
                 cwd=temp,
-                env={"PATH": os.environ.get("PATH", ""), "PYTHONUNBUFFERED": "1"},
+                env=child_env,
                 stdin=subprocess.DEVNULL,
                 capture_output=True,
                 text=True,
@@ -231,9 +242,9 @@ app = FastAPI(title="Custom Tool Runner", lifespan=lifespan)
 
 @app.middleware("http")
 async def authenticate_tenant(request: Request, call_next):
-    if not request.url.path.startswith("/mcp/"):
+    if not request.url.path.startswith(("/mcp/", "/test/")):
         return await call_next(request)
-    tenant_id = request.url.path.removeprefix("/mcp/").split("/", 1)[0]
+    tenant_id = request.url.path.rsplit("/", 1)[-1]
     header = request.headers.get("authorization", "")
     _, _, token = header.partition(" ")
     if not token or not tenant_id:
@@ -256,6 +267,22 @@ async def authenticate_tenant(request: Request, call_next):
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "custom-tool-runner"}
+
+
+@app.post("/test/{tenant_id}")
+async def test_tool(tenant_id: str, payload: dict[str, Any]):
+    # Middleware already verified both the bearer and the path tenant id.
+    active_tenant = CURRENT_TENANT.get()
+    if active_tenant != tenant_id:
+        raise HTTPException(401, "Tenant inválido")
+    name = payload.get("name")
+    inputs = payload.get("inputs") or {}
+    if not isinstance(name, str) or not isinstance(inputs, dict):
+        raise HTTPException(400, "Informe name e inputs")
+    tool = _tool(tenant_id, name, enabled_only=False)
+    if tool is None:
+        raise HTTPException(404, "Ferramenta não encontrada")
+    return await asyncio.to_thread(_run_python, tool, tenant_id, inputs)
 
 
 app.mount("/mcp", mcp_asgi)

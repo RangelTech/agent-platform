@@ -7,12 +7,14 @@ service path; browser clients only use this CRUD API under normal RBAC.
 import json
 import re
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from psycopg.types.json import Json
 from pydantic import BaseModel, Field
 
 from app.auth import require
-from app.crypto import encrypt
+from app.config import settings
+from app.crypto import decrypt, encrypt
 from app.db import get_connection
 from app.security import hash_token, new_session_token
 
@@ -163,3 +165,36 @@ def delete_tool(tool_id: str, user: dict = Depends(require("templates", "edit"))
             "DELETE FROM custom_tools WHERE id=%s AND tenant_id=%s", (tool_id, user["tenant_id"])
         )
     return {"status": "ok"}
+
+
+@router.post("/{tool_id}/test")
+async def test_tool(
+    tool_id: str, payload: dict, user: dict = Depends(require("templates", "edit"))
+):
+    """Proxy an ad-hoc test through the authenticated backend, never browser->runner."""
+    if user["is_master"]:
+        raise HTTPException(400, "Selecione uma empresa para testar Custom Tools")
+    if not settings.tool_runner_url:
+        raise HTTPException(503, "Custom Tool Runner ainda não está disponível")
+    inputs = payload.get("inputs") or {}
+    if not isinstance(inputs, dict):
+        raise HTTPException(400, "inputs deve ser um objeto JSON")
+    with get_connection() as conn:
+        tool = _owned(conn, tool_id, user["tenant_id"])
+        token = conn.execute(
+            """SELECT token_encrypted FROM tool_runner_tokens
+                 WHERE tenant_id = %s AND revoked_at IS NULL""",
+            (user["tenant_id"],),
+        ).fetchone()
+    if token is None:
+        raise HTTPException(409, "Token do runner não foi provisionado")
+    try:
+        async with httpx.AsyncClient(timeout=tool["timeout_seconds"] + 15) as client:
+            response = await client.post(
+                f"{settings.tool_runner_url.rstrip('/')}/test/{user['tenant_id']}",
+                headers={"Authorization": f"Bearer {decrypt(token['token_encrypted'])}"},
+                json={"name": tool["name"], "inputs": inputs},
+            )
+        return response.json()
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, "Não foi possível executar a ferramenta") from exc
