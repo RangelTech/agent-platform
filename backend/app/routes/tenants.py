@@ -3,7 +3,16 @@ import subprocess
 import sys
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Response, UploadFile
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    Response,
+    UploadFile,
+)
 from psycopg.errors import UniqueViolation
 from psycopg.types.json import Json
 from pydantic import BaseModel, EmailStr, Field
@@ -269,9 +278,7 @@ async def upload_logo(file: UploadFile = File(...), user: dict = Depends(current
     data = await file.read()
     if not data or len(data) > 2 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="Logo vazio ou maior que 2MB")
-    path = save_bytes(
-        f"tenants/{user['tenant_id']}/branding/logo", data, content_type
-    )
+    path = save_bytes(f"tenants/{user['tenant_id']}/branding/logo", data, content_type)
     with get_connection() as conn:
         conn.execute(
             "UPDATE tenants SET brand_logo_url = %s, updated_at = now() WHERE id = %s",
@@ -301,9 +308,7 @@ def get_logo(tenant_key: str):
 
 
 @router.put("/{tenant_id}")
-def update_tenant(
-    tenant_id: str, payload: TenantUpdate, user: dict = Depends(_master_only)
-):
+def update_tenant(tenant_id: str, payload: TenantUpdate, user: dict = Depends(_master_only)):
     fields, values = [], []
     if payload.name is not None:
         fields.append("name = %s")
