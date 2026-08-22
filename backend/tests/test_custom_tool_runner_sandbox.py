@@ -13,7 +13,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-
 RUNNER = Path(__file__).resolve().parents[2] / "custom_tool_runner" / "app.py"
 
 
@@ -22,7 +21,10 @@ def _wrapper() -> str:
     for statement in module.body:
         if (
             isinstance(statement, ast.Assign)
-            and any(isinstance(target, ast.Name) and target.id == "_WRAPPER" for target in statement.targets)
+            and any(
+                isinstance(target, ast.Name) and target.id == "_WRAPPER"
+                for target in statement.targets
+            )
             and isinstance(statement.value, ast.Constant)
             and isinstance(statement.value.value, str)
         ):

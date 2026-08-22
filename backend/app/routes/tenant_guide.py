@@ -152,21 +152,20 @@ async def tenant_guide(action: str, request: Request):
             ):
                 raise HTTPException(403, "Sem permissão para criar template")
             approval = conn.execute(
-                """SELECT plan FROM tenant_guide_audit
+                """SELECT plan, created_at FROM tenant_guide_audit
                    WHERE id=%s AND tenant_id=%s AND user_id=%s AND chat_id=%s
                      AND action='plan'""",
                 (confirmation_id, tenant_id, user_id, chat_id),
             ).fetchone()
-            last_message = conn.execute(
-                """SELECT content FROM chat_messages WHERE chat_id=%s AND role='user'
+            if approval is None:
+                raise HTTPException(409, "Aguarde confirmação explícita do usuário")
+            confirmation = conn.execute(
+                """SELECT content FROM chat_messages
+                   WHERE chat_id=%s AND role='user' AND created_at >= %s
                    ORDER BY created_at DESC LIMIT 1""",
-                (chat_id,),
+                (chat_id, approval["created_at"]),
             ).fetchone()
-            if (
-                approval is None
-                or last_message is None
-                or not _CONFIRMATION.search(last_message["content"])
-            ):
+            if confirmation is None or not _CONFIRMATION.search(confirmation["content"]):
                 raise HTTPException(409, "Aguarde confirmação explícita do usuário")
             plan = approval["plan"]
             result = create_guided_template(
