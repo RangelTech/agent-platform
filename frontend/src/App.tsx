@@ -59,7 +59,6 @@ function Shell() {
     // The master administers the platform and has no tenant to chat in.
     { to: '/dashboard', label: 'Início', show: true },
     { to: '/chat', label: 'Chat', show: !(user?.is_master ?? false) },
-    { to: '/chat?guide=1', label: 'Ajuda RAgentes', show: !(user?.is_master ?? false) },
     { to: '/empresas', label: 'Empresas', show: user?.is_master ?? false },
     { to: '/usuarios', label: 'Usuários', show: can('users', 'view') },
     { to: '/perfis', label: 'Perfis', show: can('user_profiles', 'view') },
