@@ -28,6 +28,9 @@ Thumbs.db
 *.log
 docs/fixtures-qa/
 
+# Terraform provider cache is local and can contain platform-specific binaries.
+**/.terraform/
+
 # Storage local de artifacts/uploads. Em producao isso vai para o MinIO; so cai
 # em disco quando nao ha S3_BUCKET/GCS_BUCKET, que e o caso ao rodar testes e
 # scripts direto no host. Nunca deve entrar no repo: sao payloads por tenant.

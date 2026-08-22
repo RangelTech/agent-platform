@@ -1,0 +1,16 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - us-central1-docker.pkg.dev/$PROJECT_ID/containers/custom-tool-runner:$SHORT_SHA
+      - -t
+      - us-central1-docker.pkg.dev/$PROJECT_ID/containers/custom-tool-runner:latest
+      - -f
+      - custom_tool_runner/Dockerfile
+      - .
+images:
+  - us-central1-docker.pkg.dev/$PROJECT_ID/containers/custom-tool-runner:$SHORT_SHA
+  - us-central1-docker.pkg.dev/$PROJECT_ID/containers/custom-tool-runner:latest
+options:
+  logging: CLOUD_LOGGING_ONLY
