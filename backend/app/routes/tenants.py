@@ -48,6 +48,7 @@ class TenantWithAdminIn(TenantIn):
 class BrandingIn(BaseModel):
     brand_name: str = Field(default="", max_length=200)
     brand_color: str = Field(default="", pattern=r"^(#[0-9a-fA-F]{6})?$")
+    brand_secondary_color: str = Field(default="", pattern=r"^(#[0-9a-fA-F]{6})?$")
     brand_theme: str = Field(default="light", pattern="^(dark|light)$")
 
 
@@ -65,7 +66,10 @@ def _serialize(row: dict) -> dict:
         "name": row["name"],
         "brand_name": row.get("brand_name", ""),
         "brand_color": row.get("brand_color", ""),
+        "brand_secondary_color": row.get("brand_secondary_color", ""),
         "brand_theme": row.get("brand_theme", "light"),
+        "branding_version": row.get("branding_version", 1),
+        "branding_sync_status": row.get("branding_sync_status", "pending"),
         "has_logo": bool(row.get("brand_logo_url")),
         "is_active": row["is_active"],
         "router_provisioning_status": row.get("router_provisioning_status", "pending"),
@@ -250,8 +254,37 @@ def create_tenant(
     return _serialize(row)
 
 
+async def _sync_branding_to_ratende(tenant: dict) -> tuple[bool, str]:
+    """Entrega a cópia de consumo ao bridge sem abrir credencial ao browser."""
+    if not tenant.get("chatwoot_account_id"):
+        return False, "RAtende ainda não foi provisionado"
+    from app.routes.omnichannel import _bridge
+
+    try:
+        await _bridge(
+            "PUT",
+            "/admin/branding",
+            json={
+                "tenant_id": str(tenant["id"]),
+                "brand_name": tenant["brand_name"] or tenant["name"],
+                "primary_color": tenant["brand_color"] or "#1f93ff",
+                "secondary_color": tenant["brand_secondary_color"] or "#0f766e",
+                "theme": tenant["brand_theme"],
+                "logo_url": (
+                    f"/api/tenants/branding/logo/{tenant['tenant_key']}"
+                    if tenant.get("brand_logo_url")
+                    else ""
+                ),
+                "version": tenant["branding_version"],
+            },
+        )
+    except Exception as exc:  # a atualização local continua sendo a verdade
+        return False, str(getattr(exc, "detail", exc))[:500]
+    return True, ""
+
+
 @router.put("/branding")
-def update_branding(payload: BrandingIn, user: dict = Depends(current_user)):
+async def update_branding(payload: BrandingIn, user: dict = Depends(current_user)):
     """Tenant-scoped: the company admin styles their own workspace."""
     from app.permissions import has_permission
 
@@ -261,10 +294,48 @@ def update_branding(payload: BrandingIn, user: dict = Depends(current_user)):
     with get_connection() as conn:
         row = conn.execute(
             """UPDATE tenants
-                  SET brand_name = %s, brand_color = %s, brand_theme = %s,
+                  SET brand_name = %s, brand_color = %s,
+                      brand_secondary_color = %s, brand_theme = %s,
+                      branding_version = branding_version + 1,
+                      branding_sync_status = 'pending', branding_sync_error = '',
                       updated_at = now()
                 WHERE id = %s RETURNING *""",
-            (payload.brand_name, payload.brand_color, payload.brand_theme, user["tenant_id"]),
+            (
+                payload.brand_name,
+                payload.brand_color,
+                payload.brand_secondary_color,
+                payload.brand_theme,
+                user["tenant_id"],
+            ),
+        ).fetchone()
+    synced, detail = await _sync_branding_to_ratende(row)
+    with get_connection() as conn:
+        row = conn.execute(
+            """UPDATE tenants SET branding_sync_status = %s, branding_sync_error = %s,
+                      branding_synced_at = CASE WHEN %s THEN now() ELSE branding_synced_at END
+                 WHERE id = %s RETURNING *""",
+            ("ok" if synced else "pending", detail, synced, row["id"]),
+        ).fetchone()
+    return _serialize(row)
+
+
+@router.post("/branding/reconcile")
+async def reconcile_branding(user: dict = Depends(current_user)):
+    from app.permissions import has_permission
+
+    if user["is_master"] or not has_permission(user, "users", "edit"):
+        raise HTTPException(status_code=403, detail="Permissão negada")
+    with get_connection() as conn:
+        tenant = conn.execute(
+            "SELECT * FROM tenants WHERE id = %s", (user["tenant_id"],)
+        ).fetchone()
+    synced, detail = await _sync_branding_to_ratende(tenant)
+    with get_connection() as conn:
+        row = conn.execute(
+            """UPDATE tenants SET branding_sync_status = %s, branding_sync_error = %s,
+                      branding_synced_at = CASE WHEN %s THEN now() ELSE branding_synced_at END
+                 WHERE id = %s RETURNING *""",
+            ("ok" if synced else "pending", detail, synced, tenant["id"]),
         ).fetchone()
     return _serialize(row)
 
@@ -284,11 +355,21 @@ async def upload_logo(file: UploadFile = File(...), user: dict = Depends(current
         raise HTTPException(status_code=400, detail="Logo vazio ou maior que 2MB")
     path = save_bytes(f"tenants/{user['tenant_id']}/branding/logo", data, content_type)
     with get_connection() as conn:
-        conn.execute(
-            "UPDATE tenants SET brand_logo_url = %s, updated_at = now() WHERE id = %s",
+        tenant = conn.execute(
+            """UPDATE tenants SET brand_logo_url = %s, branding_version = branding_version + 1,
+                      branding_sync_status = 'pending', branding_sync_error = '', updated_at = now()
+                 WHERE id = %s RETURNING *""",
             (f"{path}|{content_type}", user["tenant_id"]),
-        )
-    return {"status": "ok"}
+        ).fetchone()
+    synced, detail = await _sync_branding_to_ratende(tenant)
+    with get_connection() as conn:
+        row = conn.execute(
+            """UPDATE tenants SET branding_sync_status = %s, branding_sync_error = %s,
+                      branding_synced_at = CASE WHEN %s THEN now() ELSE branding_synced_at END
+                 WHERE id = %s RETURNING *""",
+            ("ok" if synced else "pending", detail, synced, tenant["id"]),
+        ).fetchone()
+    return {"status": "ok" if synced else "pending", "branding": _serialize(row)}
 
 
 @router.get("/branding/logo/{tenant_key}")
