@@ -103,7 +103,9 @@ def test_confirmed_guide_plan_creates_a_deployed_template(client, tenant_admin):
             "name": "Agente de pedidos",
             "description": "Organiza pedidos de clientes.",
             "supervisor_prompt": "Delegue pedidos ao especialista.",
-            "agents": [{"name": "pedidos", "description": "Organiza pedidos", "prompt": "Organize."}],
+            "agents": [
+                {"name": "pedidos", "description": "Organiza pedidos", "prompt": "Organize."}
+            ],
         },
     }
     old_token = settings.kernel_internal_token

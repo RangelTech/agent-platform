@@ -7,8 +7,8 @@ from psycopg.types.json import Json
 
 from app.config import settings
 from app.db import get_connection
-from app.permissions import has_permission
 from app.guide_catalog import ragentes_guide
+from app.permissions import has_permission
 from app.routes.templates import create_guided_template
 
 router = APIRouter(prefix="/api/internal/tenant-guide", tags=["tenant-guide"])
