@@ -59,6 +59,7 @@ function Shell() {
     // The master administers the platform and has no tenant to chat in.
     { to: '/dashboard', label: 'Início', show: !(user?.is_master ?? false) },
     { to: '/chat', label: 'Chat', show: !(user?.is_master ?? false) },
+    { to: '/chat?guide=1', label: 'Ajuda RAgentes', show: !(user?.is_master ?? false) },
     { to: '/empresas', label: 'Empresas', show: user?.is_master ?? false },
     { to: '/usuarios', label: 'Usuários', show: can('users', 'view') },
     { to: '/perfis', label: 'Perfis', show: can('user_profiles', 'view') },
@@ -115,7 +116,7 @@ function Shell() {
                   />
                 )}
                 <span className="min-w-0">
-                  <span className="block truncate">{brand?.name || 'agent-platform'}</span>
+                  <span className="block truncate">{brand?.name || 'RAgentes'}</span>
                   <span className="block text-xs font-normal text-[var(--text-faint)]">
                     {isChat ? 'Workspace conversacional' : 'Painel operacional'}
                   </span>

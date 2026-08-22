@@ -55,7 +55,7 @@ export default function Login() {
         <section className="hidden rounded-[36px] border border-[var(--border)] bg-[var(--surface)] p-10 shadow-[0_30px_120px_rgba(15,23,42,0.35)] backdrop-blur-xl lg:flex lg:min-h-[720px] lg:flex-col lg:justify-between">
           <div>
             <span className="inline-flex items-center rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--text-muted)]">
-              Agent Platform
+              RAgentes
             </span>
             <h1 className="mt-8 max-w-xl text-5xl font-semibold leading-[1.05] tracking-[-0.03em] text-[var(--text)]">
               Orquestre agentes de IA com uma operação realmente pronta para produção.
@@ -81,7 +81,7 @@ export default function Login() {
           <div className="relative space-y-8 p-8 sm:p-10 lg:p-12">
             <div className="space-y-4">
               <div className="inline-flex items-center rounded-full border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)] lg:hidden">
-                Agent Platform
+                RAgentes
               </div>
               <div>
                 <h2 className="text-3xl font-semibold tracking-tight text-[var(--text)]">Entrar no workspace</h2>

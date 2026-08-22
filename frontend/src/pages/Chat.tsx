@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useLocation } from 'react-router-dom'
 import { ArtifactCard, downloadArtifact, type ArtifactRef } from '../components/ArtifactCard'
 import { MarkdownMessage } from '../components/MarkdownMessage'
 import { Button } from '../components/ui'
@@ -45,6 +46,7 @@ function metricLabel(total: number, singular: string, plural: string) {
 }
 
 export default function Chat() {
+  const location = useLocation()
   const qc = useQueryClient()
   const { data: chats = [] } = useChats()
   const { data: templates = [] } = useQuery({
@@ -105,6 +107,14 @@ export default function Chat() {
       setError('Não foi possível abrir o Assistente RAgentes agora.')
     }
   }
+
+  useEffect(() => {
+    if (new URLSearchParams(location.search).get('guide') === '1') {
+      void openRagentesGuide()
+    }
+    // The guide endpoint is idempotent and the URL is the explicit user action.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search])
 
   useEffect(() => {
     chatIdRef.current = activeChat
