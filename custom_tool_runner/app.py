@@ -73,6 +73,8 @@ def _tools(tenant_id: str) -> list[dict]:
 
 
 _WRAPPER = r"""
+import builtins
+import importlib
 import ipaddress
 import json
 import os
@@ -85,6 +87,7 @@ BLOCKED_NETS = tuple(ipaddress.ip_network(value) for value in (
 ))
 _connect = socket.socket.connect
 _create_connection = socket.create_connection
+_getaddrinfo = socket.getaddrinfo
 
 def _blocked(host):
     try:
@@ -103,11 +106,49 @@ def _safe_create_connection(address, *args, **kwargs):
         raise OSError("destino interno/metadados bloqueado")
     return _create_connection(address, *args, **kwargs)
 
+def _safe_getaddrinfo(host, *args, **kwargs):
+    if _blocked(host):
+        raise OSError("destino interno/metadados bloqueado")
+    answers = _getaddrinfo(host, *args, **kwargs)
+    allowed = [answer for answer in answers if not _blocked(answer[4][0])]
+    if not allowed:
+        raise OSError("destino interno/metadados bloqueado")
+    return allowed
+
 socket.socket.connect = _safe_connect
 socket.create_connection = _safe_create_connection
+socket.getaddrinfo = _safe_getaddrinfo
+
+_ALLOWED_IMPORTS = {
+    "base64", "csv", "datetime", "decimal", "hashlib", "httpx", "json", "math",
+    "pydantic", "re", "requests", "statistics", "time", "typing", "uuid",
+}
+def _safe_import(name, globals=None, locals=None, fromlist=(), level=0):
+    root = name.split(".", 1)[0]
+    if root not in _ALLOWED_IMPORTS:
+        raise ImportError(f"import de {root} nao permitido na Custom Tool")
+    return importlib.import_module(name)
+
+_WORKDIR = os.path.realpath(os.getcwd())
+def _safe_open(path, *args, **kwargs):
+    resolved = os.path.realpath(os.path.join(_WORKDIR, os.fspath(path)))
+    if resolved != _WORKDIR and not resolved.startswith(_WORKDIR + os.sep):
+        raise PermissionError("arquivo fora do diretorio isolado")
+    return builtins.open(resolved, *args, **kwargs)
+
+_SAFE_BUILTINS = {
+    name: getattr(builtins, name) for name in (
+        "abs", "all", "any", "bool", "bytes", "dict", "enumerate", "filter", "float",
+        "int", "isinstance", "len", "list", "map", "max", "min", "next", "print",
+        "range", "reversed", "round", "set", "sorted", "str", "sum", "tuple", "zip",
+        "Exception", "ValueError", "KeyError", "TypeError", "RuntimeError",
+    )
+}
+_SAFE_BUILTINS["__import__"] = _safe_import
+_SAFE_BUILTINS["open"] = _safe_open
 
 payload = json.load(open(sys.argv[1], encoding="utf-8"))
-namespace = {"__name__": "tenant_tool"}
+namespace = {"__name__": "tenant_tool", "__builtins__": _SAFE_BUILTINS}
 exec(payload["code"], namespace, namespace)
 context = {
     "tenant_id": payload["tenant_id"],
