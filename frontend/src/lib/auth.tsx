@@ -4,7 +4,7 @@ import { fetchMe, getToken, login as apiLogin, logout as apiLogout, setToken, ty
 interface AuthState {
   user: Me | null
   loading: boolean
-  signIn: (email: string, password: string) => Promise<void>
+  signIn: (email: string, password: string) => Promise<Me>
   signOut: () => Promise<void>
   refresh: () => Promise<void>
   can: (resource: string, action: string) => boolean
@@ -34,10 +34,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('auth:expired', onExpired)
   }, [])
 
-  async function signIn(email: string, password: string) {
+  async function signIn(email: string, password: string): Promise<Me> {
     const { token, chatwoot_sso_url } = await apiLogin(email, password)
     setToken(token)
-    setUser(await fetchMe())
+    const currentUser = await fetchMe()
+    setUser(currentUser)
     // Sessão sincronizada RAgentes<->RAtende (produto-05 seção 6c): o
     // RAtende manda `X-Frame-Options: DENY` (proteção de clickjacking do
     // próprio login dele, não é bug) — iframe oculto não carrega, o
@@ -47,6 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // conveniência — trade-off pra revisar com o dono se quiser algo mais
     // discreto no futuro (ex. relaxar frame-ancestors só nessa rota).
     if (chatwoot_sso_url) stampChatwootSession(chatwoot_sso_url)
+    return currentUser
   }
 
   function stampChatwootSession(url: string) {

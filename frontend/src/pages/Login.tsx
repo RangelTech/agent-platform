@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Button, ErrorText, Input } from '../components/ui'
 import { useAuth } from '../lib/auth'
 
@@ -22,6 +23,7 @@ const highlights = [
 
 export default function Login() {
   const { signIn } = useAuth()
+  const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -32,7 +34,10 @@ export default function Login() {
     setError('')
     setBusy(true)
     try {
-      await signIn(email, password)
+      const user = await signIn(email, password)
+      // Never leave a newly authenticated user on a stale deep link such as
+      // /usuarios. Every login begins at the workspace's initial screen.
+      navigate(user.is_master ? '/empresas' : '/dashboard', { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha no login')
     } finally {

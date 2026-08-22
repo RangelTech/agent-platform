@@ -54,6 +54,15 @@ export async function api<T>(
   })
 
   if (res.status === 401) {
+    // A failed login is not an expired session. Preserve the API's actionable
+    // message instead of emitting the global session-expired event.
+    if (!token) {
+      const detail = await res
+        .json()
+        .then((body) => body.detail)
+        .catch(() => null)
+      throw new ApiError(401, apiErrorMessage(detail, 'E-mail ou senha incorretos'))
+    }
     // The session is gone; drop it so the app falls back to the login screen.
     setToken(null)
     window.dispatchEvent(new Event('auth:expired'))
