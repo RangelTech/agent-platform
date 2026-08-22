@@ -91,3 +91,45 @@ def test_platform_guide_is_a_versioned_structured_package(client, tenant_admin):
     assert guide["version"] == "1.0.0"
     assert guide["compatibility"]["rollback_supported"] is True
     assert any(section["id"] == "custom-tools" for section in guide["sections"])
+
+
+def test_confirmed_guide_plan_creates_a_deployed_template(client, tenant_admin):
+    chat = client.post("/api/chats/ragentes-guide", headers=auth(tenant_admin["token"])).json()
+    body = {
+        "tenant_id": tenant_admin["user"]["tenant_id"],
+        "user_id": tenant_admin["user"]["id"],
+        "chat_id": chat["id"],
+        "plan": {
+            "name": "Agente de pedidos",
+            "description": "Organiza pedidos de clientes.",
+            "supervisor_prompt": "Delegue pedidos ao especialista.",
+            "agents": [{"name": "pedidos", "description": "Organiza pedidos", "prompt": "Organize."}],
+        },
+    }
+    old_token = settings.kernel_internal_token
+    settings.kernel_internal_token = "test-guide-token"
+    try:
+        planned = client.post(
+            "/api/internal/tenant-guide/plan",
+            headers={"Authorization": "Bearer test-guide-token"},
+            json=body,
+        )
+        assert planned.status_code == 200, planned.text
+        with get_connection() as conn:
+            conn.execute(
+                "INSERT INTO chat_messages (chat_id, role, content) VALUES (%s,'user','confirmo')",
+                (chat["id"],),
+            )
+        created = client.post(
+            "/api/internal/tenant-guide/create",
+            headers={"Authorization": "Bearer test-guide-token"},
+            json={**body, "confirmation_id": planned.json()["confirmation_id"]},
+        )
+    finally:
+        settings.kernel_internal_token = old_token
+    assert created.status_code == 200, created.text
+    with get_connection() as conn:
+        template = conn.execute(
+            "SELECT active_version_id FROM templates WHERE id=%s", (created.json()["template_id"],)
+        ).fetchone()
+    assert str(template["active_version_id"]) == created.json()["version_id"]

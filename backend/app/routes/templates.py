@@ -157,6 +157,51 @@ def _validate_version(conn, payload: VersionIn, tenant_id) -> None:
         row = conn.execute("SELECT tenant_id FROM files WHERE id = %s", (file_id,)).fetchone()
         if row is None or str(row["tenant_id"]) != str(tenant_id):
             raise HTTPException(status_code=400, detail="Arquivo não pertence ao tenant")
+def create_guided_template(conn, *, tenant_id, created_by, plan: dict) -> dict:
+    """Create an approved guide plan through ordinary template validation."""
+    template_input = TemplateIn(name=plan["name"], description=plan["description"])
+    version_input = VersionIn(
+        supervisor_prompt=plan["supervisor_prompt"],
+        agents=[AgentIn(**agent) for agent in plan["agents"]],
+        notes="Criado pelo Assistente RAgentes apos confirmacao",
+    )
+    _validate_version(conn, version_input, tenant_id)
+    try:
+        template = conn.execute(
+            """INSERT INTO templates (tenant_id, name, description)
+               VALUES (%s,%s,%s) RETURNING id""",
+            (tenant_id, template_input.name, template_input.description),
+        ).fetchone()
+    except UniqueViolation as exc:
+        raise HTTPException(409, "Ja existe um template com esse nome") from exc
+    version = conn.execute(
+        """INSERT INTO template_versions
+           (template_id, version_number, supervisor_prompt, max_steps, created_by, notes)
+           VALUES (%s,1,%s,%s,%s,%s) RETURNING id""",
+        (
+            template["id"],
+            version_input.supervisor_prompt,
+            version_input.max_steps,
+            created_by,
+            version_input.notes,
+        ),
+    ).fetchone()
+    for order, agent in enumerate(version_input.agents):
+        conn.execute(
+            """INSERT INTO template_agents
+               (version_id,name,description,prompt,sort_order,tools)
+               VALUES (%s,%s,%s,%s,%s,%s)""",
+            (version["id"], agent.name, agent.description, agent.prompt, order, Json(agent.tools)),
+        )
+    conn.execute(
+        "UPDATE templates SET active_version_id=%s WHERE id=%s",
+        (version["id"], template["id"]),
+    )
+    return {
+        "template_id": str(template["id"]),
+        "version_id": str(version["id"]),
+        "editor_url": f"/templates/{template['id']}",
+    }
 
 
 @router.post("/{template_id}/versions", status_code=201)

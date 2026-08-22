@@ -9,6 +9,7 @@ from app.config import settings
 from app.db import get_connection
 from app.permissions import has_permission
 from app.guide_catalog import ragentes_guide
+from app.routes.templates import create_guided_template
 
 router = APIRouter(prefix="/api/internal/tenant-guide", tags=["tenant-guide"])
 _AGENT = re.compile(r"^[a-z][a-z0-9_]{1,60}$")
@@ -168,45 +169,9 @@ async def tenant_guide(action: str, request: Request):
             ):
                 raise HTTPException(409, "Aguarde confirmação explícita do usuário")
             plan = approval["plan"]
-            template = conn.execute(
-                """INSERT INTO templates (tenant_id, name, description)
-                   VALUES (%s,%s,%s) RETURNING id""",
-                (tenant_id, plan["name"], plan["description"]),
-            ).fetchone()
-            version = conn.execute(
-                """INSERT INTO template_versions
-                   (template_id, version_number, supervisor_prompt, max_steps, created_by, notes)
-                   VALUES (%s,1,%s,6,%s,%s) RETURNING id""",
-                (
-                    template["id"],
-                    plan["supervisor_prompt"],
-                    user_id,
-                    "Criado pelo Assistente RAgentes após confirmação",
-                ),
-            ).fetchone()
-            for order, agent in enumerate(plan["agents"]):
-                conn.execute(
-                    """INSERT INTO template_agents
-                       (version_id,name,description,prompt,sort_order,tools)
-                       VALUES (%s,%s,%s,%s,%s,%s)""",
-                    (
-                        version["id"],
-                        agent["name"],
-                        agent["description"],
-                        agent["prompt"],
-                        order,
-                        Json(agent["tools"]),
-                    ),
-                )
-            conn.execute(
-                "UPDATE templates SET active_version_id=%s WHERE id=%s",
-                (version["id"], template["id"]),
+            result = create_guided_template(
+                conn, tenant_id=tenant_id, created_by=user_id, plan=plan
             )
-            result = {
-                "template_id": str(template["id"]),
-                "version_id": str(version["id"]),
-                "editor_url": f"/templates/{template['id']}",
-            }
             _audit(conn, tenant_id, user_id, chat_id, "created", plan=plan, result=result)
             return result
     raise HTTPException(404, "Tool do guia não encontrada")
