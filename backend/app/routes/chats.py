@@ -203,7 +203,7 @@ async def send_message(request: Request, user: dict = Depends(current_user)):
     from app.template_runtime import build_run_payload
 
     template_id = str(chat["template_id"]) if chat["template_id"] else None
-    run = build_run_payload(user["tenant_id"], template_id)
+    run = build_run_payload(user["tenant_id"], template_id, chat_id)
     kernel_payload = {
         "thread_id": chat_id,
         "message": payload.message,

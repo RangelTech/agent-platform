@@ -179,8 +179,8 @@ def _build_kernel_payload(integration: dict, payload: PublicMessageIn) -> dict:
         else:
             raise HTTPException(status_code=422, detail="message é obrigatório")
 
-    run = build_run_payload(integration["tenant_id"], template_id)
     thread_id = f"ext-{integration['id']}-{payload.external_session_id}"
+    run = build_run_payload(integration["tenant_id"], template_id, thread_id)
     kernel_payload = {"thread_id": thread_id, "message": message, **run}
     if stored_attachments:
         kernel_payload["attachments"] = stored_attachments
@@ -265,14 +265,10 @@ async def _deliver_webhook(integration: dict, session_id: str, kernel_payload: d
 
 
 @router.post("/messages")
-async def public_message(
-    request: Request, payload: PublicMessageIn, background: BackgroundTasks
-):
+async def public_message(request: Request, payload: PublicMessageIn, background: BackgroundTasks):
     integration = _authenticate(request)
     _enforce_rate_limit(integration)
-    _log_message(
-        integration["id"], payload.external_session_id, "in", payload.message
-    )
+    _log_message(integration["id"], payload.external_session_id, "in", payload.message)
     kernel_payload = _build_kernel_payload(integration, payload)
 
     if payload.mode == "webhook":
@@ -287,6 +283,7 @@ async def public_message(
         return {"status": "accepted"}
 
     if payload.mode == "stream":
+
         async def passthrough():
             async with httpx.AsyncClient(timeout=httpx.Timeout(310.0)) as client:
                 async with client.stream(
@@ -322,12 +319,9 @@ async def get_artifact_for_integration(artifact_id: str, request: Request):
     """
     integration = _authenticate(request)
     with get_connection() as conn:
-        row = conn.execute(
-            "SELECT * FROM artifacts WHERE id = %s", (artifact_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM artifacts WHERE id = %s", (artifact_id,)).fetchone()
     if row is None or (
-        row["tenant_id"] is not None
-        and str(row["tenant_id"]) != str(integration["tenant_id"])
+        row["tenant_id"] is not None and str(row["tenant_id"]) != str(integration["tenant_id"])
     ):
         raise HTTPException(status_code=404, detail="Artifact não encontrado")
 

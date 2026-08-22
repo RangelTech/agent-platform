@@ -13,11 +13,12 @@ import subprocess
 import sys
 import tempfile
 import textwrap
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
+import httpx
 from cryptography.fernet import Fernet
 from fastapi import FastAPI, HTTPException, Request
 from mcp.server import Server
@@ -27,7 +28,11 @@ from psycopg import connect
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 ENCRYPTION_KEY = os.environ.get("ENCRYPTION_KEY", "")
+KERNEL_URL = os.environ.get("KERNEL_URL", "")
+KERNEL_INTERNAL_TOKEN = os.environ.get("KERNEL_INTERNAL_TOKEN", "")
 CURRENT_TENANT: ContextVar[str | None] = ContextVar("custom_tool_tenant", default=None)
+CURRENT_CHAT: ContextVar[str | None] = ContextVar("custom_tool_chat", default=None)
+MAX_ARTIFACT_BYTES = 250 * 1024 * 1024
 
 
 def _db():
@@ -112,7 +117,68 @@ print(json.dumps({"success": True, "data": result, "error": None}, default=str))
 """
 
 
-def _run_python(tool: dict, tenant_id: str, inputs: dict[str, Any]) -> dict[str, Any]:
+def _publish_artifact(
+    artifact: dict[str, Any], temp: str, tenant_id: str, chat_id: str | None
+) -> dict[str, Any]:
+    """Upload a tool artifact without passing storage credentials to tenant code."""
+    relative = str(artifact.get("path") or "")
+    source = (Path(temp) / relative).resolve()
+    if not relative or not source.is_file() or not source.is_relative_to(Path(temp).resolve()):
+        raise ValueError("__artifact__.path deve apontar para um arquivo da execução")
+    if source.stat().st_size > MAX_ARTIFACT_BYTES:
+        raise ValueError("artifact excede o limite de 250MB")
+    if not KERNEL_URL or not KERNEL_INTERNAL_TOKEN:
+        raise RuntimeError("registro de artifacts não configurado")
+    kind = str(artifact.get("kind") or "file")
+    content_type = str(artifact.get("content_type") or "application/octet-stream")
+    filename = str(artifact.get("filename") or source.name)
+    extension = source.suffix.lstrip(".") or "bin"
+    headers = {"Authorization": f"Bearer {KERNEL_INTERNAL_TOKEN}"}
+    with httpx.Client(timeout=60.0) as client:
+        init = client.post(
+            f"{KERNEL_URL.rstrip('/')}/v1/artifacts/register-init",
+            headers=headers,
+            json={
+                "tenant_id": tenant_id,
+                "kind": kind,
+                "extension": extension,
+                "content_type": content_type,
+            },
+        )
+        init.raise_for_status()
+        target = init.json()
+        with source.open("rb") as handle:
+            upload = client.put(
+                target["upload_url"],
+                content=handle,
+                headers={"Content-Type": content_type},
+                timeout=3600.0,
+            )
+        upload.raise_for_status()
+        complete = client.post(
+            f"{KERNEL_URL.rstrip('/')}/v1/artifacts/register-complete",
+            headers=headers,
+            json={
+                "artifact_id": target["artifact_id"],
+                "tenant_id": tenant_id,
+                "chat_id": chat_id,
+                "agent_name": "custom_tool",
+                "kind": kind,
+                "extension": extension,
+                "content_type": content_type,
+                "title": filename,
+                "schema_json": artifact.get("schema"),
+                "preview_json": artifact.get("preview"),
+                "row_count": artifact.get("row_count"),
+            },
+        )
+        complete.raise_for_status()
+        return complete.json()
+
+
+def _run_python(
+    tool: dict, tenant_id: str, inputs: dict[str, Any], chat_id: str | None = None
+) -> dict[str, Any]:
     """Run one tool in a clean subprocess with only its own decrypted secrets."""
     secrets = _decrypt(tool["secrets_encrypted"])
     payload = {
@@ -132,7 +198,8 @@ def _run_python(tool: dict, tenant_id: str, inputs: dict[str, Any]) -> dict[str,
         resource.setrlimit(resource.RLIMIT_CPU, (timeout, timeout + 1))
         resource.setrlimit(resource.RLIMIT_AS, (32 * 1024**3, 32 * 1024**3))
 
-    with tempfile.TemporaryDirectory(prefix="custom-tool-") as temp:
+    temp_holder = tempfile.TemporaryDirectory(prefix="custom-tool-")
+    with nullcontext(temp_holder.name) as temp:
         payload_path = Path(temp) / "payload.json"
         wrapper_path = Path(temp) / "runner.py"
         payload_path.write_text(json.dumps(payload), encoding="utf-8")
@@ -172,13 +239,29 @@ def _run_python(tool: dict, tenant_id: str, inputs: dict[str, Any]) -> dict[str,
             },
         }
     try:
-        return json.loads(process.stdout)
+        result = json.loads(process.stdout)
     except json.JSONDecodeError:
         return {
             "success": False,
             "data": None,
             "error": {"code": "invalid_output", "message": "A ferramenta não retornou JSON"},
         }
+
+    marker = (
+        result.get("data", {}).pop("__artifact__", None)
+        if isinstance(result.get("data"), dict)
+        else None
+    )
+    if marker is not None:
+        try:
+            result["data"]["artifact"] = _publish_artifact(marker, temp, tenant_id, chat_id)
+        except (httpx.HTTPError, OSError, RuntimeError, ValueError) as exc:
+            return {
+                "success": False,
+                "data": None,
+                "error": {"code": "artifact_error", "message": str(exc)[:500]},
+            }
+    return result
 
 
 server = Server("custom-tool-runner")
@@ -223,7 +306,7 @@ async def call_tool(name: str, arguments: dict[str, Any]):
                 ),
             )
         ]
-    result = await asyncio.to_thread(_run_python, tool, tenant_id, arguments)
+    result = await asyncio.to_thread(_run_python, tool, tenant_id, arguments, CURRENT_CHAT.get())
     return [TextContent(type="text", text=json.dumps(result, ensure_ascii=False, default=str))]
 
 
@@ -258,10 +341,12 @@ async def authenticate_tenant(request: Request, call_next):
     if row is None or str(row["tenant_id"]) != tenant_id:
         raise HTTPException(401, "Token não pertence ao tenant solicitado")
     reset = CURRENT_TENANT.set(tenant_id)
+    chat_reset = CURRENT_CHAT.set(request.query_params.get("chat_id") or None)
     try:
         return await call_next(request)
     finally:
         CURRENT_TENANT.reset(reset)
+        CURRENT_CHAT.reset(chat_reset)
 
 
 @app.get("/health")
@@ -282,7 +367,7 @@ async def test_tool(tenant_id: str, payload: dict[str, Any]):
     tool = _tool(tenant_id, name, enabled_only=False)
     if tool is None:
         raise HTTPException(404, "Ferramenta não encontrada")
-    return await asyncio.to_thread(_run_python, tool, tenant_id, inputs)
+    return await asyncio.to_thread(_run_python, tool, tenant_id, inputs, CURRENT_CHAT.get())
 
 
 app.mount("/mcp", mcp_asgi)

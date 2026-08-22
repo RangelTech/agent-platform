@@ -32,7 +32,7 @@ jobs:
           TOKEN=$(curl -fsS --retry 4 --retry-all-errors -X POST "https://infisical.rangeltech.net/api/v1/auth/universal-auth/login" -H "Content-Type: application/json" -d "{\"clientId\":\"${{ secrets.INFISICAL_CLIENT_ID }}\",\"clientSecret\":\"${{ secrets.INFISICAL_CLIENT_SECRET }}\"}" | jq -r '.accessToken')
           test -n "$TOKEN" && test "$TOKEN" != null
           fetch() { curl -fsS --retry 4 --retry-all-errors "https://infisical.rangeltech.net/api/v3/secrets/raw/$1?workspaceId=b4203358-1215-43a9-a821-218a6f587c3e&environment=prod&secretPath=%2F" -H "Authorization: Bearer $TOKEN" | jq -r '.secret.secretValue'; }
-          { echo "database_url<<EOF"; fetch DATABASE_URL; echo EOF; echo "encryption_key<<EOF"; fetch ENCRYPTION_KEY; echo EOF; } >> "$GITHUB_OUTPUT"
+          { echo "database_url<<EOF"; fetch DATABASE_URL; echo EOF; echo "encryption_key<<EOF"; fetch ENCRYPTION_KEY; echo EOF; echo "kernel_internal_token<<EOF"; fetch KERNEL_INTERNAL_TOKEN; echo EOF; } >> "$GITHUB_OUTPUT"
       - name: Build image
         run: gcloud builds submit --project=rangel-tech --config=infra/cloudbuild-custom-tool-runner.yaml --substitutions=SHORT_SHA=${{ github.sha }} .
       - uses: hashicorp/setup-terraform@v3
@@ -43,6 +43,7 @@ jobs:
           TF_VAR_image: us-central1-docker.pkg.dev/rangel-tech/containers/custom-tool-runner:${{ github.sha }}
           TF_VAR_database_url: ${{ steps.infisical.outputs.database_url }}
           TF_VAR_encryption_key: ${{ steps.infisical.outputs.encryption_key }}
+          TF_VAR_kernel_internal_token: ${{ steps.infisical.outputs.kernel_internal_token }}
         run: |
           terraform init -input=false
           terraform import -input=false -lock=false google_cloud_run_v2_service.runner projects/rangel-tech/locations/us-central1/services/custom-tool-runner || true

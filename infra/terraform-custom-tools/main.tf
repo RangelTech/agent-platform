@@ -34,6 +34,10 @@ variable "encryption_key" {
   type      = string
   sensitive = true
 }
+variable "kernel_internal_token" {
+  type      = string
+  sensitive = true
+}
 
 resource "google_cloud_run_v2_service" "runner" {
   name     = "custom-tool-runner"
@@ -57,6 +61,14 @@ resource "google_cloud_run_v2_service" "runner" {
       env {
         name  = "ENCRYPTION_KEY"
         value = var.encryption_key
+      }
+      env {
+        name  = "KERNEL_URL"
+        value = "https://kernel-llm-pujq3pjmca-uc.a.run.app"
+      }
+      env {
+        name  = "KERNEL_INTERNAL_TOKEN"
+        value = var.kernel_internal_token
       }
     }
     scaling {

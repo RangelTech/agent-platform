@@ -143,7 +143,7 @@ def _store_servers(conn, tenant_id, template_id) -> list[dict]:
     return servers
 
 
-def _custom_tool_server(conn, tenant_id) -> dict | None:
+def _custom_tool_server(conn, tenant_id, chat_id: str | None = None) -> dict | None:
     """Return the tenant's isolated Custom Tool Runner only when it is useful.
 
     The opaque runner token, never an id from the URL, determines tenant scope
@@ -167,7 +167,10 @@ def _custom_tool_server(conn, tenant_id) -> dict | None:
         return None
     return {
         "name": "custom_tools",
-        "url": f"{settings.tool_runner_url.rstrip('/')}/mcp/{tenant_id}",
+        "url": (
+            f"{settings.tool_runner_url.rstrip('/')}/mcp/{tenant_id}"
+            + (f"?chat_id={chat_id}" if chat_id else "")
+        ),
         "auth_token": decrypt(token["token_encrypted"]),
     }
 
@@ -182,7 +185,7 @@ def _default_service(conn, tenant_id) -> dict | None:
     ).fetchone()
 
 
-def build_run_payload(tenant_id, template_id: str | None) -> dict:
+def build_run_payload(tenant_id, template_id: str | None, chat_id: str | None = None) -> dict:
     """Kernel run payload (supervisor/agents/max_steps) for this conversation."""
     with get_connection() as conn:
         default_service = _default_service(conn, tenant_id)
@@ -208,7 +211,11 @@ def build_run_payload(tenant_id, template_id: str | None) -> dict:
                 "secrets": {},
                 "mcp_servers": [
                     *(_store_servers(conn, tenant_id, None)),
-                    *([server] if (server := _custom_tool_server(conn, tenant_id)) else []),
+                    *(
+                        [server]
+                        if (server := _custom_tool_server(conn, tenant_id, chat_id))
+                        else []
+                    ),
                 ],
                 "payment": _payment_spec(conn, tenant_id),
                 "tenant_guide_enabled": False,
@@ -282,7 +289,7 @@ def build_run_payload(tenant_id, template_id: str | None) -> dict:
         mcp_servers += [
             s for s in _store_servers(conn, tenant_id, template_id) if s["name"] not in declared
         ]
-        custom_server = _custom_tool_server(conn, tenant_id)
+        custom_server = _custom_tool_server(conn, tenant_id, chat_id)
         if custom_server and custom_server["name"] not in declared:
             mcp_servers.append(custom_server)
 
