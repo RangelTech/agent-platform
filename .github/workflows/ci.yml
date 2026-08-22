@@ -63,6 +63,9 @@ jobs:
   deploy-cloudrun:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     needs: [python, frontend]
+    concurrency:
+      group: agent-platform-cloudrun-production
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     permissions:
       contents: read

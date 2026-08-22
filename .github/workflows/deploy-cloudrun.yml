@@ -27,6 +27,12 @@ permissions:
   contents: read
   id-token: write
 
+# Only the newest revision may alter the production Cloud Run service. This
+# prevents an older image finishing after a newer push and rolling it back.
+concurrency:
+  group: agent-platform-cloudrun-production
+  cancel-in-progress: true
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
