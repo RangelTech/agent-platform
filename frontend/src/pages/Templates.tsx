@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState, type FormEvent } from 'react'
 import { Badge, Button, Card, ErrorText, Input, PageHeader, Select, Table } from '../components/ui'
 import { api } from '../lib/api'
+import { listCustomTools } from '../lib/customTools'
 import {
   createTemplate,
   createVersion,
@@ -195,6 +196,21 @@ export default function Templates() {
     queryFn: listToolkits,
     staleTime: 5 * 60_000,
   })
+  const { data: customTools = [] } = useQuery({
+    queryKey: ['custom-tools'],
+    queryFn: listCustomTools,
+  })
+  const availableTools: ToolInfo[] = [
+    ...toolkits,
+    ...customTools
+      .filter((tool) => tool.enabled)
+      // ExternalServers namespaces every MCP tool. Persist the exact public
+      // name that the kernel will expose to the specialist.
+      .map((tool) => ({
+        name: `ext_custom_tools_${tool.name}`,
+        description: `[Custom Tool] ${tool.description}`,
+      })),
+  ]
 
   const [selected, setSelected] = useState<TemplateSummary | null>(null)
   const [newName, setNewName] = useState('')
@@ -517,7 +533,7 @@ export default function Templates() {
               key={i}
               agent={agent}
               services={services}
-              toolkits={toolkits}
+              toolkits={availableTools}
               files={businessFiles}
               onChange={(a) => setAgents(agents.map((x, j) => (j === i ? a : x)))}
               onRemove={() => setAgents(agents.filter((_, j) => j !== i))}

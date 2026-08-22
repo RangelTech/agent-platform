@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from app.auth import require
 from app.crypto import encrypt
 from app.db import get_connection
+from app.security import hash_token, new_session_token
 
 router = APIRouter(prefix="/api/custom-tools", tags=["custom-tools"])
 _NAME = re.compile(r"^[a-z][a-z0-9_]{1,60}$")
@@ -63,6 +64,27 @@ def _owned(conn, tool_id: str, tenant_id: str) -> dict:
     return row
 
 
+def _ensure_runner_token(conn, tenant_id) -> None:
+    """Create one opaque, encrypted runner credential per tenant.
+
+    The runner only receives the plaintext later through template_runtime;
+    Postgres stores the hash for authentication and encrypted recovery for the
+    backend. Never return it through this browser CRUD API.
+    """
+    exists = conn.execute(
+        "SELECT 1 FROM tool_runner_tokens WHERE tenant_id = %s AND revoked_at IS NULL",
+        (tenant_id,),
+    ).fetchone()
+    if exists:
+        return
+    token = new_session_token()
+    conn.execute(
+        """INSERT INTO tool_runner_tokens (tenant_id, token_hash, token_encrypted)
+               VALUES (%s, %s, %s)""",
+        (tenant_id, hash_token(token), encrypt(token)),
+    )
+
+
 @router.get("")
 def list_tools(user: dict = Depends(require("templates", "view"))):
     if user["is_master"]:
@@ -80,6 +102,7 @@ def create_tool(payload: ToolIn, user: dict = Depends(require("templates", "edit
         raise HTTPException(400, "Selecione uma empresa para criar Custom Tools")
     _validate(payload)
     with get_connection() as conn:
+        _ensure_runner_token(conn, user["tenant_id"])
         row = conn.execute(
             """INSERT INTO custom_tools (
                    tenant_id, name, description, input_schema, python_code,

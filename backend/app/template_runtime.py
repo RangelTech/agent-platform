@@ -143,6 +143,35 @@ def _store_servers(conn, tenant_id, template_id) -> list[dict]:
     return servers
 
 
+def _custom_tool_server(conn, tenant_id) -> dict | None:
+    """Return the tenant's isolated Custom Tool Runner only when it is useful.
+
+    The opaque runner token, never an id from the URL, determines tenant scope
+    on the runner. A tenant with no enabled custom tool does not pay a cold
+    start or expose an unnecessary MCP server to the kernel.
+    """
+    if not settings.tool_runner_url:
+        return None
+    has_enabled = conn.execute(
+        "SELECT 1 FROM custom_tools WHERE tenant_id = %s AND enabled LIMIT 1",
+        (tenant_id,),
+    ).fetchone()
+    if not has_enabled:
+        return None
+    token = conn.execute(
+        """SELECT token_encrypted FROM tool_runner_tokens
+             WHERE tenant_id = %s AND revoked_at IS NULL""",
+        (tenant_id,),
+    ).fetchone()
+    if token is None:
+        return None
+    return {
+        "name": "custom_tools",
+        "url": f"{settings.tool_runner_url.rstrip('/')}/mcp/{tenant_id}",
+        "auth_token": decrypt(token["token_encrypted"]),
+    }
+
+
 def _default_service(conn, tenant_id) -> dict | None:
     return conn.execute(
         """SELECT * FROM ai_services
@@ -177,7 +206,10 @@ def build_run_payload(tenant_id, template_id: str | None) -> dict:
                 "max_steps": 4,
                 "tenant_id": str(tenant_id),
                 "secrets": {},
-                "mcp_servers": _store_servers(conn, tenant_id, None),
+                "mcp_servers": [
+                    *(_store_servers(conn, tenant_id, None)),
+                    *([server] if (server := _custom_tool_server(conn, tenant_id)) else []),
+                ],
                 "payment": _payment_spec(conn, tenant_id),
             }
 
@@ -251,6 +283,9 @@ def build_run_payload(tenant_id, template_id: str | None) -> dict:
         mcp_servers += [
             s for s in _store_servers(conn, tenant_id, template_id) if s["name"] not in declared
         ]
+        custom_server = _custom_tool_server(conn, tenant_id)
+        if custom_server and custom_server["name"] not in declared:
+            mcp_servers.append(custom_server)
 
         return {
             "supervisor": {

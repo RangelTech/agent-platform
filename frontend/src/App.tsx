@@ -26,6 +26,7 @@ import Memories from './pages/Memories'
 import Omnichannel from './pages/Omnichannel'
 import Payments from './pages/Payments'
 import Customize from './pages/Customize'
+import CustomTools from './pages/CustomTools'
 import Profiles from './pages/Profiles'
 import TemplatesPage from './pages/Templates'
 import Tenants from './pages/Tenants'
@@ -63,6 +64,7 @@ function Shell() {
     { to: '/perfis', label: 'Perfis', show: can('user_profiles', 'view') },
     { to: '/servicos-ia', label: 'Serviços de IA', show: can('ai_services', 'view') },
     { to: '/templates', label: 'Templates', show: can('templates', 'view') },
+    { to: '/custom-tools', label: 'Custom Tools', show: !(user?.is_master ?? false) && can('templates', 'edit') },
     { to: '/fontes-de-dados', label: 'Fontes de dados', show: can('datasources', 'view') },
     { to: '/arquivos', label: 'Arquivos', show: can('files', 'view') },
     { to: '/memorias', label: 'Memórias', show: !(user?.is_master ?? false) },
@@ -230,6 +232,7 @@ function Shell() {
               <Route path="/perfis" element={<Profiles />} />
               <Route path="/servicos-ia" element={<AiServices />} />
               <Route path="/templates" element={<TemplatesPage />} />
+              <Route path="/custom-tools" element={<CustomTools />} />
               <Route path="/fontes-de-dados" element={<Datasources />} />
               <Route path="/arquivos" element={<Files />} />
               <Route path="/memorias" element={<Memories />} />

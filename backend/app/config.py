@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     bridge_url: str = ""
     bridge_admin_token: str = ""
 
+    # Isolated MCP service for tenant-authored Python tools. Empty keeps the
+    # feature unavailable until the runner itself is deployed.
+    tool_runner_url: str = ""
+
     # Object storage (uploads). Priority: S3-compatible (MinIO) -> GCS -> local
     # dir. Must match the kernel's settings so both sides read the same paths.
     storage_backend: str = ""

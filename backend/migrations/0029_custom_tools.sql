@@ -18,6 +18,7 @@ CREATE TABLE tool_runner_tokens (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     token_hash TEXT NOT NULL UNIQUE,
+    token_encrypted TEXT NOT NULL,
     revoked_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
