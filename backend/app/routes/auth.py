@@ -42,6 +42,16 @@ def me(user: dict = Depends(current_user)):
     }
 
 
+@router.post("/heartbeat", status_code=204)
+def heartbeat(user: dict = Depends(current_user)):
+    """Renew the current session after verified human activity in the SPA.
+
+    `current_user` resolves the bearer token and performs the atomic sliding
+    renewal. The endpoint deliberately has no business payload or side effect.
+    """
+    return None
+
+
 @router.post("/logout")
 async def logout(request: Request, user: dict = Depends(current_user)):
     revoke_session(request.headers["authorization"].split(" ", 1)[1])

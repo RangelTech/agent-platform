@@ -70,7 +70,10 @@ def resolve_session(token: str) -> dict | None:
             return None
 
         idle_cutoff = now - timedelta(minutes=settings.session_idle_minutes)
-        if session["expires_at"] <= now or session["last_activity_at"] <= idle_cutoff:
+        # `expires_at` is maintained as last_activity + the inactivity window.
+        # Older sessions may have been created under the former 24h absolute
+        # policy, so last_activity is the authoritative migration-safe check.
+        if session["last_activity_at"] <= idle_cutoff:
             conn.execute(
                 "UPDATE sessions SET revoked_at = %s WHERE token_hash = %s",
                 (now, session["token_hash"]),
@@ -86,8 +89,9 @@ def resolve_session(token: str) -> dict | None:
             return None
 
         conn.execute(
-            "UPDATE sessions SET last_activity_at = %s WHERE token_hash = %s",
-            (now, session["token_hash"]),
+            """UPDATE sessions SET last_activity_at = %s, expires_at = %s
+                 WHERE token_hash = %s AND revoked_at IS NULL""",
+            (now, now + timedelta(hours=settings.session_hours), session["token_hash"]),
         )
         return dict(user)
 

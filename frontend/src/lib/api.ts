@@ -141,6 +141,7 @@ export const login = (email: string, password: string) =>
   })
 
 export const fetchMe = () => api<Me>('/auth/me')
+export const heartbeat = () => api<void>('/auth/heartbeat', { method: 'POST' })
 export const logout = () => api<void>('/auth/logout', { method: 'POST' })
 
 export const listTenantPage = (q = '', page = 1, pageSize = 25) =>

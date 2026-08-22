@@ -17,8 +17,9 @@ class Settings(BaseSettings):
     static_dir: str = ""
 
     # Sessions
-    session_hours: int = 24
-    session_idle_minutes: int = 120
+    # A sessão é deslizante: cada atividade humana válida renova esta janela.
+    session_hours: int = 8
+    session_idle_minutes: int = 8 * 60
 
     # Interim model config, replaced by per-tenant AI services in ticket 05.
     # provider "stub" (or an empty key) routes to the kernel's stub provider.

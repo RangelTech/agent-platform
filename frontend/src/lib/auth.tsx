@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
-import { fetchMe, getToken, login as apiLogin, logout as apiLogout, setToken, type Me } from './api'
+import { fetchMe, getToken, heartbeat, login as apiLogin, logout as apiLogout, setToken, type Me } from './api'
 
 interface AuthState {
   user: Me | null
@@ -25,6 +25,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .then(setUser)
       .catch(() => setUser(null))
       .finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => {
+    // A visible tab only renews the session after a real user interaction.
+    // Polling, SSE and background tabs must never keep a session alive.
+    let interacted = false
+    let lastHeartbeat = 0
+    const minimumInterval = 5 * 60 * 1000
+    const markInteraction = () => { interacted = true }
+    const sendHeartbeat = () => {
+      if (!getToken() || !interacted || document.visibilityState !== 'visible') return
+      const now = Date.now()
+      if (now - lastHeartbeat < minimumInterval) return
+      lastHeartbeat = now
+      interacted = false
+      heartbeat().catch(() => undefined)
+    }
+    const interval = window.setInterval(sendHeartbeat, 60 * 1000)
+    const events: Array<keyof WindowEventMap> = ['keydown', 'click', 'pointerdown', 'focus']
+    events.forEach((event) => window.addEventListener(event, markInteraction))
+    document.addEventListener('visibilitychange', sendHeartbeat)
+    return () => {
+      window.clearInterval(interval)
+      events.forEach((event) => window.removeEventListener(event, markInteraction))
+      document.removeEventListener('visibilitychange', sendHeartbeat)
+    }
   }, [])
 
   useEffect(() => {

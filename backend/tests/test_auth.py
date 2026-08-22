@@ -91,8 +91,12 @@ def _age_session(token: str, *, expires_at=None, last_activity_at=None):
         conn.commit()
 
 
-def test_expired_session_is_rejected(client, master_token):
-    _age_session(master_token, expires_at=datetime.now(UTC) - timedelta(minutes=1))
+def test_session_without_activity_for_eight_hours_is_rejected(client, master_token):
+    _age_session(
+        master_token,
+        expires_at=datetime.now(UTC) - timedelta(minutes=1),
+        last_activity_at=datetime.now(UTC) - timedelta(hours=settings.session_hours, minutes=1),
+    )
     assert client.get("/api/auth/me", headers=auth(master_token)).status_code == 401
 
 
@@ -102,6 +106,20 @@ def test_idle_session_is_rejected(client, master_token):
     )
     _age_session(master_token, last_activity_at=idle)
     assert client.get("/api/auth/me", headers=auth(master_token)).status_code == 401
+
+
+def test_heartbeat_renews_the_sliding_expiry(client, master_token):
+    _age_session(
+        master_token,
+        expires_at=datetime.now(UTC) + timedelta(minutes=1),
+        last_activity_at=datetime.now(UTC) - timedelta(minutes=1),
+    )
+    assert client.post("/api/auth/heartbeat", headers=auth(master_token)).status_code == 204
+    with psycopg.connect(settings.database_url) as conn:
+        row = conn.execute(
+            "SELECT expires_at FROM sessions WHERE token_hash = %s", (hash_token(master_token),)
+        ).fetchone()
+    assert row[0] > datetime.now(UTC) + timedelta(hours=settings.session_hours - 1)
 
 
 def test_deactivated_user_cannot_use_an_open_session(client, master_token, tenant_admin):
