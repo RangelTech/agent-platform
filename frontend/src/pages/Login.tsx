@@ -34,7 +34,7 @@ export default function Login() {
     setError('')
     setBusy(true)
     try {
-      const user = await signIn(email, password)
+      await signIn(email, password)
       // Never leave a newly authenticated user on a stale deep link such as
       // /usuarios. Every login begins at the workspace's initial screen.
       navigate('/dashboard', { replace: true })
