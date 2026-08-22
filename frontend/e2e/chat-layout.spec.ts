@@ -87,7 +87,7 @@ test('o cabeçalho não repete o que já está na tela', async ({ page, request 
   const composer = page.locator('[name="chat-input"]')
   const enviarBox = await enviar.boundingBox()
   const composerBox = await composer.boundingBox()
-  expect(enviarBox!.y).toBeLessThan(composerBox!.y)
+  expect(enviarBox!.y).toBeGreaterThan(composerBox!.y)
 })
 
 test('o seletor de template continua acessível no cabeçalho', async ({ page, request }) => {

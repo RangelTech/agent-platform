@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AnimatePresence, motion } from 'framer-motion'
+import { Mic, Paperclip, Send, Square } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { ArtifactCard, downloadArtifact, type ArtifactRef } from '../components/ArtifactCard'
@@ -598,24 +599,28 @@ export default function Chat() {
                   <div className="flex flex-1 flex-col gap-2">
                     {/* Uma barra só: ações, estado e envio. Antes eram duas
                         linhas de moldura em volta de um campo de texto. */}
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="order-2 flex flex-wrap items-center gap-2">
                       <Button
                         type="button"
                         variant="ghost"
-                        className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-sm text-[var(--text)] hover:bg-[var(--surface-elevated)]"
+                        aria-label="Anexar arquivo"
+                        data-testid="chat-attach"
+                        className="h-10 w-10 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-0 text-[var(--text)] hover:bg-[var(--surface-elevated)]"
                         onClick={() => fileInputRef.current?.click()}
                         title="Anexar arquivo"
                       >
-                        Anexar arquivo
+                        <Paperclip size={18} aria-hidden="true" />
                       </Button>
                       <Button
                         type="button"
                         variant={recording ? 'danger' : 'ghost'}
-                        className="rounded-2xl border border-[var(--border)] px-3 py-1.5 text-sm"
+                        aria-label={recording ? 'Parar gravação' : 'Gravar áudio'}
+                        data-testid="chat-audio"
+                        className="h-10 w-10 rounded-2xl border border-[var(--border)] p-0"
                         onClick={toggleRecording}
                         title={recording ? 'Parar gravação' : 'Gravar áudio'}
                       >
-                        {recording ? 'Parar gravação' : 'Gravar áudio'}
+                        {recording ? <Square size={16} aria-hidden="true" /> : <Mic size={18} aria-hidden="true" />}
                       </Button>
                       <label className="min-w-0">
                         <span className="sr-only">Template ativo</span>
@@ -641,12 +646,14 @@ export default function Chat() {
                       <Button
                         type="submit"
                         disabled={readOnly || busy || (!draft.trim() && pendingFiles.length === 0)}
-                        className="ml-auto rounded-2xl px-5 py-2 text-sm font-semibold shadow-[0_20px_60px_rgba(79,70,229,0.35)]"
+                        aria-label={busy ? 'Processando mensagem' : 'Enviar mensagem'}
+                        data-testid="chat-send"
+                        className="ml-auto h-10 w-10 rounded-2xl p-0 shadow-[0_20px_60px_rgba(79,70,229,0.35)]"
                       >
-                        {busy ? 'Pensando...' : 'Enviar mensagem'}
+                        {busy ? <span className="h-4 w-4 animate-pulse rounded-full bg-current" aria-hidden="true" /> : <Send size={18} aria-hidden="true" />}
                       </Button>
                     </div>
-                    <div className="rounded-[20px] border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-2 transition focus-within:border-[var(--brand)] focus-within:bg-[var(--surface-elevated)]">
+                    <div className="order-1 rounded-[20px] border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-2 transition focus-within:border-[var(--brand)] focus-within:bg-[var(--surface-elevated)]">
                       <textarea
                         ref={draftRef}
                         name="chat-input"
