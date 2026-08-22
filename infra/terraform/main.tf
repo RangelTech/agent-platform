@@ -84,6 +84,10 @@ resource "google_cloud_run_v2_service" "agent_llm_backend" {
         value = "https://kernel-llm-pujq3pjmca-uc.a.run.app"
       }
       env {
+        name  = "TOOL_RUNNER_URL"
+        value = "https://custom-tool-runner-pujq3pjmca-uc.a.run.app"
+      }
+      env {
         name  = "PUBLIC_BASE_URL"
         value = "https://ia.rangeltech.net"
       }
