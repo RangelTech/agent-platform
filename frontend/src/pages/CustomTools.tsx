@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState, type FormEvent } from 'react'
+import { lazy, Suspense, useState, type FormEvent } from 'react'
 import { Badge, Button, Card, EmptyState, ErrorText, Input, PageHeader, Textarea } from '../components/ui'
 import {
   createCustomTool,
@@ -20,8 +20,11 @@ const EXAMPLE_SCHEMA = `{
   "required": ["codigo"]
 }`
 
+const MonacoEditor = lazy(() => import('@monaco-editor/react'))
+
 export default function CustomTools() {
   const queryClient = useQueryClient()
+  const monacoTheme = document.documentElement.dataset.theme === 'light' ? 'vs' : 'vs-dark'
   const { data: tools = [], isLoading, error: loadError } = useQuery({
     queryKey: ['custom-tools'],
     queryFn: listCustomTools,
@@ -129,7 +132,30 @@ export default function CustomTools() {
           </div>
           <Textarea label="Descrição" hint="Explique quando o agente deve usar esta ferramenta." required rows={3} value={description} onChange={(event) => setDescription(event.target.value)} />
           <Textarea label="Schema de entrada (JSON Schema)" rows={8} value={schema} onChange={(event) => setSchema(event.target.value)} className="font-mono" />
-          <Textarea label="Código Python" hint="Implemente def main(inputs, context)." rows={12} value={code} onChange={(event) => setCode(event.target.value)} className="font-mono" />
+          <div>
+            <label className="mb-1 block text-sm font-medium text-[var(--text)]">Código Python</label>
+            <p className="mb-2 text-xs text-[var(--text-muted)]">Implemente <code>def main(inputs, context)</code>. O código é executado isoladamente.</p>
+            <div className="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] focus-within:ring-2 focus-within:ring-[var(--primary)]">
+              <Suspense fallback={<div className="flex h-80 items-center justify-center text-sm text-[var(--text-muted)]">Carregando editor…</div>}>
+                <MonacoEditor
+                  height="22rem"
+                  defaultLanguage="python"
+                  theme={monacoTheme}
+                  value={code}
+                  onChange={(value) => setCode(value ?? '')}
+                  options={{
+                    ariaLabel: 'Código Python da ferramenta',
+                    automaticLayout: true,
+                    fontSize: 14,
+                    minimap: { enabled: false },
+                    padding: { top: 12, bottom: 12 },
+                    scrollBeyondLastLine: false,
+                    tabSize: 4,
+                  }}
+                />
+              </Suspense>
+            </div>
+          </div>
           <Textarea label="Secrets da ferramenta (JSON)" hint={editingId ? 'Deixe vazio para manter. Use {} para remover todos os secrets.' : 'Gravados criptografados e nunca mostrados novamente.'} rows={4} value={secrets} onChange={(event) => setSecrets(event.target.value)} className="font-mono" />
           <label className="flex items-center gap-2 text-sm text-[var(--text-muted)]"><input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} /> Habilitada para os agentes</label>
           <ErrorText>{error}</ErrorText>
