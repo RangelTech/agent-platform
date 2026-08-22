@@ -98,6 +98,15 @@ export interface Tenant {
   router_provisioning_error?: string | null
 }
 
+export interface TenantPage {
+  items: Tenant[]
+  total: number
+  active_total: number
+  page: number
+  page_size: number
+  total_pages: number
+}
+
 export interface Profile {
   id: string
   tenant_id: string | null
@@ -125,7 +134,11 @@ export const login = (email: string, password: string) =>
 export const fetchMe = () => api<Me>('/auth/me')
 export const logout = () => api<void>('/auth/logout', { method: 'POST' })
 
-export const listTenants = () => api<Tenant[]>('/tenants')
+export const listTenantPage = (q = '', page = 1, pageSize = 25) =>
+  api<TenantPage>(`/tenants?q=${encodeURIComponent(q)}&page=${page}&page_size=${pageSize}`)
+// Existing tenant selectors only need a compact option list. The master
+// companies screen uses listTenantPage so it never renders the whole base.
+export const listTenants = async () => (await listTenantPage('', 1, 100)).items
 export const createTenant = (body: { name: string; tenant_key: string }) =>
   api<Tenant>('/tenants', { method: 'POST', body: JSON.stringify(body) })
 export const updateTenant = (id: string, body: Partial<Tenant>) =>

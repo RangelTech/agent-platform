@@ -3,7 +3,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Response, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Response, UploadFile
 from psycopg.errors import UniqueViolation
 from psycopg.types.json import Json
 from pydantic import BaseModel, EmailStr, Field
@@ -141,10 +141,37 @@ def _provisionar_router_em_background(tenant_id: str, tenant_key: str) -> None:
 
 
 @router.get("")
-def list_tenants(user: dict = Depends(_master_only)):
+def list_tenants(
+    q: str = Query(default="", max_length=200),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=100),
+    user: dict = Depends(_master_only),
+):
+    query = q.strip()
+    pattern = f"%{query}%"
     with get_connection() as conn:
-        rows = conn.execute("SELECT * FROM tenants ORDER BY name").fetchall()
-    return [_serialize(r) for r in rows]
+        total = conn.execute(
+            "SELECT count(*) AS n FROM tenants WHERE name ILIKE %s OR tenant_key ILIKE %s",
+            (pattern, pattern),
+        ).fetchone()["n"]
+        active_total = conn.execute(
+            "SELECT count(*) AS n FROM tenants WHERE is_active = true"
+        ).fetchone()["n"]
+        pages = max(1, (total + page_size - 1) // page_size)
+        page = min(page, pages)
+        rows = conn.execute(
+            """SELECT * FROM tenants WHERE name ILIKE %s OR tenant_key ILIKE %s
+               ORDER BY lower(name), tenant_key LIMIT %s OFFSET %s""",
+            (pattern, pattern, page_size, (page - 1) * page_size),
+        ).fetchall()
+    return {
+        "items": [_serialize(r) for r in rows],
+        "total": total,
+        "active_total": active_total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": pages,
+    }
 
 
 @router.post("", status_code=201)

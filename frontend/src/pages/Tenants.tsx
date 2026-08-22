@@ -1,20 +1,33 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Badge, Button, Card, EmptyState, ErrorText, Input, PageHeader, SectionIntro, StatCard, Table, TableSkeleton } from '../components/ui'
-import { createTenant, listTenants, updateTenant } from '../lib/api'
+import { createTenant, listTenantPage, updateTenant } from '../lib/api'
 
 export default function Tenants() {
   const qc = useQueryClient()
-  const { data: tenants = [], isLoading, error: loadError } = useQuery({
-    queryKey: ['tenants'],
-    queryFn: listTenants,
+  const [query, setQuery] = useState('')
+  const [debouncedQuery, setDebouncedQuery] = useState('')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(25)
+  const { data: tenantPage, isLoading, error: loadError } = useQuery({
+    queryKey: ['tenants', debouncedQuery, page, pageSize],
+    queryFn: () => listTenantPage(debouncedQuery, page, pageSize),
   })
+  const tenants = tenantPage?.items ?? []
   const [name, setName] = useState('')
   const [key, setKey] = useState('')
   const [adminName, setAdminName] = useState('')
   const [adminEmail, setAdminEmail] = useState('')
   const [adminPassword, setAdminPassword] = useState('')
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedQuery(query)
+      setPage(1)
+    }, 300)
+    return () => window.clearTimeout(timer)
+  }, [query])
 
   const create = useMutation({
     mutationFn: () =>
@@ -48,7 +61,7 @@ export default function Tenants() {
     create.mutate()
   }
 
-  const activeCount = tenants.filter((tenant) => tenant.is_active).length
+  const activeCount = tenantPage?.active_total ?? 0
 
   return (
     <div className="space-y-6">
@@ -63,7 +76,7 @@ export default function Tenants() {
       />
 
       <div className="grid gap-4 md:grid-cols-3">
-        <StatCard label="Empresas totais" value={String(tenants.length)} meta="Inclui ambientes ativos e pausados." />
+        <StatCard label="Empresas totais" value={String(tenantPage?.total ?? 0)} meta="Inclui ambientes ativos e pausados." />
         <StatCard label="Empresas ativas" value={String(activeCount)} meta="Tenants prontos para operação e acesso." />
         <StatCard
           label="Provisionamento inicial"
@@ -136,6 +149,10 @@ export default function Tenants() {
       </Card>
 
       <Card title="Base de tenants" actions={<Badge ok={activeCount > 0}>{activeCount} ativas</Badge>}>
+        <div className="mb-4 flex flex-wrap gap-3">
+          <Input label="Buscar empresas" name="tenant-search" placeholder="Buscar por empresa ou chave" value={query} onChange={(e) => setQuery(e.target.value)} />
+          <label className="text-sm font-medium">Por página<select className="ml-2 rounded border p-2" value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1) }}><option>25</option><option>50</option><option>100</option></select></label>
+        </div>
         {isLoading ? (
           <TableSkeleton columns={4} />
         ) : loadError ? (
@@ -171,6 +188,7 @@ export default function Tenants() {
             ))}
           </Table>
         )}
+        {tenantPage && tenantPage.total > 0 && <div className="mt-4 flex items-center justify-between text-sm"><span>Exibindo {(tenantPage.page - 1) * tenantPage.page_size + 1}–{Math.min(tenantPage.page * tenantPage.page_size, tenantPage.total)} de {tenantPage.total} empresas</span><div className="flex gap-2"><Button variant="ghost" disabled={tenantPage.page <= 1} onClick={() => setPage(page - 1)}>Anterior</Button><span className="self-center">Página {tenantPage.page} de {tenantPage.total_pages}</span><Button variant="ghost" disabled={tenantPage.page >= tenantPage.total_pages} onClick={() => setPage(page + 1)}>Próxima</Button></div></div>}
       </Card>
     </div>
   )

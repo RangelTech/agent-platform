@@ -64,6 +64,21 @@ def test_only_master_manages_tenants(client, tenant_admin):
     assert r.status_code == 403
 
 
+def test_master_tenant_list_paginates_and_filters(client, master_token, tenant):
+    """The company table stays bounded even with a large tenant base."""
+    r = client.get(
+        "/api/tenants?q=acme&page=1&page_size=1", headers=auth(master_token)
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] >= 1
+    assert body["active_total"] >= 1
+    assert body["page"] == 1
+    assert body["page_size"] == 1
+    assert len(body["items"]) == 1
+    assert body["items"][0]["tenant_key"] == tenant["tenant_key"]
+
+
 def test_admin_sees_only_users_of_their_own_tenant(
     client, tenant_admin, other_tenant_admin
 ):

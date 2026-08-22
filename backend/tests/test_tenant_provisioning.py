@@ -61,7 +61,7 @@ def test_background_task_marks_ready_on_success(client, master_token, monkeypatc
     # BackgroundTasks finish before TestClient hands back the response, so
     # the row is already updated by the time we read it back here.
     row = client.get("/api/tenants", headers=auth(master_token)).json()
-    updated = next(t for t in row if t["id"] == tenant["id"])
+    updated = next(t for t in row["items"] if t["id"] == tenant["id"])
     assert updated["router_provisioning_status"] == "ready"
 
 
@@ -77,7 +77,7 @@ def test_background_task_marks_failed_on_nonzero_exit(client, master_token, monk
 
     tenant = _create_tenant(client, master_token)
     row = client.get("/api/tenants", headers=auth(master_token)).json()
-    updated = next(t for t in row if t["id"] == tenant["id"])
+    updated = next(t for t in row["items"] if t["id"] == tenant["id"])
     assert updated["router_provisioning_status"] == "failed"
     assert "connection refused" in (updated["router_provisioning_error"] or "")
     assert updated["is_active"] is True  # tenant still exists and usable
@@ -95,5 +95,5 @@ def test_background_task_marks_failed_on_timeout(client, master_token, monkeypat
 
     tenant = _create_tenant(client, master_token)
     row = client.get("/api/tenants", headers=auth(master_token)).json()
-    updated = next(t for t in row if t["id"] == tenant["id"])
+    updated = next(t for t in row["items"] if t["id"] == tenant["id"])
     assert updated["router_provisioning_status"] == "failed"
