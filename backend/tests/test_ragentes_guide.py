@@ -104,8 +104,18 @@ def test_confirmed_guide_plan_creates_a_deployed_template(client, tenant_admin):
             "name": "Agente de pedidos",
             "description": "Organiza pedidos de clientes.",
             "supervisor_prompt": "Delegue pedidos ao especialista.",
+            "supervisor_model_override": "modelo-planejado",
+            "max_steps": 7,
+            "write_tables": ["pedidos"],
+            "require_write_confirmation": False,
             "agents": [
-                {"name": "pedidos", "description": "Organiza pedidos", "prompt": "Organize."}
+                {
+                    "name": "pedidos",
+                    "description": "Organiza pedidos",
+                    "prompt": "Organize.",
+                    "model_override": "modelo-especialista",
+                    "tools": ["consultar_pedidos"],
+                }
             ],
         },
     }
@@ -135,7 +145,23 @@ def test_confirmed_guide_plan_creates_a_deployed_template(client, tenant_admin):
         template = conn.execute(
             "SELECT active_version_id FROM templates WHERE id=%s", (created.json()["template_id"],)
         ).fetchone()
+        version = conn.execute(
+            """SELECT max_steps, supervisor_model_override, write_tables,
+                      require_write_confirmation
+                 FROM template_versions WHERE id=%s""",
+            (created.json()["version_id"],),
+        ).fetchone()
+        agent = conn.execute(
+            "SELECT model_override, tools FROM template_agents WHERE version_id=%s",
+            (created.json()["version_id"],),
+        ).fetchone()
     assert str(template["active_version_id"]) == created.json()["version_id"]
+    assert version["max_steps"] == 7
+    assert version["supervisor_model_override"] == "modelo-planejado"
+    assert version["write_tables"] == ["pedidos"]
+    assert version["require_write_confirmation"] is False
+    assert agent["model_override"] == "modelo-especialista"
+    assert agent["tools"] == ["consultar_pedidos"]
 
 
 def test_guide_plan_requires_confirmation_after_the_preview(client, tenant_admin):

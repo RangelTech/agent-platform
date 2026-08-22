@@ -157,12 +157,99 @@ def _validate_version(conn, payload: VersionIn, tenant_id) -> None:
         row = conn.execute("SELECT tenant_id FROM files WHERE id = %s", (file_id,)).fetchone()
         if row is None or str(row["tenant_id"]) != str(tenant_id):
             raise HTTPException(status_code=400, detail="Arquivo não pertence ao tenant")
+
+
+def _persist_version(conn, *, template_id, payload: VersionIn, created_by, version_number: int):
+    """Persist the immutable snapshot used by both the UI and tenant guide.
+
+    Keeping this operation in one service avoids a privileged guide path that
+    quietly drifts from the normal template API's validation and schema.
+    """
+    version = conn.execute(
+        """INSERT INTO template_versions
+               (template_id, version_number, supervisor_prompt,
+                supervisor_ai_service_id, supervisor_model_override,
+                supervisor_reasoning_effort, max_steps, created_by, notes,
+                write_tables, require_write_confirmation,
+                history_limit, compress_history, tool_output_limit)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+           RETURNING *""",
+        (
+            template_id,
+            version_number,
+            payload.supervisor_prompt,
+            payload.supervisor_ai_service_id,
+            payload.supervisor_model_override,
+            payload.supervisor_reasoning_effort,
+            payload.max_steps,
+            created_by,
+            payload.notes,
+            Json(payload.write_tables),
+            payload.require_write_confirmation,
+            payload.history_limit,
+            payload.compress_history,
+            payload.tool_output_limit,
+        ),
+    ).fetchone()
+    for order, agent in enumerate(payload.agents):
+        agent_row = conn.execute(
+            """INSERT INTO template_agents
+                   (version_id, name, description, prompt, ai_service_id,
+                    model_override, reasoning_effort, sort_order, tools)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+            (
+                version["id"],
+                agent.name,
+                agent.description,
+                agent.prompt,
+                agent.ai_service_id,
+                agent.model_override,
+                agent.reasoning_effort,
+                order,
+                Json(agent.tools),
+            ),
+        ).fetchone()
+        for file_id in agent.file_ids:
+            conn.execute(
+                "INSERT INTO template_agent_files (agent_id, file_id) VALUES (%s, %s)",
+                (agent_row["id"], file_id),
+            )
+    for datasource_id in payload.datasource_ids:
+        conn.execute(
+            """INSERT INTO template_version_datasources (version_id, datasource_id)
+               VALUES (%s, %s)""",
+            (version["id"], datasource_id),
+        )
+    from app.crypto import encrypt
+
+    for server in payload.mcp_servers:
+        conn.execute(
+            """INSERT INTO template_mcp_servers
+                   (version_id, name, url, auth_token_encrypted)
+               VALUES (%s, %s, %s, %s)""",
+            (
+                version["id"],
+                server.name,
+                server.url,
+                encrypt(server.auth_token) if server.auth_token else None,
+            ),
+        )
+    return version
+
+
 def create_guided_template(conn, *, tenant_id, created_by, plan: dict) -> dict:
     """Create an approved guide plan through ordinary template validation."""
     template_input = TemplateIn(name=plan["name"], description=plan["description"])
     version_input = VersionIn(
         supervisor_prompt=plan["supervisor_prompt"],
         agents=[AgentIn(**agent) for agent in plan["agents"]],
+        supervisor_ai_service_id=plan.get("supervisor_ai_service_id"),
+        supervisor_model_override=plan.get("supervisor_model_override"),
+        supervisor_reasoning_effort=plan.get("supervisor_reasoning_effort"),
+        max_steps=plan.get("max_steps", 6),
+        datasource_ids=plan.get("datasource_ids", []),
+        write_tables=plan.get("write_tables", []),
+        require_write_confirmation=plan.get("require_write_confirmation", True),
         notes="Criado pelo Assistente RAgentes apos confirmacao",
     )
     _validate_version(conn, version_input, tenant_id)
@@ -174,25 +261,13 @@ def create_guided_template(conn, *, tenant_id, created_by, plan: dict) -> dict:
         ).fetchone()
     except UniqueViolation as exc:
         raise HTTPException(409, "Ja existe um template com esse nome") from exc
-    version = conn.execute(
-        """INSERT INTO template_versions
-           (template_id, version_number, supervisor_prompt, max_steps, created_by, notes)
-           VALUES (%s,1,%s,%s,%s,%s) RETURNING id""",
-        (
-            template["id"],
-            version_input.supervisor_prompt,
-            version_input.max_steps,
-            created_by,
-            version_input.notes,
-        ),
-    ).fetchone()
-    for order, agent in enumerate(version_input.agents):
-        conn.execute(
-            """INSERT INTO template_agents
-               (version_id,name,description,prompt,sort_order,tools)
-               VALUES (%s,%s,%s,%s,%s,%s)""",
-            (version["id"], agent.name, agent.description, agent.prompt, order, Json(agent.tools)),
-        )
+    version = _persist_version(
+        conn,
+        template_id=template["id"],
+        payload=version_input,
+        created_by=created_by,
+        version_number=1,
+    )
     conn.execute(
         "UPDATE templates SET active_version_id=%s WHERE id=%s",
         (version["id"], template["id"]),
@@ -220,75 +295,13 @@ def create_version(
                  FROM template_versions WHERE template_id = %s""",
             (template_id,),
         ).fetchone()["n"]
-        version = conn.execute(
-            """INSERT INTO template_versions
-                   (template_id, version_number, supervisor_prompt,
-                    supervisor_ai_service_id, supervisor_model_override,
-                    supervisor_reasoning_effort, max_steps, created_by, notes,
-                    write_tables, require_write_confirmation,
-                    history_limit, compress_history, tool_output_limit)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-               RETURNING *""",
-            (
-                template_id,
-                number,
-                payload.supervisor_prompt,
-                payload.supervisor_ai_service_id,
-                payload.supervisor_model_override,
-                payload.supervisor_reasoning_effort,
-                payload.max_steps,
-                user["id"],
-                payload.notes,
-                Json(payload.write_tables),
-                payload.require_write_confirmation,
-                payload.history_limit,
-                payload.compress_history,
-                payload.tool_output_limit,
-            ),
-        ).fetchone()
-        for order, agent in enumerate(payload.agents):
-            agent_row = conn.execute(
-                """INSERT INTO template_agents
-                       (version_id, name, description, prompt, ai_service_id,
-                        model_override, reasoning_effort, sort_order, tools)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
-                (
-                    version["id"],
-                    agent.name,
-                    agent.description,
-                    agent.prompt,
-                    agent.ai_service_id,
-                    agent.model_override,
-                    agent.reasoning_effort,
-                    order,
-                    Json(agent.tools),
-                ),
-            ).fetchone()
-            for file_id in agent.file_ids:
-                conn.execute(
-                    "INSERT INTO template_agent_files (agent_id, file_id) VALUES (%s, %s)",
-                    (agent_row["id"], file_id),
-                )
-        for datasource_id in payload.datasource_ids:
-            conn.execute(
-                """INSERT INTO template_version_datasources (version_id, datasource_id)
-                   VALUES (%s, %s)""",
-                (version["id"], datasource_id),
-            )
-        from app.crypto import encrypt
-
-        for server in payload.mcp_servers:
-            conn.execute(
-                """INSERT INTO template_mcp_servers
-                       (version_id, name, url, auth_token_encrypted)
-                   VALUES (%s, %s, %s, %s)""",
-                (
-                    version["id"],
-                    server.name,
-                    server.url,
-                    encrypt(server.auth_token) if server.auth_token else None,
-                ),
-            )
+        version = _persist_version(
+            conn,
+            template_id=template_id,
+            payload=payload,
+            created_by=user["id"],
+            version_number=number,
+        )
     return {"id": str(version["id"]), "version_number": number}
 
 

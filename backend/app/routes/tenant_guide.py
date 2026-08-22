@@ -4,12 +4,13 @@ import re
 
 from fastapi import APIRouter, HTTPException, Request
 from psycopg.types.json import Json
+from pydantic import ValidationError
 
 from app.config import settings
 from app.db import get_connection
 from app.guide_catalog import ragentes_guide
 from app.permissions import has_permission
-from app.routes.templates import create_guided_template
+from app.routes.templates import AgentIn, VersionIn, create_guided_template
 
 router = APIRouter(prefix="/api/internal/tenant-guide", tags=["tenant-guide"])
 _AGENT = re.compile(r"^[a-z][a-z0-9_]{1,60}$")
@@ -73,16 +74,46 @@ def _plan(raw: dict) -> dict:
                 "description": str(agent.get("description") or "").strip(),
                 "prompt": str(agent.get("prompt") or "").strip(),
                 "tools": [tool for tool in (agent.get("tools") or []) if isinstance(tool, str)],
+                "ai_service_id": agent.get("ai_service_id"),
+                "model_override": agent.get("model_override"),
+                "reasoning_effort": agent.get("reasoning_effort"),
+                "file_ids": [
+                    file_id for file_id in (agent.get("file_ids") or []) if isinstance(file_id, str)
+                ],
             }
         )
     if not safe_agents or any(not a["description"] or not a["prompt"] for a in safe_agents):
         raise HTTPException(400, "Cada agente precisa de descrição e prompt")
-    return {
+    plan = {
         "name": name[:200],
         "description": description[:2000],
         "supervisor_prompt": supervisor_prompt[:12000],
         "agents": safe_agents,
+        "supervisor_ai_service_id": raw.get("supervisor_ai_service_id"),
+        "supervisor_model_override": raw.get("supervisor_model_override"),
+        "supervisor_reasoning_effort": raw.get("supervisor_reasoning_effort"),
+        "max_steps": raw.get("max_steps", 6),
+        "datasource_ids": [
+            item for item in (raw.get("datasource_ids") or []) if isinstance(item, str)
+        ],
+        "write_tables": [item for item in (raw.get("write_tables") or []) if isinstance(item, str)],
+        "require_write_confirmation": raw.get("require_write_confirmation", True),
     }
+    try:
+        VersionIn(
+            supervisor_prompt=plan["supervisor_prompt"],
+            agents=[AgentIn(**agent) for agent in plan["agents"]],
+            supervisor_ai_service_id=plan["supervisor_ai_service_id"],
+            supervisor_model_override=plan["supervisor_model_override"],
+            supervisor_reasoning_effort=plan["supervisor_reasoning_effort"],
+            max_steps=plan["max_steps"],
+            datasource_ids=plan["datasource_ids"],
+            write_tables=plan["write_tables"],
+            require_write_confirmation=plan["require_write_confirmation"],
+        )
+    except ValidationError as exc:
+        raise HTTPException(400, "Prévia de template inválida") from exc
+    return plan
 
 
 @router.post("/{action}")
