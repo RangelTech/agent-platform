@@ -368,44 +368,6 @@ export default function Chat() {
       </aside>
 
       <section className="flex min-w-0 flex-col overflow-hidden bg-[var(--panel-gradient)] xl:col-start-2">
-        {/* Cabeçalho enxuto: só o que muda durante a conversa. Título e
-            métricas saíram daqui — repetiam o que já está na tela. */}
-        <div className="flex flex-wrap items-center gap-3 border-b border-[var(--border)] px-6 py-3 backdrop-blur-xl">
-          <span className="inline-flex items-center rounded-full border border-[var(--success)]/20 bg-[var(--success-soft)] px-3 py-1 text-xs font-medium text-[var(--success)]">
-            {busy ? 'Streaming em andamento' : 'Sessão pronta'}
-          </span>
-          {workingAgent && (
-            <span
-              data-testid="working-agent"
-              className="inline-flex items-center rounded-full border border-[var(--info)]/20 bg-[var(--info-soft)] px-3 py-1 text-xs font-medium text-[var(--info)]"
-            >
-              {workingAgent} trabalhando
-            </span>
-          )}
-          <span className="min-w-0 truncate text-sm text-[var(--text-muted)]">
-            {activeChatMeta ? conversationTitle(activeChatMeta) : 'Nova conversa'}
-          </span>
-
-          <label className="ml-auto flex items-center gap-2">
-            <span className="text-xs uppercase tracking-[0.18em] text-[var(--text-faint)]">Template</span>
-            <select
-              name="template-picker"
-              value={templateId}
-              onChange={(e) => setTemplateId(e.target.value)}
-              className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text)] outline-none transition focus:border-[var(--brand)] focus:bg-[var(--surface-elevated)]"
-            >
-              <option value="">Padrão</option>
-              {templates
-                .filter((t) => t.active_version_id)
-                .map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-            </select>
-          </label>
-        </div>
-
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="flex min-h-0 flex-1 flex-col">
             <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4" data-testid="message-list">
@@ -613,9 +575,23 @@ export default function Chat() {
                       >
                         {recording ? 'Parar gravação' : 'Gravar áudio'}
                       </Button>
+                      <label className="min-w-0">
+                        <span className="sr-only">Template ativo</span>
+                        <select
+                          name="template-picker"
+                          value={templateId}
+                          onChange={(e) => setTemplateId(e.target.value)}
+                          className="max-w-44 rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text)] outline-none transition focus:border-[var(--brand)] focus:bg-[var(--surface-elevated)]"
+                        >
+                          <option value="">Template: Padrão</option>
+                          {templates.filter((t) => t.active_version_id).map((t) => (
+                            <option key={t.id} value={t.id}>{t.name}</option>
+                          ))}
+                        </select>
+                      </label>
                       <span className="hidden text-xs text-[var(--text-faint)] sm:inline">
                         {busy
-                          ? 'Pensando...'
+                          ? workingAgent ? `${workingAgent} trabalhando` : 'Pensando...'
                           : draft.trim().length > 0
                             ? `${draft.trim().length} caracteres`
                             : 'Ocioso'}
