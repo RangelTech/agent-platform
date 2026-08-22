@@ -94,6 +94,18 @@ export default function Chat() {
   const draftRef = useRef<HTMLTextAreaElement>(null)
   const [highlightedArtifact, setHighlightedArtifact] = useState<string | null>(null)
 
+  async function openRagentesGuide() {
+    try {
+      const chat = await api<ChatSummary>('/chats/ragentes-guide', { method: 'POST' })
+      setTemplateId(chat.template_id ?? '')
+      setActiveChat(chat.id)
+      setDraft('Olá! Quero entender como configurar meu ambiente.')
+      await qc.invalidateQueries({ queryKey: ['chats'] })
+    } catch {
+      setError('Não foi possível abrir o Assistente RAgentes agora.')
+    }
+  }
+
   useEffect(() => {
     chatIdRef.current = activeChat
     if (!activeChat) {
@@ -394,6 +406,15 @@ export default function Chat() {
                           <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">{description}</p>
                         </div>
                       ))}
+                    </div>
+                    <div className="mt-6 rounded-2xl border border-[var(--brand)]/25 bg-[var(--brand-soft)] p-5">
+                      <p className="text-base font-semibold text-[var(--text)]">Precisa de ajuda com a RAgentes?</p>
+                      <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--text-muted)]">
+                        Entenda a plataforma, veja a configuração do seu ambiente ou monte um novo agente com segurança.
+                      </p>
+                      <Button type="button" className="mt-4 rounded-2xl" onClick={openRagentesGuide}>
+                        Abrir Assistente RAgentes
+                      </Button>
                     </div>
                   </section>
                 )}

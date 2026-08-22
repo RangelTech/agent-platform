@@ -61,6 +61,34 @@ def list_chats(user: dict = Depends(current_user)):
     return [_serialize_chat(r) for r in rows]
 
 
+@router.post("/chats/ragentes-guide")
+def open_ragentes_guide(user: dict = Depends(current_user)):
+    """Open one private chat pinned to the tenant's system onboarding guide."""
+    if user["tenant_id"] is None:
+        raise HTTPException(status_code=400, detail="Usuário master não participa de conversas")
+    from app.ragentes_guide import ensure_for_tenant
+
+    with get_connection() as conn:
+        template_id = ensure_for_tenant(conn, user["tenant_id"])
+        chat = conn.execute(
+            """SELECT * FROM chats WHERE tenant_id=%s AND user_id=%s AND template_id=%s
+               AND NOT is_hidden ORDER BY updated_at DESC LIMIT 1""",
+            (user["tenant_id"], user["id"], template_id),
+        ).fetchone()
+        if chat is None:
+            chat = conn.execute(
+                """INSERT INTO chats (tenant_id, user_id, title, template_id)
+                   VALUES (%s, %s, %s, %s) RETURNING *""",
+                (user["tenant_id"], user["id"], "Assistente RAgentes", template_id),
+            ).fetchone()
+        conn.execute(
+            """INSERT INTO tenant_guide_audit (tenant_id, user_id, chat_id, action)
+               VALUES (%s, %s, %s, 'open')""",
+            (user["tenant_id"], user["id"], chat["id"]),
+        )
+    return _serialize_chat(chat)
+
+
 @router.get("/chats/{chat_id}/messages")
 def list_messages(chat_id: str, user: dict = Depends(current_user)):
     with get_connection() as conn:
@@ -85,8 +113,7 @@ def list_messages(chat_id: str, user: dict = Depends(current_user)):
             "role": r["role"],
             "content": r["content"],
             "attachments": [
-                {"kind": a.get("kind"), "name": a.get("name")}
-                for a in (r["attachments"] or [])
+                {"kind": a.get("kind"), "name": a.get("name")} for a in (r["attachments"] or [])
             ],
             "created_at": r["created_at"].isoformat(),
         }
@@ -111,9 +138,7 @@ def _ensure_chat(user: dict, payload: SendRequest, attachments: list[dict] | Non
     if user["tenant_id"] is None:
         # The master administers the platform; conversations belong to tenant
         # users. This also guarantees chats always carry a tenant_id.
-        raise HTTPException(
-            status_code=400, detail="Usuário master não participa de conversas"
-        )
+        raise HTTPException(status_code=400, detail="Usuário master não participa de conversas")
     with get_connection() as conn:
         if payload.template_id:
             owned = conn.execute(
@@ -210,10 +235,7 @@ async def send_message(request: Request, user: dict = Depends(current_user)):
                 ) as response:
                     if response.status_code != 200:
                         detail = (await response.aread()).decode()[:500]
-                        yield (
-                            "event: error\n"
-                            f"data: {json.dumps({'detail': detail})}\n\n"
-                        )
+                        yield (f"event: error\ndata: {json.dumps({'detail': detail})}\n\n")
                         return
                     current_event = ""
                     async for line in response.aiter_lines():

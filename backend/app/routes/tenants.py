@@ -238,6 +238,10 @@ def create_tenant(
                     status_code=409, detail="Já existe um usuário com esse e-mail"
                 ) from exc
 
+        from app.ragentes_guide import ensure_for_tenant
+
+        ensure_for_tenant(conn, row["id"])
+
     # Every tenant gets its own 9Router instance (isolation, see 0020's
     # comment) — dispatched in the background so DNS/TLS provisioning
     # (minutes) never holds this request open. The tenant exists regardless

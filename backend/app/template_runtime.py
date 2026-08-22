@@ -190,7 +190,7 @@ def build_run_payload(tenant_id, template_id: str | None) -> dict:
         version = None
         if template_id:
             version = conn.execute(
-                """SELECT v.* FROM templates t
+                """SELECT v.*, t.system_key FROM templates t
                      JOIN template_versions v ON v.id = t.active_version_id
                     WHERE t.id = %s AND t.tenant_id = %s AND NOT t.is_deleted""",
                 (template_id, tenant_id),
@@ -211,15 +211,14 @@ def build_run_payload(tenant_id, template_id: str | None) -> dict:
                     *([server] if (server := _custom_tool_server(conn, tenant_id)) else []),
                 ],
                 "payment": _payment_spec(conn, tenant_id),
+                "tenant_guide_enabled": False,
             }
 
         def service_by_id(service_id):
             if service_id is None:
                 return default_service
             return (
-                conn.execute(
-                    "SELECT * FROM ai_services WHERE id = %s", (service_id,)
-                ).fetchone()
+                conn.execute("SELECT * FROM ai_services WHERE id = %s", (service_id,)).fetchone()
                 or default_service
             )
 
@@ -323,4 +322,5 @@ def build_run_payload(tenant_id, template_id: str | None) -> dict:
             "history_limit": version.get("history_limit", 100),
             "compress_history": version.get("compress_history", False),
             "tool_output_limit": version.get("tool_output_limit", 24_000),
+            "tenant_guide_enabled": version.get("system_key") == "assistente-ragentes",
         }

@@ -70,11 +70,16 @@ def _template_scoped(conn, template_id: str, user: dict) -> dict:
     row = conn.execute(
         "SELECT * FROM templates WHERE id = %s AND NOT is_deleted", (template_id,)
     ).fetchone()
-    if row is None or (
-        not user["is_master"] and str(row["tenant_id"]) != str(user["tenant_id"])
-    ):
+    if row is None or (not user["is_master"] and str(row["tenant_id"]) != str(user["tenant_id"])):
         raise HTTPException(status_code=404, detail="Template não encontrado")
     return row
+
+
+def _reject_system_template(template: dict) -> None:
+    if template.get("system_key"):
+        raise HTTPException(
+            status_code=403, detail="Template de sistema é gerenciado pela Rangel Tech"
+        )
 
 
 def _serialize_template(row: dict, active_version_number: int | None = None) -> dict:
@@ -141,25 +146,17 @@ def _validate_version(conn, payload: VersionIn, tenant_id) -> None:
             "SELECT tenant_id FROM ai_services WHERE id = %s", (service_id,)
         ).fetchone()
         if row is None or str(row["tenant_id"]) != str(tenant_id):
-            raise HTTPException(
-                status_code=400, detail="Serviço de IA não pertence ao tenant"
-            )
+            raise HTTPException(status_code=400, detail="Serviço de IA não pertence ao tenant")
     for datasource_id in payload.datasource_ids:
         row = conn.execute(
             "SELECT tenant_id FROM datasources WHERE id = %s", (datasource_id,)
         ).fetchone()
         if row is None or str(row["tenant_id"]) != str(tenant_id):
-            raise HTTPException(
-                status_code=400, detail="Fonte de dados não pertence ao tenant"
-            )
+            raise HTTPException(status_code=400, detail="Fonte de dados não pertence ao tenant")
     for file_id in {f for a in payload.agents for f in a.file_ids}:
-        row = conn.execute(
-            "SELECT tenant_id FROM files WHERE id = %s", (file_id,)
-        ).fetchone()
+        row = conn.execute("SELECT tenant_id FROM files WHERE id = %s", (file_id,)).fetchone()
         if row is None or str(row["tenant_id"]) != str(tenant_id):
-            raise HTTPException(
-                status_code=400, detail="Arquivo não pertence ao tenant"
-            )
+            raise HTTPException(status_code=400, detail="Arquivo não pertence ao tenant")
 
 
 @router.post("/{template_id}/versions", status_code=201)
@@ -170,6 +167,7 @@ def create_version(
 ):
     with get_connection() as conn:
         template = _template_scoped(conn, template_id, user)
+        _reject_system_template(template)
         _validate_version(conn, payload, template["tenant_id"])
 
         number = conn.execute(
@@ -275,7 +273,8 @@ def get_version(
     template_id: str, version_id: str, user: dict = Depends(require("templates", "view"))
 ):
     with get_connection() as conn:
-        _template_scoped(conn, template_id, user)
+        template = _template_scoped(conn, template_id, user)
+        _reject_system_template(template)
         version = conn.execute(
             "SELECT * FROM template_versions WHERE id = %s AND template_id = %s",
             (version_id, template_id),
@@ -329,9 +328,7 @@ def get_version(
                 "reasoning_effort": a["reasoning_effort"],
                 "tools": a["tools"] or [],
                 "file_ids": [
-                    str(f["file_id"])
-                    for f in conn2_files
-                    if str(f["agent_id"]) == str(a["id"])
+                    str(f["file_id"]) for f in conn2_files if str(f["agent_id"]) == str(a["id"])
                 ],
             }
             for a in agents
@@ -371,7 +368,8 @@ def archive_template(template_id: str, user: dict = Depends(require("templates",
     """Soft-delete: hides the template; existing conversations pinned to it
     fall back to the tenant default on their next turn."""
     with get_connection() as conn:
-        _template_scoped(conn, template_id, user)
+        template = _template_scoped(conn, template_id, user)
+        _reject_system_template(template)
         conn.execute(
             "UPDATE templates SET is_deleted = TRUE, updated_at = now() WHERE id = %s",
             (template_id,),

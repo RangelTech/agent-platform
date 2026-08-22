@@ -74,11 +74,16 @@ def _ensure_runner_token(conn, tenant_id) -> None:
     backend. Never return it through this browser CRUD API.
     """
     exists = conn.execute(
-        "SELECT 1 FROM tool_runner_tokens WHERE tenant_id = %s AND revoked_at IS NULL",
+        """SELECT id, token_encrypted FROM tool_runner_tokens
+             WHERE tenant_id = %s AND revoked_at IS NULL""",
         (tenant_id,),
     ).fetchone()
-    if exists:
+    if exists and exists["token_encrypted"]:
         return
+    if exists:
+        # Migration 0029 briefly existed without token_encrypted. Revoke that
+        # unrecoverable credential so a fresh encrypted credential is created.
+        conn.execute("UPDATE tool_runner_tokens SET revoked_at=now() WHERE id=%s", (exists["id"],))
     token = new_session_token()
     conn.execute(
         """INSERT INTO tool_runner_tokens (tenant_id, token_hash, token_encrypted)

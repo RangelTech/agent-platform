@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from app.bootstrap import bootstrap_master
 from app.config import settings
 from app.migrations import run_migrations
+from app.ragentes_guide import ensure_all_tenants
 from app.routes import ai_router as ai_router_routes
 from app.routes import ai_services as ai_service_routes
 from app.routes import artifacts as artifact_routes
@@ -26,6 +27,7 @@ from app.routes import profiles as profile_routes
 from app.routes import public_api as public_routes
 from app.routes import secrets as secret_routes
 from app.routes import templates as template_routes
+from app.routes import tenant_guide as tenant_guide_routes
 from app.routes import tenants as tenant_routes
 from app.routes import toolkits as toolkit_routes
 from app.routes import usage as usage_routes
@@ -82,6 +84,7 @@ async def lifespan(app: FastAPI):
     else:
         try:
             bootstrap_master()
+            ensure_all_tenants()
         except Exception as exc:
             detail = _sanitize_error(exc)
             app.state.boot_status = {
@@ -138,6 +141,7 @@ app.include_router(chat_routes.router)
 app.include_router(custom_tool_routes.router)
 app.include_router(ai_service_routes.router)
 app.include_router(template_routes.router)
+app.include_router(tenant_guide_routes.router)
 app.include_router(secret_routes.router)
 app.include_router(datasource_routes.router)
 app.include_router(artifact_routes.router)
