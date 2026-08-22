@@ -94,6 +94,52 @@ def test_platform_guide_is_a_versioned_structured_package(client, tenant_admin):
     assert any(section["id"] == "custom-tools" for section in guide["sections"])
 
 
+def test_member_gets_a_limited_users_summary_without_cross_tenant_data(
+    client, tenant, master_token
+):
+    profiles = client.get("/api/user-profiles", headers=auth(master_token)).json()
+    member_profile = next(
+        item
+        for item in profiles
+        if item["tenant_id"] == tenant["id"] and item["name"] == "Usuário"
+    )
+    created = client.post(
+        "/api/users",
+        headers=auth(master_token),
+        json={
+            "email": "member-guide@acme.com",
+            "name": "Membro do Guia",
+            "password": "senha-forte-123",
+            "profile_id": member_profile["id"],
+            "tenant_id": tenant["id"],
+        },
+    )
+    assert created.status_code == 201, created.text
+    login = client.post(
+        "/api/auth/login",
+        json={"email": "member-guide@acme.com", "password": "senha-forte-123"},
+    )
+    assert login.status_code == 200, login.text
+    member = created.json()
+    chat = client.post("/api/chats/ragentes-guide", headers=auth(login.json()["token"])).json()
+
+    previous = settings.kernel_internal_token
+    settings.kernel_internal_token = "test-guide-token"
+    try:
+        response = client.post(
+            "/api/internal/tenant-guide/users-activity",
+            headers={"Authorization": "Bearer test-guide-token"},
+            json={"tenant_id": tenant["id"], "user_id": member["id"], "chat_id": chat["id"]},
+        )
+    finally:
+        settings.kernel_internal_token = previous
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "limited": True,
+        "message": "Seu perfil não permite consultar usuários.",
+    }
+
+
 def test_confirmed_guide_plan_creates_a_deployed_template(client, tenant_admin):
     chat = client.post("/api/chats/ragentes-guide", headers=auth(tenant_admin["token"])).json()
     body = {
@@ -200,6 +246,14 @@ def test_guide_plan_requires_confirmation_after_the_preview(client, tenant_admin
     finally:
         settings.kernel_internal_token = old_token
     assert denied.status_code == 409
+    with get_connection() as conn:
+        audit = conn.execute(
+            """SELECT action, error_message FROM tenant_guide_audit
+                 WHERE tenant_id=%s AND user_id=%s ORDER BY created_at DESC LIMIT 1""",
+            (tenant_admin["user"]["tenant_id"], tenant_admin["user"]["id"]),
+        ).fetchone()
+    assert audit["action"] == "create_denied"
+    assert "confirmação explícita" in audit["error_message"]
 
 
 def test_guide_rejects_a_forged_cross_tenant_chat_and_audits_the_attempt(

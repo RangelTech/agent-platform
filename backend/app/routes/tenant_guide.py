@@ -88,6 +88,17 @@ def _audit(conn, tenant_id, user_id, chat_id, action: str, plan=None, result=Non
     ).fetchone()["id"]
 
 
+def _deny_create(
+    conn, tenant_id: str, user_id: str, chat_id: str, status: int, message: str
+) -> None:
+    """Persist a denied creation attempt before returning its HTTP error."""
+    _audit(conn, tenant_id, user_id, chat_id, "create_denied", error=message)
+    # get_connection rolls back when HTTPException leaves this request. Denied
+    # confirmations are security audit events, so persist them first.
+    conn.commit()
+    raise HTTPException(status, message)
+
+
 def _plan(raw: dict) -> dict:
     name = str(raw.get("name") or "").strip()
     description = str(raw.get("description") or "").strip()
@@ -213,7 +224,9 @@ async def tenant_guide(action: str, request: Request):
             if not isinstance(confirmation_id, str) or not has_permission(
                 actor, "templates", "create"
             ):
-                raise HTTPException(403, "Sem permissão para criar template")
+                _deny_create(
+                    conn, tenant_id, user_id, chat_id, 403, "Sem permissão para criar template"
+                )
             approval = conn.execute(
                 """SELECT plan, created_at FROM tenant_guide_audit
                    WHERE id=%s AND tenant_id=%s AND user_id=%s AND chat_id=%s
@@ -221,7 +234,14 @@ async def tenant_guide(action: str, request: Request):
                 (confirmation_id, tenant_id, user_id, chat_id),
             ).fetchone()
             if approval is None:
-                raise HTTPException(409, "Aguarde confirmação explícita do usuário")
+                _deny_create(
+                    conn,
+                    tenant_id,
+                    user_id,
+                    chat_id,
+                    409,
+                    "Aguarde confirmação explícita do usuário",
+                )
             confirmation = conn.execute(
                 """SELECT content FROM chat_messages
                    WHERE chat_id=%s AND role='user' AND created_at >= %s
@@ -229,7 +249,14 @@ async def tenant_guide(action: str, request: Request):
                 (chat_id, approval["created_at"]),
             ).fetchone()
             if confirmation is None or not _CONFIRMATION.search(confirmation["content"]):
-                raise HTTPException(409, "Aguarde confirmação explícita do usuário")
+                _deny_create(
+                    conn,
+                    tenant_id,
+                    user_id,
+                    chat_id,
+                    409,
+                    "Aguarde confirmação explícita do usuário",
+                )
             plan = approval["plan"]
             result = create_guided_template(
                 conn, tenant_id=tenant_id, created_by=user_id, plan=plan
