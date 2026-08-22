@@ -59,6 +59,10 @@ def _serialize(row: dict) -> dict:
     }
 
 
+def _serialize_detail(row: dict) -> dict:
+    return {**_serialize(row), "python_code": row["python_code"]}
+
+
 def _owned(conn, tool_id: str, tenant_id: str) -> dict:
     row = conn.execute(
         "SELECT * FROM custom_tools WHERE id=%s AND tenant_id=%s", (tool_id, tenant_id)
@@ -129,6 +133,14 @@ def create_tool(payload: ToolIn, user: dict = Depends(require("templates", "edit
             ),
         ).fetchone()
     return _serialize(row)
+
+
+@router.get("/{tool_id}")
+def get_tool(tool_id: str, user: dict = Depends(require("templates", "view"))):
+    if user["is_master"]:
+        raise HTTPException(400, "Selecione uma empresa para consultar Custom Tools")
+    with get_connection() as conn:
+        return _serialize_detail(_owned(conn, tool_id, user["tenant_id"]))
 
 
 @router.put("/{tool_id}")

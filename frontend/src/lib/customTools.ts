@@ -16,7 +16,7 @@ export interface CustomToolInput {
   description: string
   input_schema: Record<string, unknown>
   python_code: string
-  secrets: Record<string, string>
+  secrets?: Record<string, string>
   timeout_seconds: number
   enabled: boolean
 }
@@ -24,6 +24,9 @@ export interface CustomToolInput {
 export const listCustomTools = () => api<CustomTool[]>('/custom-tools')
 export const createCustomTool = (body: CustomToolInput) =>
   api<CustomTool>('/custom-tools', { method: 'POST', body: JSON.stringify(body) })
+export const getCustomTool = (id: string) => api<CustomToolDetail>(`/custom-tools/${id}`)
+export const updateCustomTool = (id: string, body: CustomToolInput) =>
+  api<CustomTool>(`/custom-tools/${id}`, { method: 'PUT', body: JSON.stringify(body) })
 export const deleteCustomTool = (id: string) =>
   api<void>(`/custom-tools/${id}`, { method: 'DELETE' })
 export const testCustomTool = (id: string, inputs: Record<string, unknown>) =>
@@ -31,3 +34,7 @@ export const testCustomTool = (id: string, inputs: Record<string, unknown>) =>
     method: 'POST',
     body: JSON.stringify({ inputs }),
   })
+
+export interface CustomToolDetail extends CustomTool {
+  python_code: string
+}
