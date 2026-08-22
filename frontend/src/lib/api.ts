@@ -18,6 +18,27 @@ export class ApiError extends Error {
   }
 }
 
+function apiErrorMessage(detail: unknown, fallback: string): string {
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((item) => {
+        if (!item || typeof item !== 'object') return null
+        const issue = item as { loc?: unknown; msg?: unknown }
+        const field = Array.isArray(issue.loc) ? issue.loc.at(-1) : null
+        const message = typeof issue.msg === 'string' ? issue.msg : null
+        return message ? `${field ? `${field}: ` : ''}${message}` : null
+      })
+      .filter((message): message is string => Boolean(message))
+    if (messages.length) return messages.join('. ')
+  }
+  if (detail && typeof detail === 'object' && 'message' in detail) {
+    const message = (detail as { message?: unknown }).message
+    if (typeof message === 'string') return message
+  }
+  return fallback
+}
+
 export async function api<T>(
   path: string,
   options: RequestInit = {},
@@ -44,7 +65,7 @@ export async function api<T>(
       .json()
       .then((b) => b.detail)
       .catch(() => null)
-    throw new ApiError(res.status, detail ?? `Erro ${res.status}`)
+    throw new ApiError(res.status, apiErrorMessage(detail, `Erro ${res.status}`))
   }
 
   return res.status === 204 ? (undefined as T) : res.json()

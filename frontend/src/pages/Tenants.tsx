@@ -90,10 +90,11 @@ export default function Tenants() {
             />
             <Input
               label="Chave do tenant"
-              hint="Use minúsculas, números e hífen. Ex.: hamburgueria-demo."
+              hint="Use ao menos 3 caracteres: minúsculas, números e hífen. Ex.: hamburgueria-demo."
               required
+              minLength={3}
               pattern="[a-z0-9][a-z0-9-]*"
-              title="Minúsculas, números e hífen"
+              title="Ao menos 3 caracteres: minúsculas, números e hífen"
               value={key}
               name="tenant-key"
               onChange={(e) => setKey(e.target.value)}
