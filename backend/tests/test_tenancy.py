@@ -79,6 +79,23 @@ def test_master_tenant_list_paginates_and_filters(client, master_token, tenant):
     assert body["items"][0]["tenant_key"] == tenant["tenant_key"]
 
 
+def test_master_tenant_page_has_stable_order_and_rejects_oversized_page(client, master_token):
+    for name, key in (("Zeta", "zeta-page"), ("Alfa", "alfa-page"), ("Alfa", "alfa-second")):
+        created = client.post(
+            "/api/tenants", json={"name": name, "tenant_key": key}, headers=auth(master_token)
+        )
+        assert created.status_code == 201, created.text
+
+    first = client.get("/api/tenants?q=alfa&page=1&page_size=1", headers=auth(master_token))
+    second = client.get("/api/tenants?q=alfa&page=2&page_size=1", headers=auth(master_token))
+    assert first.status_code == second.status_code == 200
+    assert first.json()["total"] == 2
+    assert first.json()["total_pages"] == 2
+    assert first.json()["items"][0]["tenant_key"] == "alfa-page"
+    assert second.json()["items"][0]["tenant_key"] == "alfa-second"
+    assert client.get("/api/tenants?page_size=101", headers=auth(master_token)).status_code == 422
+
+
 def test_admin_sees_only_users_of_their_own_tenant(
     client, tenant_admin, other_tenant_admin
 ):

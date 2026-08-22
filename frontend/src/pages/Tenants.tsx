@@ -159,7 +159,14 @@ export default function Tenants() {
           <ErrorText>Não foi possível carregar os dados. Recarregue a página ou tente novamente.</ErrorText>
         ) : tenants.length === 0 ? (
           <EmptyState
-            title="Nenhuma empresa cadastrada"
+            title={debouncedQuery ? 'Nenhuma empresa encontrada' : 'Nenhuma empresa cadastrada'}
+            action={
+              debouncedQuery ? (
+                <Button type="button" variant="ghost" onClick={() => setQuery('')}>
+                  Limpar busca
+                </Button>
+              ) : undefined
+            }
             description="Crie a primeira empresa acima para começar a provisionar usuários e templates."
           />
         ) : (
