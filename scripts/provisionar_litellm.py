@@ -42,6 +42,16 @@ async def provisionar(tenant_key: str) -> dict:
     team = await litellm_client.create_team(LITELLM_BASE_URL, LITELLM_MASTER_KEY, team_alias=tenant_key)
     team_id = team["team_id"]
 
+    # Fallback local (produto-07 seção 8a) liberado pra todo tenant desde o
+    # provisionamento -- achado real 23/08/2026: sem isso, uma virtual key de
+    # tenant real leva 403 (`team_model_access_denied`) ao tentar o fallback,
+    # mesmo com o deployment registrado e funcionando pra quem tem master key.
+    # `add_model_to_team` é idempotente, seguro de chamar mesmo antes do Team
+    # ter algum outro model_name.
+    await litellm_client.add_model_to_team(
+        LITELLM_BASE_URL, LITELLM_MASTER_KEY, team_id=team_id, model_name="ragentes-local-fallback"
+    )
+
     bridge_key = await litellm_client.generate_key(
         LITELLM_BASE_URL, LITELLM_MASTER_KEY, team_id=team_id, key_alias=f"{tenant_key}-bridge"
     )
