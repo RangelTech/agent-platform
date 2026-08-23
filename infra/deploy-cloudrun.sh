@@ -30,11 +30,24 @@ fi
   --config=infra/cloudbuild-backend.yaml \
   --substitutions=SHORT_SHA=$SHORT_SHA .
 
+# BRIDGE_URL real: achado 23/08/2026 (mesma classe do BRIDGE_PUBLIC_URL do
+# chatwoot-rt) -- "bridge.rangeltech.net" resolve pro IP antigo da VPS, de
+# antes da bridge migrar pro Cloud Run (infra-01); Traefik lá não tem rota
+# pra ela (404). Backend usa BRIDGE_URL pra SSO/chamadas de provisionamento
+# na bridge -- com a URL morta, esses caminhos falhavam silenciosamente.
+BRIDGE_URL=$("$GCLOUD_BIN" run services describe chatwoot-bridge \
+  --project=$PROJECT --region=$REGION --format='value(status.url)')
+
 "$GCLOUD_BIN" run deploy agent-llm-backend \
   --project=$PROJECT --region=$REGION \
   --image=$REPO/agent-platform-backend:$SHORT_SHA \
   --set-secrets=DATABASE_URL=agent-platform-database-url:latest,ENCRYPTION_KEY=agent-platform-encryption-key:latest,S3_ACCESS_KEY_ID=gcs-hmac-access-key:latest,S3_SECRET_ACCESS_KEY=gcs-hmac-secret-key:latest,KERNEL_INTERNAL_TOKEN=agent-platform-kernel-internal-token:latest,BRIDGE_ADMIN_TOKEN=agent-platform-bridge-admin-token:latest \
-  --set-env-vars="KERNEL_URL=https://kernel-llm-pujq3pjmca-uc.a.run.app,PUBLIC_BASE_URL=https://ia.rangeltech.net,BRIDGE_URL=https://bridge.rangeltech.net,STORAGE_BACKEND=s3,S3_ENDPOINT_URL=https://storage.googleapis.com,S3_REGION=us-east-1,S3_BUCKET=rangel-tech-storage,S3_PREFIX=teste-ia/agent-llm,S3_PUBLIC_BASE_URL=https://storage.googleapis.com/rangel-tech-storage/teste-ia,AWS_REQUEST_CHECKSUM_CALCULATION=when_required,AWS_RESPONSE_CHECKSUM_VALIDATION=when_required" \
+  --set-env-vars="KERNEL_URL=https://kernel-llm-pujq3pjmca-uc.a.run.app,PUBLIC_BASE_URL=https://ia.rangeltech.net,BRIDGE_URL=$BRIDGE_URL,STORAGE_BACKEND=s3,S3_ENDPOINT_URL=https://storage.googleapis.com,S3_REGION=us-east-1,S3_BUCKET=rangel-tech-storage,S3_PREFIX=teste-ia/agent-llm,S3_PUBLIC_BASE_URL=https://storage.googleapis.com/rangel-tech-storage/teste-ia,AWS_REQUEST_CHECKSUM_CALCULATION=when_required,AWS_RESPONSE_CHECKSUM_VALIDATION=when_required" \
   --allow-unauthenticated \
-  --memory=1Gi --cpu=1 --min-instances=0 --max-instances=5 \
+  --memory=1Gi --cpu=1 --min-instances=1 --max-instances=5 \
   --timeout=300
+# min-instances=1: achado real 23/08/2026 (mega-spec-reestrutura, item B) --
+# 2 de 6 requisições reais em min=0 estouraram timeout de 15s, uma 3ª levou
+# 6,9s. Sem isto, este script (o deploy real que roda em todo push -- ver
+# infra/terraform/main.tf pra saber por que ele NÃO é a fonte de verdade)
+# reverte o fix silenciosamente no próximo push, como já aconteceu uma vez.

@@ -1,3 +1,12 @@
+# ⚠️ Achado real 23/08/2026: este arquivo NÃO é o caminho de deploy real do
+# `agent-llm-backend`. O CI (`ci.yml`, job `deploy-cloudrun`) chama
+# `infra/deploy-cloudrun.sh` (plain `gcloud run deploy`) em todo push, não
+# `terraform apply` -- mudar um valor aqui (ex.: `min_instance_count`) e só
+# aqui não tem efeito nenhum em produção, e um push normal reverte qualquer
+# ajuste feito manualmente via `gcloud run services update`. Se for alterar
+# a config real do serviço, edite `infra/deploy-cloudrun.sh`. Não sei ainda
+# se este `.tf` já foi a fonte de verdade antes e ficou desatualizado, ou se
+# nunca chegou a ser -- não investiguei a fundo, só registrei o achado.
 terraform {
   required_version = ">= 1.9.0"
   required_providers {
