@@ -26,6 +26,7 @@ from mcp.server import Server
 from mcp.server.fastmcp.server import StreamableHTTPASGIApp, StreamableHTTPSessionManager
 from mcp.types import TextContent, Tool
 from psycopg import connect
+from psycopg.rows import dict_row
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 ENCRYPTION_KEY = os.environ.get("ENCRYPTION_KEY", "")
@@ -39,7 +40,7 @@ MAX_ARTIFACT_BYTES = 250 * 1024 * 1024
 def _db():
     if not DATABASE_URL:
         raise RuntimeError("DATABASE_URL não configurada")
-    return connect(DATABASE_URL, row_factory=dict)
+    return connect(DATABASE_URL, row_factory=dict_row)
 
 
 def _hash(token: str) -> str:
