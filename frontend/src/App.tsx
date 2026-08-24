@@ -24,6 +24,7 @@ import Login from './pages/Login'
 import McpStore from './pages/McpStore'
 import Memories from './pages/Memories'
 import Omnichannel from './pages/Omnichannel'
+import OAuthCallback from './pages/OAuthCallback'
 import Payments from './pages/Payments'
 import Customize from './pages/Customize'
 import CustomTools from './pages/CustomTools'
@@ -284,6 +285,11 @@ export default function App() {
             <Route path="/politica-de-privacidade" element={<Legal page="privacidade" />} />
             <Route path="/termos-de-uso" element={<Legal page="termos" />} />
             <Route path="/exclusao-de-dados" element={<Legal page="exclusao" />} />
+            {/* Produto-08 — callback do OAuth de assinatura (Claude/Codex/
+                Antigravity/Gemini CLI/Cline): o provedor redireciona pra cá
+                antes de qualquer sessão nossa existir nessa aba, mesmo
+                motivo das páginas legais acima ficarem fora do Gate. */}
+            <Route path="/oauth/callback" element={<OAuthCallback />} />
             <Route path="*" element={<Gate />} />
           </Routes>
         </Router>

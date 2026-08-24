@@ -396,6 +396,33 @@ function ModalConexao({
     onError: (e) => setErro(e instanceof ApiError ? e.message : 'Falha ao concluir'),
   })
 
+  // A aba de callback (produto-08, /oauth/callback) repassa o código pra cá
+  // via postMessage assim que o provedor redireciona — sem isso o cliente
+  // teria que copiar a URL na mão da outra aba e colar aqui.
+  useEffect(() => {
+    function aoReceberMensagem(evento: MessageEvent) {
+      if (evento.origin !== window.location.origin) return
+      const corpo = evento.data as { type?: string; dados?: { code?: string; error?: string } }
+      if (corpo?.type !== 'oauth_callback' || !corpo.dados) return
+      if (corpo.dados.error) {
+        setErro(corpo.dados.error)
+        return
+      }
+      if (corpo.dados.code) setCodigo(corpo.dados.code)
+    }
+    window.addEventListener('message', aoReceberMensagem)
+    return () => window.removeEventListener('message', aoReceberMensagem)
+  }, [])
+
+  // Assim que o código chega (mensagem ou colado na mão), conclui sozinho —
+  // fluxo redirect só precisa do clique inicial de "Abrir autorização".
+  useEffect(() => {
+    if (codigo && inicio && inicio.modo !== 'device' && !concluir.isPending) {
+      concluir.mutate()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [codigo])
+
   /**
    * Fluxo device: o cliente digita o código no site do provedor e nós
    * perguntamos até ele confirmar. Sem isso ele teria que apertar um botão

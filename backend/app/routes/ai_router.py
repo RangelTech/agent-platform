@@ -11,13 +11,15 @@ própria instância, não existe caminho para alcançar conta ou combo alheio.
 
 import logging
 import re
+from datetime import UTC
 
 from fastapi import APIRouter, Depends, HTTPException
 from psycopg.types.json import Json
 from pydantic import BaseModel, Field
 
-from app import litellm_client, router_catalog, router_client
+from app import litellm_client, oauth_engine, router_catalog, router_client
 from app.auth import require
+from app.config import settings
 from app.crypto import decrypt, encrypt
 from app.db import get_connection
 from app.installation_secrets import resolver as resolver_segredo
@@ -328,6 +330,10 @@ class OAuthFimIn(BaseModel):
     state: str | None = None
     # Fluxo device: o código que a etapa de início devolveu.
     device_code: str | None = None
+    # Fluxo device de alguns provedores (ex.: kimi) precisa de um dado extra
+    # gerado na etapa de início (device_id) — trafega de volta aqui porque
+    # não temos onde guardar estado entre as duas chamadas além do cliente.
+    provider_extra: dict | None = None
 
 
 def _provedor_do_catalogo(provider_id: str) -> dict:
@@ -384,6 +390,10 @@ async def oauth_iniciar(
     if provedor["modo"] == "apikey":
         raise HTTPException(status_code=400, detail="Este provedor conecta por chave de API")
     registro = _exigir_router(user)
+
+    if _modo_litellm(registro):
+        return await _oauth_iniciar_litellm(payload.provider, provedor["modo"])
+
     try:
         if provedor["modo"] == "device":
             dados = await router_client.oauth_device_code(registro, payload.provider)
@@ -409,6 +419,38 @@ async def oauth_iniciar(
     }
 
 
+async def _oauth_iniciar_litellm(provider: str, modo: str) -> dict:
+    """Produto-08 — motor de OAuth próprio (`app/oauth_engine.py`), portado
+    do 9Router, sem depender de instância nenhuma."""
+    try:
+        if modo == "device":
+            dados = await oauth_engine.iniciar_device(provider)
+            return {
+                "modo": "device",
+                "auth_url": dados["verification_uri"],
+                "user_code": dados["user_code"],
+                "device_code": dados["device_code"],
+                "redirect_uri": None,
+                "code_verifier": None,
+                "state": None,
+                "provider_extra": dados.get("provider_extra"),
+            }
+
+        redirect_uri = f"{settings.public_base_url.rstrip('/')}/oauth/callback"
+        dados = oauth_engine.iniciar_redirect(provider, redirect_uri)
+        return {
+            "modo": "redirect",
+            "auth_url": dados["auth_url"],
+            "user_code": None,
+            "device_code": None,
+            "redirect_uri": redirect_uri,
+            "code_verifier": dados["code_verifier"],
+            "state": dados["state"],
+        }
+    except oauth_engine.OAuthError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
 @router.post("/contas/oauth/concluir", status_code=201)
 async def oauth_concluir(
     payload: OAuthFimIn, user: dict = Depends(require("ai_router", "create"))
@@ -416,6 +458,9 @@ async def oauth_concluir(
     """Segunda metade: troca o código pela sessão e registra a conta."""
     provedor = _provedor_do_catalogo(payload.provider)
     registro = _exigir_router(user)
+
+    if _modo_litellm(registro):
+        return await _oauth_concluir_litellm(payload, provedor["modo"], user)
 
     try:
         if provedor["modo"] == "device":
@@ -451,6 +496,69 @@ async def oauth_concluir(
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     conta = _registrar_conta(user, conexao, payload.provider, payload.label)
+    return {"pendente": False, "conta": conta}
+
+
+def _registrar_conta_oauth(
+    user: dict, provider: str, label: str, resultado: oauth_engine.ResultadoToken
+) -> dict:
+    """Grava uma conta de assinatura nova (produto-08). Sempre INSERT — várias
+    contas do mesmo provedor por tenant são o caso normal (revezamento), não
+    um erro a evitar como era com `router_connection_id` (que vinha de uma
+    instância 9Router única por tenant)."""
+    expira_em = None
+    if resultado.expires_in is not None:
+        from datetime import datetime, timedelta
+
+        expira_em = datetime.now(UTC) + timedelta(seconds=resultado.expires_in)
+
+    with get_connection() as conn:
+        linha = conn.execute(
+            """INSERT INTO tenant_ai_accounts
+                   (tenant_id, provider, auth_type, label, access_token_encrypted,
+                    refresh_token_encrypted, token_expires_at, provider_data)
+               VALUES (%s, %s, 'oauth', %s, %s, %s, %s, %s)
+               RETURNING *""",
+            (
+                user["tenant_id"],
+                provider,
+                label,
+                encrypt(resultado.access_token),
+                encrypt(resultado.refresh_token) if resultado.refresh_token else None,
+                expira_em,
+                Json(resultado.provider_data or {}),
+            ),
+        ).fetchone()
+    return {"id": str(linha["id"]), "provider": linha["provider"], "label": linha["label"]}
+
+
+async def _oauth_concluir_litellm(payload: "OAuthFimIn", modo: str, user: dict) -> dict:
+    if modo == "device":
+        if not payload.device_code:
+            raise HTTPException(status_code=400, detail="Código do dispositivo ausente")
+        try:
+            resultado = await oauth_engine.consultar_device(
+                payload.provider, payload.device_code, payload.provider_extra
+            )
+        except oauth_engine.Pendente:
+            return {"pendente": True, "erro": None}
+        except oauth_engine.OAuthError as exc:
+            # Erro real (negado, expirado) — não é "erro" de rede, é o
+            # provedor respondendo; a tela mostra inline, sem toast.
+            return {"pendente": False, "erro": str(exc)}
+    else:
+        if not payload.code:
+            raise HTTPException(status_code=400, detail="Código de autorização ausente")
+        if not payload.redirect_uri or not payload.code_verifier:
+            raise HTTPException(status_code=400, detail="Dados da autorização incompletos")
+        try:
+            resultado = await oauth_engine.concluir_redirect(
+                payload.provider, payload.code, payload.redirect_uri, payload.code_verifier
+            )
+        except oauth_engine.OAuthError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    conta = _registrar_conta_oauth(user, payload.provider, payload.label, resultado)
     return {"pendente": False, "conta": conta}
 
 
