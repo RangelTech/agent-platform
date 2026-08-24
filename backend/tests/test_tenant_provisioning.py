@@ -1,13 +1,14 @@
-"""Automatic 9Router provisioning dispatched by `create_tenant` (infra-06).
+"""Automatic LiteLLM Team provisioning dispatched by `create_tenant`
+(infra-06, migrated off 9Router in infra-04 — achado real 24/08/2026).
 
-The real script SSHes into the VPS and touches DNS/TLS — never run for real
-in tests. These tests only prove the dispatch logic: the flag gate, the
-background task updating `router_provisioning_status`, and the frontend-
-visible fields on `/ai-router/status`. `subprocess.run` is monkeypatched so
-no process is ever spawned.
+The real path calls `litellm_client.create_team`/`add_model_to_team`/
+`generate_key` over HTTP — never hit a real LiteLLM in tests. These tests
+only prove the dispatch logic: the flag gate, the background task updating
+`router_provisioning_status`, and the frontend-visible fields on
+`/ai-router/status`. `litellm_client`'s functions are monkeypatched so no
+HTTP call is ever made.
 """
 
-import types
 import uuid
 
 import pytest
@@ -23,6 +24,18 @@ def _create_tenant(client, master_token, **overrides):
     r = client.post("/api/tenants", json=payload, headers=auth(master_token))
     assert r.status_code == 201, r.text
     return r.json()
+
+
+async def _fake_create_team(base_url, master_key, *, team_alias):
+    return {"team_id": f"team-{team_alias}"}
+
+
+async def _fake_add_model_to_team(base_url, master_key, *, team_id, model_name):
+    return None
+
+
+async def _fake_generate_key(base_url, master_key, *, team_id, key_alias):
+    return f"sk-fake-{key_alias}"
 
 
 def test_tenant_is_created_with_pending_status_by_default(client, master_token):
@@ -49,13 +62,12 @@ def test_tenant_is_created_with_pending_status_by_default(client, master_token):
 
 
 def test_background_task_marks_ready_on_success(client, master_token, monkeypatch):
-    """With the flag on, a successful subprocess run flips pending -> ready."""
+    """With the flag on, a successful LiteLLM provisioning flips pending -> ready."""
     monkeypatch.setattr(settings, "router_auto_provision_enabled", True)
-
-    def fake_run(cmd, capture_output, text, timeout):
-        return types.SimpleNamespace(returncode=0, stdout="ok", stderr="")
-
-    monkeypatch.setattr("app.routes.tenants.subprocess.run", fake_run)
+    monkeypatch.setattr("app.routes.tenants.resolver_segredo", lambda nome, padrao="": "fake")
+    monkeypatch.setattr("app.routes.tenants.litellm_client.create_team", _fake_create_team)
+    monkeypatch.setattr("app.routes.tenants.litellm_client.add_model_to_team", _fake_add_model_to_team)
+    monkeypatch.setattr("app.routes.tenants.litellm_client.generate_key", _fake_generate_key)
 
     tenant = _create_tenant(client, master_token)
     # BackgroundTasks finish before TestClient hands back the response, so
@@ -65,15 +77,16 @@ def test_background_task_marks_ready_on_success(client, master_token, monkeypatc
     assert updated["router_provisioning_status"] == "ready"
 
 
-def test_background_task_marks_failed_on_nonzero_exit(client, master_token, monkeypatch):
-    """A failing subprocess must not affect the tenant row besides the status
-    fields — the tenant keeps existing (spec point 4)."""
+def test_background_task_marks_failed_on_error(client, master_token, monkeypatch):
+    """A failing provisioning call must not affect the tenant row besides the
+    status fields — the tenant keeps existing (spec point 4)."""
     monkeypatch.setattr(settings, "router_auto_provision_enabled", True)
+    monkeypatch.setattr("app.routes.tenants.resolver_segredo", lambda nome, padrao="": "fake")
 
-    def fake_run(cmd, capture_output, text, timeout):
-        return types.SimpleNamespace(returncode=1, stdout="", stderr="ssh: connection refused")
+    async def _boom(*args, **kwargs):
+        raise RuntimeError("litellm indisponível: connection refused")
 
-    monkeypatch.setattr("app.routes.tenants.subprocess.run", fake_run)
+    monkeypatch.setattr("app.routes.tenants.litellm_client.create_team", _boom)
 
     tenant = _create_tenant(client, master_token)
     row = client.get("/api/tenants", headers=auth(master_token)).json()
@@ -85,13 +98,16 @@ def test_background_task_marks_failed_on_nonzero_exit(client, master_token, monk
 
 def test_background_task_marks_failed_on_timeout(client, master_token, monkeypatch):
     monkeypatch.setattr(settings, "router_auto_provision_enabled", True)
+    monkeypatch.setattr(settings, "router_provision_timeout_seconds", 0)
+    monkeypatch.setattr("app.routes.tenants.resolver_segredo", lambda nome, padrao="": "fake")
 
-    def fake_run(cmd, capture_output, text, timeout):
-        import subprocess
+    async def _slow(*args, **kwargs):
+        import asyncio
 
-        raise subprocess.TimeoutExpired(cmd, timeout)
+        await asyncio.sleep(1)
+        return {"team_id": "x"}
 
-    monkeypatch.setattr("app.routes.tenants.subprocess.run", fake_run)
+    monkeypatch.setattr("app.routes.tenants.litellm_client.create_team", _slow)
 
     tenant = _create_tenant(client, master_token)
     row = client.get("/api/tenants", headers=auth(master_token)).json()

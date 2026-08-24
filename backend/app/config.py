@@ -77,10 +77,11 @@ class Settings(BaseSettings):
     # Audience/SA for Cloud Tasks -> kernel OIDC calls.
     tasks_service_account: str = ""
 
-    # Automatic 9Router provisioning on tenant creation (infra-06). Off by
-    # default: it shells out to `scripts/provisionar_router.py`, which SSHes
-    # into the VPS and touches DNS/TLS — must never fire in dev/tests unless
-    # explicitly turned on where the VPS access actually exists.
+    # Automatic LiteLLM Team provisioning on tenant creation (infra-06,
+    # migrated from 9Router in infra-04 -- achado real 24/08/2026: hook
+    # nunca tinha sido migrado, novo tenant não ganhava Team nenhum). Off by
+    # default in dev/tests; needs LITELLM_BASE_URL/LITELLM_MASTER_KEY
+    # resolvable to do anything.
     router_auto_provision_enabled: bool = False
     router_provision_timeout_seconds: int = 600
 

@@ -1,7 +1,5 @@
+import asyncio
 import logging
-import subprocess
-import sys
-from pathlib import Path
 
 from fastapi import (
     APIRouter,
@@ -17,9 +15,12 @@ from psycopg.errors import UniqueViolation
 from psycopg.types.json import Json
 from pydantic import BaseModel, EmailStr, Field
 
+from app import litellm_client
 from app.auth import current_user
 from app.config import settings
+from app.crypto import encrypt
 from app.db import get_connection
+from app.installation_secrets import resolver as resolver_segredo
 from app.permissions import ADMIN_PERMISSIONS, MEMBER_PERMISSIONS
 from app.schemas import TenantIn, TenantUpdate
 from app.security import hash_password
@@ -27,13 +28,6 @@ from app.security import hash_password
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/tenants", tags=["tenants"])
-
-# backend/app/routes/tenants.py -> repo root -> scripts/provisionar_router.py.
-# Kept as a standalone subprocess call (see `_provisionar_router_em_background`
-# docstring) rather than importing the script's functions.
-_PROVISIONAR_ROUTER_SCRIPT = (
-    Path(__file__).resolve().parent.parent.parent.parent / "scripts" / "provisionar_router.py"
-)
 
 
 class TenantWithAdminIn(TenantIn):
@@ -88,68 +82,85 @@ def _set_provisioning_status(tenant_id, status: str, error: str | None = None) -
         )
 
 
-def _provisionar_router_em_background(tenant_id: str, tenant_key: str) -> None:
-    """Runs `scripts/provisionar_router.py <tenant_key>` for a freshly created
-    tenant, off the request path, and reflects the outcome on `tenants`.
+async def _provisionar_router_em_background(tenant_id: str, tenant_key: str) -> None:
+    """Cria o Team LiteLLM de um tenant recém-criado, fora do caminho da
+    requisição, e reflete o resultado em `tenants.router_provisioning_status`.
 
-    Architecture decision (subprocess, not an imported function): the script
-    already owns the whole flow — SSH into the VPS, create container/volume,
-    DNS, wait for TLS, and register the instance back on the platform via
-    `PUT /api/ai-router/instancias`. Importing its internals would mean
-    duplicating that wiring (env vars, retry loop, platform login) inside the
-    request process instead of reusing the script that is also run by hand
-    (`router-ia-por-tenant.md`) — two code paths for the same job, one of
-    which is exercised far less. A subprocess also crashes independently: if
-    it segfaults or hangs past the timeout, it cannot take the API worker
-    down with it. The trade-off is that we only see this task's stdout/exit
-    code, not fine-grained progress — acceptable since the screen only needs
-    pending/provisioning/ready/failed, not a live log.
+    Achado real 24/08/2026: este hook chamava `scripts/provisionar_router.py`
+    (9Router) até agora — mas o 9Router foi 100% desligado em 21/08/2026
+    (infra-04, ver `concluidas/infra-04-litellm-substitui-9router.md`).
+    Nenhum tenant criado depois da migração jamais recebeu um Team de
+    verdade: o script rodava contra uma infra que não existe mais (ou nem
+    rodava, com a flag desligada), e a tela "Contas de IA" ficava presa em
+    "empresa ainda não conectada" pra sempre — não havia caminho de
+    self-service nenhum, só o script manual `provisionar_litellm.py`
+    (pensado pra uso do dono via terminal, não pro fluxo automático).
 
-    Runs in FastAPI's `BackgroundTasks` thread pool (see `create_tenant`),
-    so `create_tenant` itself returns immediately — DNS+TLS take minutes and
-    must never hold the tenant-creation request open.
+    Agora chama `litellm_client` direto (3 chamadas HTTP: criar Team, liberar
+    o fallback local pro Team, gerar as 2 virtual keys) e grava o resultado
+    em `tenant_routers` na mesma transação lógica do `/instancias-litellm`
+    (`ai_router.py`) -- sem SSH, sem DNS, sem subprocess: o LiteLLM é uma
+    instância só, compartilhada, criar um Team é rápido o bastante pra rodar
+    em processo mesmo dentro do `BackgroundTasks`.
 
-    Never raises: a broken/timed-out provisioning must leave the tenant
-    exactly as it was (point 4 of the spec) — only the status column reflects
-    the failure. The admin can re-run `scripts/provisionar_router.py` by hand
-    once the underlying issue (VPS, DNS, image) is fixed; there is no
-    automatic retry here.
+    Nunca levanta exceção: uma falha de provisionamento deixa o tenant como
+    estava, só a coluna de status reflete o problema. Sem retry automático.
     """
     if not settings.router_auto_provision_enabled:
-        # Feature flag off (default in dev/tests/CI): leave status as
-        # 'pending' — nothing ran, nothing to report as failed.
+        # Feature flag off (default em dev/tests/CI): mantém 'pending' --
+        # nada rodou, nada pra reportar como falha.
         return
 
     _set_provisioning_status(tenant_id, "provisioning")
     try:
-        resultado = subprocess.run(
-            [sys.executable, str(_PROVISIONAR_ROUTER_SCRIPT), tenant_key],
-            capture_output=True,
-            text=True,
-            timeout=settings.router_provision_timeout_seconds,
+        base_url = resolver_segredo("LITELLM_BASE_URL")
+        master_key = resolver_segredo("LITELLM_MASTER_KEY")
+        if not base_url or not master_key:
+            raise RuntimeError("LiteLLM não configurado nesta instalação")
+
+        async def _provisionar() -> tuple[str, str, str]:
+            team = await litellm_client.create_team(base_url, master_key, team_alias=tenant_key)
+            team_id = team["team_id"]
+            # Fallback local liberado desde já pro Team (mesmo motivo de
+            # `provisionar_litellm.py`: sem isso, a virtual key leva 403
+            # `team_model_access_denied` na primeira vez que o fallback
+            # precisar entrar em ação).
+            await litellm_client.add_model_to_team(
+                base_url, master_key, team_id=team_id, model_name="ragentes-local-fallback"
+            )
+            bridge_key = await litellm_client.generate_key(
+                base_url, master_key, team_id=team_id, key_alias=f"{tenant_key}-bridge"
+            )
+            ai_assist_key = await litellm_client.generate_key(
+                base_url, master_key, team_id=team_id, key_alias=f"{tenant_key}-ai-assist"
+            )
+            return team_id, bridge_key, ai_assist_key
+
+        team_id, bridge_key, ai_assist_key = await asyncio.wait_for(
+            _provisionar(), timeout=settings.router_provision_timeout_seconds
         )
-    except subprocess.TimeoutExpired:
-        logger.error("provisionamento do router expirou para o tenant %s", tenant_key)
-        _set_provisioning_status(tenant_id, "failed", "Tempo esgotado ao provisionar a instância")
+    except TimeoutError:
+        logger.error("provisionamento do LiteLLM expirou para o tenant %s", tenant_key)
+        _set_provisioning_status(tenant_id, "failed", "Tempo esgotado ao provisionar o Team de IA")
         return
-    except OSError as exc:  # script ausente, python inacessível, etc.
-        logger.exception("falha ao iniciar o provisionamento do router para %s", tenant_key)
+    except Exception as exc:  # LiteLLM fora do ar, master key errada, etc.
+        logger.exception("falha ao provisionar o Team LiteLLM para %s", tenant_key)
         _set_provisioning_status(tenant_id, "failed", str(exc)[:500])
         return
 
-    if resultado.returncode != 0:
-        detalhe = (resultado.stderr or resultado.stdout or "erro desconhecido").strip()[-500:]
-        logger.error(
-            "provisionamento do router falhou para %s (rc=%s): %s",
-            tenant_key,
-            resultado.returncode,
-            detalhe,
+    with get_connection() as conn:
+        conn.execute(
+            """INSERT INTO tenant_routers
+                   (tenant_id, litellm_team_id, bridge_key_encrypted, ai_assist_key_encrypted)
+               VALUES (%s, %s, %s, %s)
+               ON CONFLICT (tenant_id) DO UPDATE
+                   SET litellm_team_id = EXCLUDED.litellm_team_id,
+                       bridge_key_encrypted = EXCLUDED.bridge_key_encrypted,
+                       ai_assist_key_encrypted = EXCLUDED.ai_assist_key_encrypted,
+                       is_active = TRUE,
+                       updated_at = now()""",
+            (tenant_id, team_id, encrypt(bridge_key), encrypt(ai_assist_key)),
         )
-        _set_provisioning_status(tenant_id, "failed", detalhe)
-        return
-
-    # Sucesso: o próprio script já registrou a instância em `tenant_routers`
-    # via `PUT /api/ai-router/instancias`. Só falta marcar o status aqui.
     _set_provisioning_status(tenant_id, "ready")
 
 

@@ -79,5 +79,29 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_DEPLOYER_SERVICE_ACCOUNT }}
       - uses: google-github-actions/setup-gcloud@v2
+      - name: Fetch secrets from Infisical
+        id: infisical
+        run: |
+          set -euo pipefail
+          TOKEN=$(curl -fsS -X POST "https://infisical.rangeltech.net/api/v1/auth/universal-auth/login" \
+            -H "Content-Type: application/json" \
+            -d "{\"clientId\":\"${{ secrets.INFISICAL_CLIENT_ID }}\",\"clientSecret\":\"${{ secrets.INFISICAL_CLIENT_SECRET }}\"}" \
+            | jq -r '.accessToken')
+          if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+            echo "::error::Failed to authenticate with Infisical" >&2
+            exit 1
+          fi
+          echo "::add-mask::$TOKEN"
+
+          value=$(curl -fsS "https://infisical.rangeltech.net/api/v3/secrets/raw/LITELLM_MASTER_KEY?workspaceId=b4203358-1215-43a9-a821-218a6f587c3e&environment=prod&secretPath=%2F" \
+            -H "Authorization: Bearer $TOKEN" | jq -r '.secret.secretValue')
+          if [ -z "$value" ] || [ "$value" = "null" ]; then
+            echo "::error::Secret LITELLM_MASTER_KEY not found in Infisical" >&2
+            exit 1
+          fi
+          echo "::add-mask::$value"
+          echo "litellm_master_key=$value" >> "$GITHUB_OUTPUT"
       - name: Deploy backend to Cloud Run
+        env:
+          LITELLM_MASTER_KEY: ${{ steps.infisical.outputs.litellm_master_key }}
         run: bash ./infra/deploy-cloudrun.sh

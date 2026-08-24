@@ -38,11 +38,23 @@ fi
 BRIDGE_URL=$("$GCLOUD_BIN" run services describe chatwoot-bridge \
   --project=$PROJECT --region=$REGION --format='value(status.url)')
 
+# LITELLM_BASE_URL/MASTER_KEY + ROUTER_AUTO_PROVISION_ENABLED: achado real
+# 24/08/2026 -- o backend nunca teve essas vars, então nem o self-service de
+# contas/combos (rotas em ai_router.py) nem o auto-provisionamento de Team
+# num tenant novo (tenants.py, corrigido no mesmo achado pra chamar LiteLLM
+# em vez do 9Router decomissionado) funcionavam de verdade em produção.
+# Valor existente (não é rotação nova) -- master key já é usada pelo
+# litellm-router. Vem do Infisical via $LITELLM_MASTER_KEY (exportado pelo
+# `ci.yml` antes de chamar este script) -- decisão do dono (24/08/2026):
+# Infisical é a fonte da verdade de todo secret, GCP Secret Manager custa e
+# não deve ganhar segredo novo nenhum.
+: "${LITELLM_MASTER_KEY:?LITELLM_MASTER_KEY não veio do ambiente (esperado do ci.yml via Infisical)}"
+
 "$GCLOUD_BIN" run deploy agent-llm-backend \
   --project=$PROJECT --region=$REGION \
   --image=$REPO/agent-platform-backend:$SHORT_SHA \
   --set-secrets=DATABASE_URL=agent-platform-database-url:latest,ENCRYPTION_KEY=agent-platform-encryption-key:latest,S3_ACCESS_KEY_ID=gcs-hmac-access-key:latest,S3_SECRET_ACCESS_KEY=gcs-hmac-secret-key:latest,KERNEL_INTERNAL_TOKEN=agent-platform-kernel-internal-token:latest,BRIDGE_ADMIN_TOKEN=agent-platform-bridge-admin-token:latest \
-  --set-env-vars="KERNEL_URL=https://kernel-llm-pujq3pjmca-uc.a.run.app,PUBLIC_BASE_URL=https://ia.rangeltech.net,BRIDGE_URL=$BRIDGE_URL,STORAGE_BACKEND=s3,S3_ENDPOINT_URL=https://storage.googleapis.com,S3_REGION=us-east-1,S3_BUCKET=rangel-tech-storage,S3_PREFIX=teste-ia/agent-llm,S3_PUBLIC_BASE_URL=https://storage.googleapis.com/rangel-tech-storage/teste-ia,AWS_REQUEST_CHECKSUM_CALCULATION=when_required,AWS_RESPONSE_CHECKSUM_VALIDATION=when_required" \
+  --set-env-vars="KERNEL_URL=https://kernel-llm-pujq3pjmca-uc.a.run.app,PUBLIC_BASE_URL=https://ia.rangeltech.net,BRIDGE_URL=$BRIDGE_URL,STORAGE_BACKEND=s3,S3_ENDPOINT_URL=https://storage.googleapis.com,S3_REGION=us-east-1,S3_BUCKET=rangel-tech-storage,S3_PREFIX=teste-ia/agent-llm,S3_PUBLIC_BASE_URL=https://storage.googleapis.com/rangel-tech-storage/teste-ia,AWS_REQUEST_CHECKSUM_CALCULATION=when_required,AWS_RESPONSE_CHECKSUM_VALIDATION=when_required,LITELLM_BASE_URL=https://litellm-router-pujq3pjmca-uc.a.run.app,ROUTER_AUTO_PROVISION_ENABLED=true,LITELLM_MASTER_KEY=$LITELLM_MASTER_KEY" \
   --allow-unauthenticated \
   --memory=1Gi --cpu=1 --min-instances=1 --max-instances=5 \
   --timeout=300
