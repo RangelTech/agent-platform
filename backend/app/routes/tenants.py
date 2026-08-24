@@ -136,9 +136,32 @@ async def _provisionar_router_em_background(tenant_id: str, tenant_key: str) -> 
             )
             return team_id, bridge_key, ai_assist_key
 
-        team_id, bridge_key, ai_assist_key = await asyncio.wait_for(
-            _provisionar(), timeout=settings.router_provision_timeout_seconds
-        )
+        # `litellm-router` roda com min-instances=0 (achado real 23/08/2026,
+        # decisão deliberada -- menos tráfego direto de usuário que os outros
+        # serviços) e seu cold start real (~28s) fica na borda do timeout de
+        # 30s de `litellm_client` (`TIMEOUT`, por request). Uma tentativa
+        # de retry absorve exatamente esse caso: a 2ª chamada já bate numa
+        # instância quente e responde em <1s -- sem isso, todo tenant criado
+        # com o serviço frio falharia o provisionamento por um problema de
+        # timing, não de configuração.
+        try:
+            team_id, bridge_key, ai_assist_key = await asyncio.wait_for(
+                _provisionar(), timeout=settings.router_provision_timeout_seconds
+            )
+        except litellm_client.LiteLLMError:
+            # Retry chama `_provisionar()` do zero -- se o cold start acontecer
+            # já depois do `create_team` (raro, é a 1ª chamada da sequência),
+            # sobra um Team órfão no LiteLLM sem custo/tráfego associado, só
+            # id desperdiçado. Aceitável: o caso comum (timeout na 1ª chamada,
+            # antes de qualquer Team existir) é o que isto resolve de verdade.
+            logger.warning(
+                "1ª tentativa de provisionar %s falhou (provável cold start do "
+                "litellm-router) -- tentando de novo",
+                tenant_key,
+            )
+            team_id, bridge_key, ai_assist_key = await asyncio.wait_for(
+                _provisionar(), timeout=settings.router_provision_timeout_seconds
+            )
     except TimeoutError:
         logger.error("provisionamento do LiteLLM expirou para o tenant %s", tenant_key)
         _set_provisioning_status(tenant_id, "failed", "Tempo esgotado ao provisionar o Team de IA")
