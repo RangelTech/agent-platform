@@ -54,6 +54,12 @@ class Settings(BaseSettings):
     # feature unavailable until the runner itself is deployed.
     tool_runner_url: str = ""
 
+    # Navegador remoto (Playwright) pra OAuth de Claude/Codex, cujo
+    # client_id público só aceita redirect_uri fixo/loopback (produto-08,
+    # adendo 24/08/2026) -- vazio desliga esse modo, cai pro paste manual.
+    oauth_browser_url: str = ""
+    oauth_browser_admin_token: str = ""
+
     # Object storage (uploads). Priority: S3-compatible (MinIO) -> GCS -> local
     # dir. Must match the kernel's settings so both sides read the same paths.
     storage_backend: str = ""

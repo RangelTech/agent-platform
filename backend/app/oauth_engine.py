@@ -197,6 +197,14 @@ def iniciar_redirect(provider: str, redirect_uri: str) -> dict:
     ContasIA.tsx já existia pra fazer, só a URL enviada estava errada.
     Por isso devolvemos aqui o redirect_uri realmente usado: o chamador
     precisa ecoar ESTE de volta na troca de token, não o que passou.
+
+    Codex CLI tem a MESMA restrição, mas pior: o client_id público dele só
+    aceita `http://localhost:1455/auth/callback` -- um endereço que só
+    existe de verdade na máquina de quem está logando, nunca no nosso
+    servidor. Não tem fallback de "colar código na mão" possível aqui (a
+    página nunca carrega, é connection refused) -- só funciona via o
+    navegador remoto (`oauth-browser`, produto-08 adendo), que roda o
+    navegador E o listener dessa porta na mesma máquina de propósito.
     """
     cfg = _config(provider)
     state = gerar_state()
@@ -205,6 +213,8 @@ def iniciar_redirect(provider: str, redirect_uri: str) -> dict:
     if cfg["flow"] == "redirect_pkce":
         if provider == "claude":
             redirect_uri = "https://console.anthropic.com/oauth/code/callback"
+        elif provider == "codex":
+            redirect_uri = "http://localhost:1455/auth/callback"
         params = {
             "response_type": "code",
             "client_id": cfg["client_id"],

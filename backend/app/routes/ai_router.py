@@ -13,6 +13,7 @@ import logging
 import re
 from datetime import UTC
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from psycopg.types.json import Json
 from pydantic import BaseModel, Field
@@ -454,6 +455,64 @@ async def _oauth_iniciar_litellm(provider: str, modo: str) -> dict:
         }
     except oauth_engine.OAuthError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+# Achado real 24/08/2026: o client_id público de Claude e Codex CLI só
+# aceita redirect_uri fixo/loopback (console.anthropic.com/oauth/code/
+# callback e http://localhost:1455/auth/callback) -- Claude ainda dá pra
+# colar o código na mão, mas Codex NUNCA teria como funcionar puramente
+# pela nossa própria tela hospedada (localhost é sempre a máquina de quem
+# tá logando, nunca a nossa). Solução: um navegador de verdade (Playwright,
+# serviço `oauth-browser`) rodando NA MESMA máquina do "listener" que
+# intercepta esse redirect, espelhado pro admin do tenant via WebSocket --
+# ver oauth-browser/app.py.
+_NAVEGADOR_MIRROR_PROVEDORES = {"claude", "codex"}
+
+
+@router.post("/contas/oauth/navegador/iniciar")
+async def oauth_navegador_iniciar(
+    payload: OAuthInicioIn, user: dict = Depends(require("ai_router", "create"))
+):
+    if payload.provider not in _NAVEGADOR_MIRROR_PROVEDORES:
+        raise HTTPException(
+            status_code=400, detail=f"provedor '{payload.provider}' não usa o navegador espelhado"
+        )
+    if not settings.oauth_browser_url:
+        raise HTTPException(status_code=503, detail="navegador remoto não configurado")
+
+    _exigir_router(user)
+    redirect_uri = f"{settings.public_base_url.rstrip('/')}/oauth/callback"
+    try:
+        dados = oauth_engine.iniciar_redirect(payload.provider, redirect_uri)
+    except oauth_engine.OAuthError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    try:
+        async with httpx.AsyncClient(timeout=35) as client:
+            resp = await client.post(
+                f"{settings.oauth_browser_url.rstrip('/')}/sessions",
+                headers={"Authorization": f"Bearer {settings.oauth_browser_admin_token}"},
+                json={"auth_url": dados["auth_url"], "provider": payload.provider},
+            )
+        resp.raise_for_status()
+        sessao = resp.json()
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502, detail=f"falha ao abrir o navegador remoto: {exc}"
+        ) from exc
+
+    ws_base = (
+        settings.oauth_browser_url.rstrip("/")
+        .replace("https://", "wss://")
+        .replace("http://", "ws://")
+    )
+    return {
+        "modo": "navegador",
+        "ws_url": f"{ws_base}/sessions/{sessao['session_id']}/stream?token={sessao['ws_token']}",
+        "redirect_uri": dados["redirect_uri"],
+        "code_verifier": dados["code_verifier"],
+        "state": dados["state"],
+    }
 
 
 @router.post("/contas/oauth/concluir", status_code=201)

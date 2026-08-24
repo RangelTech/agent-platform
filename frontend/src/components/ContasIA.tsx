@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+} from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Badge, Button, Card, EmptyState, ErrorText, Input, Select, Skeleton } from './ui'
 import { api, ApiError } from '../lib/api'
@@ -344,9 +351,23 @@ function ModalConexao({
   const [aguardando, setAguardando] = useState(false)
   const cancelado = useRef(false)
 
+  // Claude e Codex: o client_id público deles só aceita redirect_uri
+  // fixo/loopback (console.anthropic.com e localhost:1455) -- não dá pra
+  // apontar pro nosso domínio como os outros provedores redirect fazem.
+  // Em vez de pedir pra colar código na mão, abrimos um navegador de
+  // verdade no nosso lado (serviço `oauth-browser`) e espelhamos a tela
+  // aqui: o admin loga normal, a gente captura o código sozinho.
+  const usaNavegadorEspelhado = provedor.id === 'claude' || provedor.id === 'codex'
+  const [frame, setFrame] = useState('')
+  const [navegadorAberto, setNavegadorAberto] = useState(false)
+  const wsRef = useRef<WebSocket | null>(null)
+  const NAV_W = 1280
+  const NAV_H = 800
+
   useEffect(
     () => () => {
       cancelado.current = true
+      wsRef.current?.close()
     },
     [],
   )
@@ -378,6 +399,62 @@ function ModalConexao({
     },
     onError: (e) => setErro(e instanceof ApiError ? e.message : 'Falha ao iniciar autorização'),
   })
+
+  const iniciarNavegador = useMutation({
+    mutationFn: () =>
+      api<{
+        ws_url: string
+        redirect_uri: string
+        code_verifier: string
+        state: string
+      }>('/ai-router/contas/oauth/navegador/iniciar', {
+        method: 'POST',
+        body: JSON.stringify({ provider: provedor.id }),
+      }),
+    onSuccess: (dados) => {
+      setInicio({
+        modo: 'redirect',
+        auth_url: null,
+        user_code: null,
+        device_code: null,
+        redirect_uri: dados.redirect_uri,
+        code_verifier: dados.code_verifier,
+        state: dados.state,
+      })
+      setNavegadorAberto(true)
+      const ws = new WebSocket(dados.ws_url)
+      wsRef.current = ws
+      ws.onmessage = (evento) => {
+        const msg = JSON.parse(evento.data) as
+          | { type: 'frame'; data: string }
+          | { type: 'done'; code: string; state: string }
+          | { type: 'erro'; mensagem: string }
+        if (msg.type === 'frame') setFrame(`data:image/jpeg;base64,${msg.data}`)
+        else if (msg.type === 'done') {
+          setCodigo(provedor.id === 'claude' ? `${msg.code}#${msg.state}` : msg.code)
+        } else if (msg.type === 'erro') setErro(msg.mensagem)
+      }
+      ws.onerror = () => setErro('Falha na conexão com o navegador remoto')
+    },
+    onError: (e) => setErro(e instanceof ApiError ? e.message : 'Falha ao abrir navegador remoto'),
+  })
+
+  const enviarMouseRemoto = (e: ReactMouseEvent<HTMLImageElement>, clique: boolean) => {
+    const ws = wsRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    const x = Math.round(((e.clientX - rect.left) / rect.width) * NAV_W)
+    const y = Math.round(((e.clientY - rect.top) / rect.height) * NAV_H)
+    ws.send(JSON.stringify({ type: 'mouse', x, y, click: clique }))
+  }
+
+  const enviarTeclaRemota = (e: ReactKeyboardEvent) => {
+    const ws = wsRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    e.preventDefault()
+    if (e.key.length === 1) ws.send(JSON.stringify({ type: 'key', text: e.key }))
+    else ws.send(JSON.stringify({ type: 'key', key: e.key }))
+  }
 
   const concluir = useMutation({
     mutationFn: () =>
@@ -467,8 +544,10 @@ function ModalConexao({
     e.preventDefault()
     setErro('')
     if (provedor.modo === 'apikey') conectarChave.mutate()
-    else if (!inicio) iniciar.mutate()
-    else concluir.mutate()
+    else if (!inicio) {
+      if (usaNavegadorEspelhado) iniciarNavegador.mutate()
+      else iniciar.mutate()
+    } else concluir.mutate()
   }
 
   return (
@@ -510,7 +589,37 @@ function ModalConexao({
           />
         )}
 
-        {provedor.modo === 'redirect' && inicio && (
+        {provedor.modo === 'redirect' && inicio && navegadorAberto && (
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-[var(--text)]">
+              Faça login normalmente na tela abaixo
+            </p>
+            <div
+              tabIndex={0}
+              onKeyDown={enviarTeclaRemota}
+              className="overflow-hidden rounded-2xl border border-[var(--border)] outline-none focus:ring-2 focus:ring-[var(--brand)]"
+            >
+              {frame ? (
+                <img
+                  src={frame}
+                  alt="Tela de login do provedor"
+                  className="w-full cursor-pointer select-none"
+                  onClick={(e) => enviarMouseRemoto(e, true)}
+                  onMouseMove={(e) => enviarMouseRemoto(e, false)}
+                />
+              ) : (
+                <div className="flex h-64 items-center justify-center text-sm text-[var(--text-muted)]">
+                  Abrindo navegador…
+                </div>
+              )}
+            </div>
+            <p className="text-xs text-[var(--text-muted)]">
+              Clique na tela pra focar e digitar. Fecha sozinha ao concluir o login.
+            </p>
+          </div>
+        )}
+
+        {provedor.modo === 'redirect' && inicio && !navegadorAberto && (
           <div className="space-y-3">
             <div className="rounded-2xl bg-[var(--surface-soft)] p-3">
               <p className="text-sm font-medium text-[var(--text)]">
@@ -561,10 +670,15 @@ function ModalConexao({
           <Button type="button" variant="ghost" onClick={onFechar}>
             Cancelar
           </Button>
-          {!(provedor.modo === 'device' && inicio) && (
+          {!(provedor.modo === 'device' && inicio) && !navegadorAberto && (
             <Button
               type="submit"
-              disabled={iniciar.isPending || concluir.isPending || conectarChave.isPending}
+              disabled={
+                iniciar.isPending ||
+                iniciarNavegador.isPending ||
+                concluir.isPending ||
+                conectarChave.isPending
+              }
             >
               {provedor.modo === 'apikey'
                 ? 'Conectar'
