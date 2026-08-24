@@ -236,7 +236,12 @@ def iniciar_redirect(provider: str, redirect_uri: str) -> dict:
             "prompt": "consent",
         }
         auth_url = f"{cfg['authorize_url']}?{httpx.QueryParams(params)}"
-        return {"auth_url": auth_url, "state": state, "code_verifier": "", "redirect_uri": redirect_uri}
+        return {
+            "auth_url": auth_url,
+            "state": state,
+            "code_verifier": "",
+            "redirect_uri": redirect_uri,
+        }
 
     if cfg["flow"] == "redirect_cline":
         params = {
@@ -245,7 +250,12 @@ def iniciar_redirect(provider: str, redirect_uri: str) -> dict:
             "redirect_uri": redirect_uri,
         }
         auth_url = f"{cfg['authorize_url']}?{httpx.QueryParams(params)}"
-        return {"auth_url": auth_url, "state": state, "code_verifier": "", "redirect_uri": redirect_uri}
+        return {
+            "auth_url": auth_url,
+            "state": state,
+            "code_verifier": "",
+            "redirect_uri": redirect_uri,
+        }
 
     raise OAuthError(f"provedor '{provider}' não usa fluxo redirect")
 
