@@ -66,7 +66,9 @@ def test_background_task_marks_ready_on_success(client, master_token, monkeypatc
     monkeypatch.setattr(settings, "router_auto_provision_enabled", True)
     monkeypatch.setattr("app.routes.tenants.resolver_segredo", lambda nome, padrao="": "fake")
     monkeypatch.setattr("app.routes.tenants.litellm_client.create_team", _fake_create_team)
-    monkeypatch.setattr("app.routes.tenants.litellm_client.add_model_to_team", _fake_add_model_to_team)
+    monkeypatch.setattr(
+        "app.routes.tenants.litellm_client.add_model_to_team", _fake_add_model_to_team
+    )
     monkeypatch.setattr("app.routes.tenants.litellm_client.generate_key", _fake_generate_key)
 
     tenant = _create_tenant(client, master_token)
