@@ -50,11 +50,20 @@ BRIDGE_URL=$("$GCLOUD_BIN" run services describe chatwoot-bridge \
 # não deve ganhar segredo novo nenhum.
 : "${LITELLM_MASTER_KEY:?LITELLM_MASTER_KEY não veio do ambiente (esperado do ci.yml via Infisical)}"
 
+# ANTIGRAVITY_OAUTH_CLIENT_SECRET/GEMINI_CLI_OAUTH_CLIENT_SECRET: produto-08
+# (mega-spec-reestrutura) -- client secret público de app "installed" do
+# Google (mesmo valor embutido no binário oficial da Antigravity/gemini-cli,
+# não é rotação nova), mora no Infisical por regra do dono, não hardcoded
+# em `oauth_engine.py` (GitHub push protection já recusou o push com o
+# valor cru no código).
+: "${ANTIGRAVITY_OAUTH_CLIENT_SECRET:?ANTIGRAVITY_OAUTH_CLIENT_SECRET não veio do ambiente (esperado do ci.yml via Infisical)}"
+: "${GEMINI_CLI_OAUTH_CLIENT_SECRET:?GEMINI_CLI_OAUTH_CLIENT_SECRET não veio do ambiente (esperado do ci.yml via Infisical)}"
+
 "$GCLOUD_BIN" run deploy agent-llm-backend \
   --project=$PROJECT --region=$REGION \
   --image=$REPO/agent-platform-backend:$SHORT_SHA \
   --set-secrets=DATABASE_URL=agent-platform-database-url:latest,ENCRYPTION_KEY=agent-platform-encryption-key:latest,S3_ACCESS_KEY_ID=gcs-hmac-access-key:latest,S3_SECRET_ACCESS_KEY=gcs-hmac-secret-key:latest,KERNEL_INTERNAL_TOKEN=agent-platform-kernel-internal-token:latest,BRIDGE_ADMIN_TOKEN=agent-platform-bridge-admin-token:latest \
-  --set-env-vars="KERNEL_URL=https://kernel-llm-pujq3pjmca-uc.a.run.app,PUBLIC_BASE_URL=https://ia.rangeltech.net,BRIDGE_URL=$BRIDGE_URL,STORAGE_BACKEND=s3,S3_ENDPOINT_URL=https://storage.googleapis.com,S3_REGION=us-east-1,S3_BUCKET=rangel-tech-storage,S3_PREFIX=teste-ia/agent-llm,S3_PUBLIC_BASE_URL=https://storage.googleapis.com/rangel-tech-storage/teste-ia,AWS_REQUEST_CHECKSUM_CALCULATION=when_required,AWS_RESPONSE_CHECKSUM_VALIDATION=when_required,LITELLM_BASE_URL=https://litellm-router-pujq3pjmca-uc.a.run.app,ROUTER_AUTO_PROVISION_ENABLED=true,LITELLM_MASTER_KEY=$LITELLM_MASTER_KEY" \
+  --set-env-vars="KERNEL_URL=https://kernel-llm-pujq3pjmca-uc.a.run.app,PUBLIC_BASE_URL=https://ia.rangeltech.net,BRIDGE_URL=$BRIDGE_URL,STORAGE_BACKEND=s3,S3_ENDPOINT_URL=https://storage.googleapis.com,S3_REGION=us-east-1,S3_BUCKET=rangel-tech-storage,S3_PREFIX=teste-ia/agent-llm,S3_PUBLIC_BASE_URL=https://storage.googleapis.com/rangel-tech-storage/teste-ia,AWS_REQUEST_CHECKSUM_CALCULATION=when_required,AWS_RESPONSE_CHECKSUM_VALIDATION=when_required,LITELLM_BASE_URL=https://litellm-router-pujq3pjmca-uc.a.run.app,ROUTER_AUTO_PROVISION_ENABLED=true,LITELLM_MASTER_KEY=$LITELLM_MASTER_KEY,ANTIGRAVITY_OAUTH_CLIENT_SECRET=$ANTIGRAVITY_OAUTH_CLIENT_SECRET,GEMINI_CLI_OAUTH_CLIENT_SECRET=$GEMINI_CLI_OAUTH_CLIENT_SECRET" \
   --allow-unauthenticated \
   --memory=1Gi --cpu=1 --min-instances=1 --max-instances=5 \
   --timeout=300

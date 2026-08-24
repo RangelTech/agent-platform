@@ -93,15 +93,31 @@ jobs:
           fi
           echo "::add-mask::$TOKEN"
 
-          value=$(curl -fsS "https://infisical.rangeltech.net/api/v3/secrets/raw/LITELLM_MASTER_KEY?workspaceId=b4203358-1215-43a9-a821-218a6f587c3e&environment=prod&secretPath=%2F" \
-            -H "Authorization: Bearer $TOKEN" | jq -r '.secret.secretValue')
-          if [ -z "$value" ] || [ "$value" = "null" ]; then
-            echo "::error::Secret LITELLM_MASTER_KEY not found in Infisical" >&2
-            exit 1
-          fi
-          echo "::add-mask::$value"
-          echo "litellm_master_key=$value" >> "$GITHUB_OUTPUT"
+          fetch_secret() {
+            local name="$1"
+            local value
+            value=$(curl -fsS "https://infisical.rangeltech.net/api/v3/secrets/raw/$name?workspaceId=b4203358-1215-43a9-a821-218a6f587c3e&environment=prod&secretPath=%2F" \
+              -H "Authorization: Bearer $TOKEN" | jq -r '.secret.secretValue')
+            if [ -z "$value" ] || [ "$value" = "null" ]; then
+              echo "::error::Secret $name not found in Infisical" >&2
+              exit 1
+            fi
+            echo "::add-mask::$value" >&2
+            echo "$value"
+          }
+
+          echo "litellm_master_key<<EOF_LLM" >> "$GITHUB_OUTPUT"
+          fetch_secret LITELLM_MASTER_KEY >> "$GITHUB_OUTPUT"
+          echo "EOF_LLM" >> "$GITHUB_OUTPUT"
+          echo "antigravity_oauth_client_secret<<EOF_AG" >> "$GITHUB_OUTPUT"
+          fetch_secret ANTIGRAVITY_OAUTH_CLIENT_SECRET >> "$GITHUB_OUTPUT"
+          echo "EOF_AG" >> "$GITHUB_OUTPUT"
+          echo "gemini_cli_oauth_client_secret<<EOF_GC" >> "$GITHUB_OUTPUT"
+          fetch_secret GEMINI_CLI_OAUTH_CLIENT_SECRET >> "$GITHUB_OUTPUT"
+          echo "EOF_GC" >> "$GITHUB_OUTPUT"
       - name: Deploy backend to Cloud Run
         env:
           LITELLM_MASTER_KEY: ${{ steps.infisical.outputs.litellm_master_key }}
+          ANTIGRAVITY_OAUTH_CLIENT_SECRET: ${{ steps.infisical.outputs.antigravity_oauth_client_secret }}
+          GEMINI_CLI_OAUTH_CLIENT_SECRET: ${{ steps.infisical.outputs.gemini_cli_oauth_client_secret }}
         run: bash ./infra/deploy-cloudrun.sh
