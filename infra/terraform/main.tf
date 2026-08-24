@@ -165,13 +165,15 @@ resource "google_cloud_run_v2_service" "agent_llm_backend" {
     scaling {
       # Achado real 23/08/2026 (mega-spec-reestrutura, item B de performance):
       # min=0 media 2 de 6 requisições reais de `GET /` estourando timeout de
-      # 15s e uma 3ª levando 6,9s -- cold start real, não hipotético. Isto é
-      # o frontend/API que o usuário bate primeiro; manter 1 instância
-      # sempre viva elimina esse pior caso (confirmado: 8/8 amostras depois
-      # ficaram entre 0,54-0,99s, zero timeout). kernel-llm e litellm-router
-      # continuam em min=0 de propósito (menos tráfego direto de usuário,
-      # scale-to-zero é a decisão certa lá).
-      min_instance_count = 1
+      # 15s e uma 3ª levando 6,9s -- cold start real, não hipotético. min=1
+      # elimina esse pior caso (confirmado: 8/8 amostras depois ficaram
+      # entre 0,54-0,99s, zero timeout) -- **esse é o valor certo pra
+      # produção**, documentado na skill `agentllm`.
+      #
+      # Voltado pra min=0 por decisão do dono (23/08/2026): ainda em dev,
+      # contenção de custo é prioridade sobre cold start enquanto não tem
+      # cliente real. Lembrar de voltar pra 1 quando entrar em produção.
+      min_instance_count = 0
       max_instance_count = 5
     }
 

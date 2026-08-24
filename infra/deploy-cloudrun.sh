@@ -44,10 +44,10 @@ BRIDGE_URL=$("$GCLOUD_BIN" run services describe chatwoot-bridge \
   --set-secrets=DATABASE_URL=agent-platform-database-url:latest,ENCRYPTION_KEY=agent-platform-encryption-key:latest,S3_ACCESS_KEY_ID=gcs-hmac-access-key:latest,S3_SECRET_ACCESS_KEY=gcs-hmac-secret-key:latest,KERNEL_INTERNAL_TOKEN=agent-platform-kernel-internal-token:latest,BRIDGE_ADMIN_TOKEN=agent-platform-bridge-admin-token:latest \
   --set-env-vars="KERNEL_URL=https://kernel-llm-pujq3pjmca-uc.a.run.app,PUBLIC_BASE_URL=https://ia.rangeltech.net,BRIDGE_URL=$BRIDGE_URL,STORAGE_BACKEND=s3,S3_ENDPOINT_URL=https://storage.googleapis.com,S3_REGION=us-east-1,S3_BUCKET=rangel-tech-storage,S3_PREFIX=teste-ia/agent-llm,S3_PUBLIC_BASE_URL=https://storage.googleapis.com/rangel-tech-storage/teste-ia,AWS_REQUEST_CHECKSUM_CALCULATION=when_required,AWS_RESPONSE_CHECKSUM_VALIDATION=when_required" \
   --allow-unauthenticated \
-  --memory=1Gi --cpu=1 --min-instances=1 --max-instances=5 \
+  --memory=1Gi --cpu=1 --min-instances=0 --max-instances=5 \
   --timeout=300
-# min-instances=1: achado real 23/08/2026 (mega-spec-reestrutura, item B) --
-# 2 de 6 requisições reais em min=0 estouraram timeout de 15s, uma 3ª levou
-# 6,9s. Sem isto, este script (o deploy real que roda em todo push -- ver
-# infra/terraform/main.tf pra saber por que ele NÃO é a fonte de verdade)
-# reverte o fix silenciosamente no próximo push, como já aconteceu uma vez.
+# min-instances=0 por decisão do dono (23/08/2026): ainda em dev, contenção
+# de custo é prioridade. O valor PROVADO com evidência real pra produção é
+# min=1 (cold start real de 15s+ em min=0, achado/corrigido mais cedo hoje)
+# -- documentado na skill `agentllm` (personal-skills), seção "min_instances
+# provados 23/08/2026", pra usar quando entrar em produção de verdade.
