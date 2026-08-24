@@ -443,7 +443,12 @@ async def _oauth_iniciar_litellm(provider: str, modo: str) -> dict:
             "auth_url": dados["auth_url"],
             "user_code": None,
             "device_code": None,
-            "redirect_uri": redirect_uri,
+            # Achado real 24/08/2026: pra claude, `iniciar_redirect` troca o
+            # redirect_uri pro fixo do console.anthropic.com (só ele é aceito
+            # pelo client_id público do Claude Code) -- devolver aqui a
+            # variável local em vez de `dados["redirect_uri"]` ecoaria a URL
+            # ERRADA de volta na troca de token e quebraria de novo.
+            "redirect_uri": dados["redirect_uri"],
             "code_verifier": dados["code_verifier"],
             "state": dados["state"],
         }

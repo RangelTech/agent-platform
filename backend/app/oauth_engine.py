@@ -182,12 +182,29 @@ def _config(provider: str) -> dict:
 
 
 def iniciar_redirect(provider: str, redirect_uri: str) -> dict:
-    """Devolve {auth_url, state, code_verifier} pro front abrir numa aba."""
+    """Devolve {auth_url, state, code_verifier, redirect_uri} pro front abrir numa aba.
+
+    Achado real 24/08/2026 (issue conhecida do próprio Claude Code,
+    github.com/anthropics/claude-code#36215, "Redirect URI is not
+    supported by client"): o client_id público do Claude Code
+    (`9d1c250a-...`) só aceita `https://console.anthropic.com/oauth/code/callback`
+    como redirect_uri -- não é um client OAuth genérico que aceita
+    qualquer URI registrada por nós. Mandar o nosso próprio domínio (como
+    todo outro provedor `redirect_pkce` faz) derruba a autorização com
+    "Invalid request format" antes mesmo do login. Console.anthropic.com
+    então MOSTRA o código na tela pro usuário colar manualmente -- é
+    exatamente o que o campo "Cole o que o provedor devolveu" do
+    ContasIA.tsx já existia pra fazer, só a URL enviada estava errada.
+    Por isso devolvemos aqui o redirect_uri realmente usado: o chamador
+    precisa ecoar ESTE de volta na troca de token, não o que passou.
+    """
     cfg = _config(provider)
     state = gerar_state()
     code_verifier, code_challenge = _gerar_pkce()
 
     if cfg["flow"] == "redirect_pkce":
+        if provider == "claude":
+            redirect_uri = "https://console.anthropic.com/oauth/code/callback"
         params = {
             "response_type": "code",
             "client_id": cfg["client_id"],
@@ -201,7 +218,12 @@ def iniciar_redirect(provider: str, redirect_uri: str) -> dict:
         if provider == "claude":
             params["code"] = "true"
         auth_url = f"{cfg['authorize_url']}?{httpx.QueryParams(params)}"
-        return {"auth_url": auth_url, "state": state, "code_verifier": code_verifier}
+        return {
+            "auth_url": auth_url,
+            "state": state,
+            "code_verifier": code_verifier,
+            "redirect_uri": redirect_uri,
+        }
 
     if cfg["flow"] == "redirect_google":
         params = {
@@ -214,7 +236,7 @@ def iniciar_redirect(provider: str, redirect_uri: str) -> dict:
             "prompt": "consent",
         }
         auth_url = f"{cfg['authorize_url']}?{httpx.QueryParams(params)}"
-        return {"auth_url": auth_url, "state": state, "code_verifier": ""}
+        return {"auth_url": auth_url, "state": state, "code_verifier": "", "redirect_uri": redirect_uri}
 
     if cfg["flow"] == "redirect_cline":
         params = {
@@ -223,7 +245,7 @@ def iniciar_redirect(provider: str, redirect_uri: str) -> dict:
             "redirect_uri": redirect_uri,
         }
         auth_url = f"{cfg['authorize_url']}?{httpx.QueryParams(params)}"
-        return {"auth_url": auth_url, "state": state, "code_verifier": ""}
+        return {"auth_url": auth_url, "state": state, "code_verifier": "", "redirect_uri": redirect_uri}
 
     raise OAuthError(f"provedor '{provider}' não usa fluxo redirect")
 
