@@ -167,13 +167,11 @@ resource "google_cloud_run_v2_service" "agent_llm_backend" {
       # min=0 media 2 de 6 requisições reais de `GET /` estourando timeout de
       # 15s e uma 3ª levando 6,9s -- cold start real, não hipotético. min=1
       # elimina esse pior caso (confirmado: 8/8 amostras depois ficaram
-      # entre 0,54-0,99s, zero timeout) -- **esse é o valor certo pra
-      # produção**, documentado na skill `agentllm`.
+      # entre 0,54-0,99s, zero timeout) -- documentado na skill `agentllm`.
       #
-      # Voltado pra min=0 por decisão do dono (23/08/2026): ainda em dev,
-      # contenção de custo é prioridade sobre cold start enquanto não tem
-      # cliente real. Lembrar de voltar pra 1 quando entrar em produção.
-      min_instance_count = 0
+      # min=1 restaurado por decisão do dono (24/08/2026): entrou em
+      # produção, cold start deixa de ser aceitável.
+      min_instance_count = 1
       max_instance_count = 5
     }
 
