@@ -1,0 +1,46 @@
+name: Deploy OAuth Browser
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "oauth-browser/**"
+      - "infra/cloudbuild-oauth-browser.yaml"
+      - "infra/terraform-oauth-browser/**"
+      - ".github/workflows/deploy-oauth-browser.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: oauth-browser-cloudrun-production
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/234554472049/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: github-deployer@rangel-tech.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Build image
+        run: gcloud builds submit --project=rangel-tech --config=infra/cloudbuild-oauth-browser.yaml --substitutions=SHORT_SHA=${{ github.sha }} .
+      - uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: "1.9.5" }
+      - name: Apply
+        working-directory: infra/terraform-oauth-browser
+        env:
+          TF_VAR_image: us-central1-docker.pkg.dev/rangel-tech/containers/oauth-browser:${{ github.sha }}
+        run: |
+          terraform init -input=false
+          terraform import -input=false -lock=false google_cloud_run_v2_service.oauth_browser projects/rangel-tech/locations/us-central1/services/oauth-browser || true
+          terraform import -input=false -lock=false google_cloud_run_v2_service_iam_member.public "projects/rangel-tech/locations/us-central1/services/oauth-browser roles/run.invoker allUsers" || true
+          terraform apply -input=false -lock=false -auto-approve
+      - name: Smoke check
+        run: curl -fsS --retry 5 --retry-all-errors "$(gcloud run services describe oauth-browser --project=rangel-tech --region=us-central1 --format='value(status.url)')/health" | grep -q '"status":"ok"'
