@@ -22,8 +22,12 @@ variable "project" {
   default = "rangel-tech"
 }
 variable "region" {
-  type    = string
-  default = "us-central1"
+  type = string
+  # Achado real 25/08/2026: movido de us-central1 pra southamerica-east1 --
+  # o Codex (auth.openai.com) recusava conexão do IP compartilhado padrão;
+  # o VPC connector (network.tf) precisa estar na mesma região do Cloud Run,
+  # por isso o serviço inteiro migrou, não só a rede.
+  default = "southamerica-east1"
 }
 variable "image" { type = string }
 variable "admin_token" {
@@ -38,10 +42,11 @@ variable "admin_token" {
 # 24/08/2026: nasceu no GCP Secret Manager por um desvio pontual (esta
 # sessão não tinha credencial Infisical carregada na hora), migrado depois.
 resource "google_cloud_run_v2_service" "oauth_browser" {
-  name     = "oauth-browser"
-  project  = var.project
-  location = var.region
-  ingress  = "INGRESS_TRAFFIC_ALL"
+  name                = "oauth-browser"
+  project             = var.project
+  location            = var.region
+  ingress             = "INGRESS_TRAFFIC_ALL"
+  deletion_protection = false
 
   template {
     containers {
@@ -64,6 +69,14 @@ resource "google_cloud_run_v2_service" "oauth_browser" {
     scaling {
       min_instance_count = 0
       max_instance_count = 3
+    }
+    # Todo tráfego de saída (não só as faixas privadas) passa pelo
+    # connector -> Cloud NAT -> IP estático dedicado de São Paulo
+    # (network.tf) -- é isso que troca o IP que auth.openai.com/claude.ai
+    # veem, não só a rota pra recursos internos do GCP.
+    vpc_access {
+      connector = google_vpc_access_connector.oauth_browser.id
+      egress    = "ALL_TRAFFIC"
     }
     # Uma sessão (um Chromium + uma stream de screencast) monopoliza a
     # instância -- duas sessões concorrentes na mesma instância brigariam
