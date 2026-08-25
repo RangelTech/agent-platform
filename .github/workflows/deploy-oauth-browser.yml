@@ -40,10 +40,10 @@ jobs:
           echo "::add-mask::$value"
           { echo "admin_token<<EOF"; echo "$value"; echo "EOF"; } >> "$GITHUB_OUTPUT"
 
-          socks_value=$(curl -fsS --retry 4 --retry-all-errors "https://infisical.rangeltech.net/api/v3/secrets/raw/VPS_SOCKS_PROXY_PASSWORD?workspaceId=b4203358-1215-43a9-a821-218a6f587c3e&environment=prod&secretPath=%2F" -H "Authorization: Bearer $TOKEN" | jq -r '.secret.secretValue')
-          test -n "$socks_value" && test "$socks_value" != null
-          echo "::add-mask::$socks_value"
-          { echo "vps_socks_proxy_password<<EOF"; echo "$socks_value"; echo "EOF"; } >> "$GITHUB_OUTPUT"
+          proxy_value=$(curl -fsS --retry 4 --retry-all-errors "https://infisical.rangeltech.net/api/v3/secrets/raw/VPS_HTTP_PROXY_PASSWORD?workspaceId=b4203358-1215-43a9-a821-218a6f587c3e&environment=prod&secretPath=%2F" -H "Authorization: Bearer $TOKEN" | jq -r '.secret.secretValue')
+          test -n "$proxy_value" && test "$proxy_value" != null
+          echo "::add-mask::$proxy_value"
+          { echo "vps_http_proxy_password<<EOF"; echo "$proxy_value"; echo "EOF"; } >> "$GITHUB_OUTPUT"
       - name: Build image
         run: gcloud builds submit --project=rangel-tech --config=infra/cloudbuild-oauth-browser.yaml --substitutions=SHORT_SHA=${{ github.sha }} .
       - uses: hashicorp/setup-terraform@v3
@@ -53,7 +53,7 @@ jobs:
         env:
           TF_VAR_image: us-central1-docker.pkg.dev/rangel-tech/containers/oauth-browser:${{ github.sha }}
           TF_VAR_admin_token: ${{ steps.infisical.outputs.admin_token }}
-          TF_VAR_vps_socks_proxy_password: ${{ steps.infisical.outputs.vps_socks_proxy_password }}
+          TF_VAR_vps_http_proxy_password: ${{ steps.infisical.outputs.vps_http_proxy_password }}
         run: |
           terraform init -input=false
           terraform import -input=false -lock=false google_cloud_run_v2_service.oauth_browser projects/rangel-tech/locations/us-central1/services/oauth-browser || true

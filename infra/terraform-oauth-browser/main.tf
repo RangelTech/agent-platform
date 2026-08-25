@@ -40,14 +40,17 @@ variable "admin_token" {
 
 # Produto-08 seção 9b: `auth.openai.com` recusa conexão de QUALQUER IP do
 # Google Cloud (ASN de datacenter), independente de região -- confirmado
-# até com o IP estático dedicado de São Paulo. A VPS (Contabo,
+# até com o IP estático dedicado de São Paulo (removido, não resolveu e o
+# dono não quis pagar por infra que não ajudou). A VPS (Contabo,
 # 66.94.101.153, mesma máquina do chatwoot-worker) tem ASN diferente e
 # recebe o desafio Cloudflare normal (mesmo tipo que o Claude já passa) em
-# vez de bloqueio de borda -- usado como proxy SOCKS5 só pro provider
-# "codex", não pros demais (que já funcionam direto). Proxy roda em
-# container Docker na VPS (`serjs/go-socks5-proxy`), firewalled via
-# DOCKER-USER pro IP estático do oauth-browser só (34.39.145.254).
-variable "vps_socks_proxy_password" {
+# vez de bloqueio de borda -- usado como proxy só pro provider "codex", não
+# pros demais (que já funcionam direto). HTTP CONNECT (tinyproxy), não
+# SOCKS5 -- achado real, Chromium não suporta auth em proxy SOCKS5. Sem IP
+# fixo do lado do oauth-browser pra travar o firewall da VPS por IP (região
+# us-central1, sem endereço estático), a autenticação (usuário/senha forte)
+# é a única proteção do proxy -- porta exposta ao público de propósito.
+variable "vps_http_proxy_password" {
   type      = string
   sensitive = true
 }
@@ -83,20 +86,20 @@ resource "google_cloud_run_v2_service" "oauth_browser" {
         value = "https://ia.rangeltech.net"
       }
       env {
-        name  = "VPS_SOCKS_PROXY_HOST"
+        name  = "VPS_HTTP_PROXY_HOST"
         value = "66.94.101.153"
       }
       env {
-        name  = "VPS_SOCKS_PROXY_PORT"
-        value = "18080"
+        name  = "VPS_HTTP_PROXY_PORT"
+        value = "18081"
       }
       env {
-        name  = "VPS_SOCKS_PROXY_USER"
+        name  = "VPS_HTTP_PROXY_USER"
         value = "oauthbrowser"
       }
       env {
-        name  = "VPS_SOCKS_PROXY_PASSWORD"
-        value = var.vps_socks_proxy_password
+        name  = "VPS_HTTP_PROXY_PASSWORD"
+        value = var.vps_http_proxy_password
       }
     }
     scaling {

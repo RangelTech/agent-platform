@@ -41,20 +41,25 @@ ALLOWED_ORIGIN = os.environ.get("OAUTH_BROWSER_ALLOWED_ORIGIN", "")
 # mesmo tipo de desafio que o Claude já passa. Usado só pro provider
 # "codex" -- os demais já funcionam direto, proxiar sem necessidade só
 # adiciona latência/superfície.
-VPS_SOCKS_PROXY_HOST = os.environ.get("VPS_SOCKS_PROXY_HOST", "")
-VPS_SOCKS_PROXY_PORT = os.environ.get("VPS_SOCKS_PROXY_PORT", "")
-VPS_SOCKS_PROXY_USER = os.environ.get("VPS_SOCKS_PROXY_USER", "")
-VPS_SOCKS_PROXY_PASSWORD = os.environ.get("VPS_SOCKS_PROXY_PASSWORD", "")
+#
+# HTTP CONNECT (tinyproxy), não SOCKS5: achado real, Chromium não suporta
+# autenticação em proxy SOCKS5 (`Browser.new_context: Browser does not
+# support socks5 proxy authentication`, erro direto do patchright) -- só
+# proxy HTTP/HTTPS com Basic Auth funciona pra isso.
+VPS_HTTP_PROXY_HOST = os.environ.get("VPS_HTTP_PROXY_HOST", "")
+VPS_HTTP_PROXY_PORT = os.environ.get("VPS_HTTP_PROXY_PORT", "")
+VPS_HTTP_PROXY_USER = os.environ.get("VPS_HTTP_PROXY_USER", "")
+VPS_HTTP_PROXY_PASSWORD = os.environ.get("VPS_HTTP_PROXY_PASSWORD", "")
 PROXIED_PROVIDERS = {"codex"}
 
 
 def _proxy_config(provider: str) -> dict | None:
-    if provider not in PROXIED_PROVIDERS or not VPS_SOCKS_PROXY_HOST:
+    if provider not in PROXIED_PROVIDERS or not VPS_HTTP_PROXY_HOST:
         return None
     return {
-        "server": f"socks5://{VPS_SOCKS_PROXY_HOST}:{VPS_SOCKS_PROXY_PORT}",
-        "username": VPS_SOCKS_PROXY_USER,
-        "password": VPS_SOCKS_PROXY_PASSWORD,
+        "server": f"http://{VPS_HTTP_PROXY_HOST}:{VPS_HTTP_PROXY_PORT}",
+        "username": VPS_HTTP_PROXY_USER,
+        "password": VPS_HTTP_PROXY_PASSWORD,
     }
 SESSION_TTL_SECONDS = 5 * 60
 VIEWPORT = {"width": 1280, "height": 800}
