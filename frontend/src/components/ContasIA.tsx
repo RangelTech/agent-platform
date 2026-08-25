@@ -559,7 +559,7 @@ function ModalConexao({
       <form
         onSubmit={enviar}
         data-testid="modal-conexao"
-        className="max-h-[90dvh] w-full max-w-lg space-y-4 overflow-y-auto rounded-[28px] border border-[var(--border)] bg-[var(--surface-solid)] p-6 shadow-2xl"
+        className={`max-h-[90dvh] w-full space-y-4 overflow-y-auto rounded-[28px] border border-[var(--border)] bg-[var(--surface-solid)] p-6 shadow-2xl ${navegadorAberto ? 'max-w-3xl' : 'max-w-lg'}`}
       >
         <div>
           <h3 className="text-base font-semibold text-[var(--text)]">

@@ -56,8 +56,21 @@ def require_admin(request: Request) -> None:
 async def lifespan(app: FastAPI):
     global _playwright, _browser
     _playwright = await async_playwright().start()
+    # Achado real 25/08/2026, testado ao vivo: `headless=True` trava na
+    # verificação da Cloudflare ("Verify you are human") -- Chromium
+    # headless carrega um fingerprint reconhecível (navigator.webdriver,
+    # etc.) que os provedores por trás de Cloudflare (Claude, e
+    # provavelmente OpenAI) bloqueiam. Rodando headful (via Xvfb, ver
+    # Dockerfile) + escondendo o flag de automação passa na maioria dos
+    # casos -- é exatamente o mesmo Chromium controlado, só sem o sinal
+    # mais óbvio de bot.
     _browser = await _playwright.chromium.launch(
-        headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"]
+        headless=False,
+        args=[
+            "--no-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-blink-features=AutomationControlled",
+        ],
     )
     yield
     for sessao in list(sessions.values()):
@@ -109,7 +122,19 @@ async def criar_sessao(payload: SessaoNovaIn, request: Request):
 
     session_id = uuid.uuid4().hex
     ws_token = uuid.uuid4().hex
-    context = await _browser.new_context(viewport=VIEWPORT)
+    context = await _browser.new_context(
+        viewport=VIEWPORT,
+        user_agent=(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+        ),
+    )
+    # `--disable-blink-features=AutomationControlled` já tira o principal
+    # sinal, mas `navigator.webdriver` ainda pode sobreviver em alguns
+    # builds -- forçar undefined aqui é o reforço padrão contra Cloudflare.
+    await context.add_init_script(
+        "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+    )
     page = await context.new_page()
     resultado: asyncio.Future = asyncio.get_event_loop().create_future()
 
