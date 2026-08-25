@@ -35,6 +35,20 @@ variable "admin_token" {
   sensitive = true
 }
 
+# Produto-08 seção 9b: `auth.openai.com` recusa conexão de QUALQUER IP do
+# Google Cloud (ASN de datacenter), independente de região -- confirmado
+# até com o IP estático dedicado de São Paulo. A VPS (Contabo,
+# 66.94.101.153, mesma máquina do chatwoot-worker) tem ASN diferente e
+# recebe o desafio Cloudflare normal (mesmo tipo que o Claude já passa) em
+# vez de bloqueio de borda -- usado como proxy SOCKS5 só pro provider
+# "codex", não pros demais (que já funcionam direto). Proxy roda em
+# container Docker na VPS (`serjs/go-socks5-proxy`), firewalled via
+# DOCKER-USER pro IP estático do oauth-browser só (34.39.145.254).
+variable "vps_socks_proxy_password" {
+  type      = string
+  sensitive = true
+}
+
 # Navegador remoto pra OAuth de Claude/Codex que só aceita redirect_uri
 # fixo/loopback (produto-08, adendo 24/08/2026) -- ver oauth-browser/app.py.
 # Token administrativo vem do Infisical (mesmo padrão do custom-tool-runner
@@ -64,6 +78,22 @@ resource "google_cloud_run_v2_service" "oauth_browser" {
       env {
         name  = "OAUTH_BROWSER_ALLOWED_ORIGIN"
         value = "https://ia.rangeltech.net"
+      }
+      env {
+        name  = "VPS_SOCKS_PROXY_HOST"
+        value = "66.94.101.153"
+      }
+      env {
+        name  = "VPS_SOCKS_PROXY_PORT"
+        value = "18080"
+      }
+      env {
+        name  = "VPS_SOCKS_PROXY_USER"
+        value = "oauthbrowser"
+      }
+      env {
+        name  = "VPS_SOCKS_PROXY_PASSWORD"
+        value = var.vps_socks_proxy_password
       }
     }
     scaling {

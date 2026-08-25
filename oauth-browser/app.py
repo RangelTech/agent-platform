@@ -32,6 +32,30 @@ logger = logging.getLogger("oauth-browser")
 
 ADMIN_TOKEN = os.environ.get("OAUTH_BROWSER_ADMIN_TOKEN", "")
 ALLOWED_ORIGIN = os.environ.get("OAUTH_BROWSER_ALLOWED_ORIGIN", "")
+
+# Produto-08 seção 9b, achado real 25/08/2026: `auth.openai.com` recusa
+# conexão de QUALQUER IP do Google Cloud (bloqueio de ASN de datacenter na
+# borda, confirmado até com IP estático dedicado de São Paulo) -- diferente
+# do Claude, que deixa passar até o desafio Cloudflare normal. A VPS
+# (Contabo, mesma máquina do chatwoot-worker) tem ASN diferente e recebe o
+# mesmo tipo de desafio que o Claude já passa. Usado só pro provider
+# "codex" -- os demais já funcionam direto, proxiar sem necessidade só
+# adiciona latência/superfície.
+VPS_SOCKS_PROXY_HOST = os.environ.get("VPS_SOCKS_PROXY_HOST", "")
+VPS_SOCKS_PROXY_PORT = os.environ.get("VPS_SOCKS_PROXY_PORT", "")
+VPS_SOCKS_PROXY_USER = os.environ.get("VPS_SOCKS_PROXY_USER", "")
+VPS_SOCKS_PROXY_PASSWORD = os.environ.get("VPS_SOCKS_PROXY_PASSWORD", "")
+PROXIED_PROVIDERS = {"codex"}
+
+
+def _proxy_config(provider: str) -> dict | None:
+    if provider not in PROXIED_PROVIDERS or not VPS_SOCKS_PROXY_HOST:
+        return None
+    return {
+        "server": f"socks5://{VPS_SOCKS_PROXY_HOST}:{VPS_SOCKS_PROXY_PORT}",
+        "username": VPS_SOCKS_PROXY_USER,
+        "password": VPS_SOCKS_PROXY_PASSWORD,
+    }
 SESSION_TTL_SECONDS = 5 * 60
 VIEWPORT = {"width": 1280, "height": 800}
 CODEX_CALLBACK_PREFIX = "http://localhost:1455/auth/callback"
@@ -170,7 +194,9 @@ async def criar_sessao(payload: SessaoNovaIn, request: Request):
     # lifespan acima) é em si um sinal de automação pra fingerprinting
     # mais avançado -- deixar o Chrome real anunciar o próprio UA, mais
     # consistente que qualquer valor fixo que a gente escolha.
-    context = await _browser.new_context(viewport=VIEWPORT)
+    context = await _browser.new_context(
+        viewport=VIEWPORT, proxy=_proxy_config(payload.provider)
+    )
     page = await context.new_page()
     resultado: asyncio.Future = asyncio.get_event_loop().create_future()
 
