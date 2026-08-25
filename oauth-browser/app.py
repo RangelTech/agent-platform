@@ -15,6 +15,7 @@ reaproveita cookie/perfil de uma tentativa pra outra.
 """
 
 import asyncio
+import base64
 import hmac
 import logging
 import os
@@ -349,26 +350,25 @@ async def stream(ws: WebSocket, session_id: str):
 
     await ws.accept()
     page = sessao["page"]
-    cdp = await page.context.new_cdp_session(page)
     encerrando = False
 
-    async def _mandar_frame(params: dict) -> None:
-        try:
-            await ws.send_json({"type": "frame", "data": params["data"]})
-            await cdp.send("Page.screencastFrameAck", {"sessionId": params["sessionId"]})
-        except Exception:  # noqa: BLE001 -- WS pode já ter caído do outro lado
-            pass
+    # Achado real 25/08/2026: com patchright + Chrome real, uma segunda
+    # sessão CDP manual (`new_cdp_session` + `Page.startScreencast`) parou
+    # de emitir frames -- sem erro, silenciosamente. Em vez de depurar mais
+    # fundo um domínio CDP cru que o próprio patchright não gerencia (e que
+    # é, ele mesmo, o tipo de sinal que a Cloudflare detecta), troquei pelo
+    # `page.screenshot()` do Playwright/patchright -- já passa pelo canal
+    # que o patchright protege, sem abrir uma sessão CDP extra por fora.
+    async def _mandar_frames() -> None:
+        while not encerrando:
+            try:
+                dados = await page.screenshot(type="jpeg", quality=60, timeout=2_000)
+                await ws.send_json({"type": "frame", "data": base64.b64encode(dados).decode()})
+            except Exception:  # noqa: BLE001 -- página pode estar navegando, tenta de novo
+                pass
+            await asyncio.sleep(0.4)
 
-    cdp.on("Page.screencastFrame", lambda params: asyncio.create_task(_mandar_frame(params)))
-    await cdp.send(
-        "Page.startScreencast",
-        {
-            "format": "jpeg",
-            "quality": 60,
-            "maxWidth": VIEWPORT["width"],
-            "maxHeight": VIEWPORT["height"],
-        },
-    )
+    frames_task = asyncio.create_task(_mandar_frames())
 
     async def _espera_resultado():
         nonlocal encerrando
@@ -419,11 +419,9 @@ async def stream(ws: WebSocket, session_id: str):
     except WebSocketDisconnect:
         pass
     finally:
+        encerrando = True
         espera_task.cancel()
-        try:
-            await cdp.detach()
-        except Exception:  # noqa: BLE001
-            pass
+        frames_task.cancel()
         if session_id in sessions:
             sessions.pop(session_id, None)
             await _fechar_contexto(sessao)
