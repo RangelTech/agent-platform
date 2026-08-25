@@ -22,6 +22,7 @@ export interface AgentDraft {
 
 export interface ToolInfo {
   name: string
+  title?: string
   description: string
 }
 

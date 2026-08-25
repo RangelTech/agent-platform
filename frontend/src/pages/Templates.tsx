@@ -143,7 +143,7 @@ function AgentEditor({
                 checked={agent.tools.includes(tool.name)}
                 onChange={() => toggleTool(tool.name)}
               />
-              {tool.name}
+              {tool.title || tool.name}
             </label>
           ))}
           {toolkits.length === 0 && (
