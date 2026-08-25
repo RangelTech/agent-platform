@@ -60,6 +60,12 @@ def _proxy_config(provider: str) -> dict | None:
         "server": f"http://{VPS_HTTP_PROXY_HOST}:{VPS_HTTP_PROXY_PORT}",
         "username": VPS_HTTP_PROXY_USER,
         "password": VPS_HTTP_PROXY_PASSWORD,
+        # Achado real: sem isso, o Chromium tenta rotear até o redirect_uri
+        # `localhost:1455` pelo proxy da VPS (que obviamente não alcança o
+        # próprio container) -- a interceptação via `page.route` só consegue
+        # responder localmente quando o Chromium nem tenta abrir a conexão
+        # de verdade. Com o bypass, `localhost` nunca passa pelo proxy.
+        "bypass": "localhost,127.0.0.1",
     }
 SESSION_TTL_SECONDS = 5 * 60
 VIEWPORT = {"width": 1280, "height": 800}
