@@ -16,6 +16,7 @@ from app.routes import auth as auth_routes
 from app.routes import chats as chat_routes
 from app.routes import custom_tools as custom_tool_routes
 from app.routes import datasources as datasource_routes
+from app.routes import email_accounts as email_account_routes
 from app.routes import files as file_routes
 from app.routes import installation_secrets as installation_secret_routes
 from app.routes import integrations as integration_routes
@@ -152,6 +153,7 @@ app.include_router(integration_routes.router)
 app.include_router(public_routes.router)
 app.include_router(toolkit_routes.router)
 app.include_router(payment_routes.router)
+app.include_router(email_account_routes.router)
 app.include_router(mcp_store_routes.router)
 app.include_router(omnichannel_routes.router)
 app.include_router(ai_router_routes.router)

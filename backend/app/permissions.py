@@ -19,6 +19,7 @@ RESOURCES = (
     "mcp_store",
     "omnichannel",
     "ai_router",
+    "email_accounts",
 )
 
 ACTIONS = ("view", "create", "edit", "delete")
