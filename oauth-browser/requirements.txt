@@ -1,4 +1,4 @@
 fastapi>=0.115
 uvicorn[standard]>=0.30
-playwright==1.47.0
+patchright==1.62.1
 websockets>=13

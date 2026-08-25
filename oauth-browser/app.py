@@ -24,7 +24,7 @@ from contextlib import asynccontextmanager
 from urllib.parse import parse_qs, urlparse
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from playwright.async_api import async_playwright
+from patchright.async_api import async_playwright
 from pydantic import BaseModel
 
 logger = logging.getLogger("oauth-browser")
@@ -74,21 +74,26 @@ def require_admin(request: Request) -> None:
 async def lifespan(app: FastAPI):
     global _playwright, _browser
     _playwright = await async_playwright().start()
-    # Achado real 25/08/2026, testado ao vivo: `headless=True` trava na
-    # verificação da Cloudflare ("Verify you are human") -- Chromium
-    # headless carrega um fingerprint reconhecível (navigator.webdriver,
-    # etc.) que os provedores por trás de Cloudflare (Claude, e
-    # provavelmente OpenAI) bloqueiam. Rodando headful (via Xvfb, ver
-    # Dockerfile) + escondendo o flag de automação passa na maioria dos
-    # casos -- é exatamente o mesmo Chromium controlado, só sem o sinal
-    # mais óbvio de bot.
+    # Achado real 25/08/2026, testado ao vivo: mesmo headful (Xvfb) +
+    # `navigator.webdriver` escondido, o Cloudflare Turnstile chega no
+    # desafio interativo mas nunca passa -- um clique real via CDP fica
+    # preso em "Verifying..." e reseta sozinho. `navigator.webdriver` é só
+    # o sinal mais óbvio; o vazamento real é a própria conexão CDP do
+    # Playwright puro (`Runtime.enable`, entre outros). `patchright`
+    # (fork mantido do Playwright, mesma API) fecha esses leaks
+    # especificamente pra Cloudflare/Turnstile, e `channel="chrome"` usa o
+    # Chrome de verdade (não o Chromium open-source, que tem fingerprint
+    # diferente) -- ver Dockerfile pro install do Chrome patched.
+    #
+    # Importante: com patchright, NÃO reintroduzir os flags/scripts manuais
+    # de antes (`--disable-blink-features=AutomationControlled`,
+    # override de `navigator.webdriver`) -- o patchright já cobre isso
+    # numa camada mais profunda, e sobrepor de novo por fora deixa o
+    # fingerprint inconsistente (documentado pelo próprio projeto).
     _browser = await _playwright.chromium.launch(
         headless=False,
-        args=[
-            "--no-sandbox",
-            "--disable-dev-shm-usage",
-            "--disable-blink-features=AutomationControlled",
-        ],
+        channel="chrome",
+        args=["--no-sandbox", "--disable-dev-shm-usage"],
     )
     yield
     for sessao in list(sessions.values()):
@@ -159,19 +164,12 @@ async def criar_sessao(payload: SessaoNovaIn, request: Request):
 
     session_id = uuid.uuid4().hex
     ws_token = uuid.uuid4().hex
-    context = await _browser.new_context(
-        viewport=VIEWPORT,
-        user_agent=(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
-        ),
-    )
-    # `--disable-blink-features=AutomationControlled` já tira o principal
-    # sinal, mas `navigator.webdriver` ainda pode sobreviver em alguns
-    # builds -- forçar undefined aqui é o reforço padrão contra Cloudflare.
-    await context.add_init_script(
-        "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
-    )
+    # Sem `user_agent`/`add_init_script` manuais aqui de propósito: um UA
+    # forjado que não bate com a versão real do Chrome patched (ver
+    # lifespan acima) é em si um sinal de automação pra fingerprinting
+    # mais avançado -- deixar o Chrome real anunciar o próprio UA, mais
+    # consistente que qualquer valor fixo que a gente escolha.
+    context = await _browser.new_context(viewport=VIEWPORT)
     page = await context.new_page()
     resultado: asyncio.Future = asyncio.get_event_loop().create_future()
 
@@ -255,16 +253,7 @@ async def _contexto_com_cookies(cookies: list[dict]):
     mesmo desenho do login (`_browser` global, contexto novo por chamada),
     só que aqui a sessão já existe (cookies do canal) em vez de fazer login.
     """
-    context = await _browser.new_context(
-        viewport=VIEWPORT,
-        user_agent=(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
-        ),
-    )
-    await context.add_init_script(
-        "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
-    )
+    context = await _browser.new_context(viewport=VIEWPORT)
     await context.add_cookies(cookies)
     try:
         yield context

@@ -11,6 +11,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends xvfb \
 WORKDIR /srv
 COPY oauth-browser/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Achado real 25/08/2026: mesmo headful, o Cloudflare Turnstile chega no
+# desafio interativo mas nunca passa -- clique real via CDP fica preso em
+# "Verifying..." e reseta. Suspeita confirmada: o Playwright puro vaza a
+# própria conexão CDP (leak conhecido do `Runtime.enable`), não só flags de
+# JS visíveis como `navigator.webdriver`. `patchright` é um fork mantido do
+# Playwright que fecha esses leaks de CDP especificamente; Chrome real (não
+# o Chromium open-source) reduz ainda mais a superfície de fingerprint.
+RUN python -m patchright install chrome --with-deps
+
 COPY oauth-browser/app.py ./app.py
 
 ENV PORT=8080
