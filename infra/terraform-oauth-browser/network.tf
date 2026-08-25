@@ -18,14 +18,6 @@ resource "google_compute_network" "oauth_browser" {
   auto_create_subnetworks = false
 }
 
-resource "google_compute_subnetwork" "oauth_browser_sp" {
-  name          = "oauth-browser-sp-subnet"
-  project       = var.project
-  region        = "southamerica-east1"
-  network       = google_compute_network.oauth_browser.id
-  ip_cidr_range = "10.10.0.0/28"
-}
-
 # Faixa dedicada só pro VPC Access Connector (exigência do produto: precisa
 # ser um /28 próprio, sem sobrepor a subnet acima).
 resource "google_compute_subnetwork" "oauth_browser_connector" {
@@ -59,9 +51,16 @@ resource "google_compute_router_nat" "oauth_browser" {
   nat_ip_allocate_option = "MANUAL_ONLY"
   nat_ips                = [google_compute_address.oauth_browser_nat_ip.self_link]
 
+  # Achado real 25/08/2026: o tráfego de saída do Cloud Run passa pela
+  # subnet do CONNECTOR (VPC Access Connector), não por uma subnet própria
+  # do serviço -- tinha criado uma subnet "oauth-browser-sp-subnet" separada
+  # e configurado o NAT nela, que ninguém usava de verdade. Resultado: sem
+  # regra de NAT pra faixa que o connector realmente usa, o tráfego saía
+  # pra internet sem NAT nenhum -- rota inexistente, timeout (não recusa),
+  # em VEZ de sair pelo IP estático. Corrigido: NAT a subnet do connector.
   source_subnetwork_ip_ranges_to_nat = "LIST_OF_SUBNETWORKS"
   subnetwork {
-    name                    = google_compute_subnetwork.oauth_browser_sp.id
+    name                    = google_compute_subnetwork.oauth_browser_connector.id
     source_ip_ranges_to_nat = ["ALL_IP_RANGES"]
   }
 }
