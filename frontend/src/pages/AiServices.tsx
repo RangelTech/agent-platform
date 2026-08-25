@@ -133,7 +133,16 @@ export default function AiServices() {
 
       {/* Contas da empresa e combos: o caminho novo, em que o cliente traz as
           contas dele. O cadastro direto de provider continua abaixo. */}
-      {!isMaster && <ContasIA />}
+      {!isMaster && (
+        <>
+          <p className="text-sm text-[var(--text-muted)] -mb-2">
+            Conectar uma conta aqui só guarda a credencial — ela não fica pronta pra uso sozinha.
+            Monte um <strong>combo</strong> escolhendo os modelos dela pra virar um serviço de IA de
+            verdade, disponível em "Serviços cadastrados" logo abaixo.
+          </p>
+          <ContasIA />
+        </>
+      )}
 
       <div className="grid gap-4 md:grid-cols-3">
         <StatCard label="Serviços totais" value={String(services.length)} meta="Catálogo consolidado por tenant e provider." />
@@ -230,7 +239,14 @@ export default function AiServices() {
       )}
 
 
-      <Card title="Serviços cadastrados" actions={<Badge ok={activeCount > 0}>{activeCount} ativos</Badge>}>
+      <Card
+        title="Serviços cadastrados"
+        actions={<Badge ok={activeCount > 0}>{activeCount} ativos</Badge>}
+      >
+        <p className="text-sm text-[var(--text-muted)] -mt-2 mb-4">
+          O que os templates realmente usam — nasce de um combo publicado (acima) ou de uma chave
+          cadastrada direto abaixo. Conta conectada sem combo não aparece aqui.
+        </p>
         {isLoading ? (
           <TableSkeleton columns={6} />
         ) : loadError ? (

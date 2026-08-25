@@ -723,6 +723,63 @@ def listar_combos(user: dict = Depends(require("ai_router", "view"))):
     ]
 
 
+async def _chave_da_conta(conta: dict) -> str:
+    """Chave usável pra virar `api_key` de um deployment do LiteLLM --
+    direta pra conta de API key, renovada sob demanda pra conta de
+    assinatura (OAuth) se estiver perto de expirar.
+
+    Pendência conhecida, documentada em produto-12: isto só renova na
+    hora de CRIAR o combo -- se o combo ficar dias sem ser recriado e o
+    token expirar de novo depois, o deployment fica com uma key velha
+    até alguém salvar o combo de novo. Falta um job periódico que
+    resincronize; não implementado ainda."""
+    if conta["api_key_encrypted"]:
+        return decrypt(conta["api_key_encrypted"])
+
+    from datetime import datetime, timedelta
+
+    expira_em = conta["token_expires_at"]
+    precisa_renovar = (
+        expira_em is not None and datetime.now(UTC) >= expira_em - timedelta(seconds=60)
+    )
+    if not precisa_renovar or not conta["refresh_token_encrypted"]:
+        return decrypt(conta["access_token_encrypted"])
+
+    try:
+        resultado = await oauth_engine.renovar(
+            conta["provider"], decrypt(conta["refresh_token_encrypted"]), conta["provider_data"]
+        )
+    except oauth_engine.OAuthError as exc:
+        with get_connection() as conn:
+            conn.execute(
+                "UPDATE tenant_ai_accounts SET token_last_refresh_error = %s WHERE id = %s",
+                (str(exc)[:500], conta["id"]),
+            )
+        raise HTTPException(
+            status_code=502,
+            detail=f"Não foi possível renovar a sessão de {conta['provider']}: {exc}",
+        ) from exc
+    novo_expira_em = (
+        datetime.now(UTC) + timedelta(seconds=resultado.expires_in)
+        if resultado.expires_in
+        else None
+    )
+    novo_refresh = (
+        encrypt(resultado.refresh_token)
+        if resultado.refresh_token
+        else conta["refresh_token_encrypted"]
+    )
+    with get_connection() as conn:
+        conn.execute(
+            """UPDATE tenant_ai_accounts
+                   SET access_token_encrypted = %s, refresh_token_encrypted = %s,
+                       token_expires_at = %s, token_last_refresh_error = NULL
+                 WHERE id = %s""",
+            (encrypt(resultado.access_token), novo_refresh, novo_expira_em, conta["id"]),
+        )
+    return resultado.access_token
+
+
 async def _criar_combo_litellm(payload: ComboIn, user: dict, registro: dict, tenant: dict) -> dict:
     """Um combo É o grupo de revezamento (infra-04 seção 2d, decisão final):
     1 combo -> 1 `model_name` do LiteLLM, 1 deployment por modelo do combo,
@@ -733,9 +790,15 @@ async def _criar_combo_litellm(payload: ComboIn, user: dict, registro: dict, ten
     base_url, master_key = _config_litellm()
 
     with get_connection() as conn:
+        # Achado real 25/08/2026: esta query só pegava conta por API key --
+        # conta de assinatura (Claude/Codex/Gemini CLI, `auth_type='oauth'`)
+        # nunca entrava em combo nenhum, mesmo com o provider certo no
+        # catálogo (router_catalog.py já lista claude/codex como modo
+        # "redirect"). Incluída aqui também.
         contas = conn.execute(
             """SELECT * FROM tenant_ai_accounts
-                WHERE tenant_id = %s AND is_active AND api_key_encrypted IS NOT NULL""",
+                WHERE tenant_id = %s AND is_active
+                      AND (api_key_encrypted IS NOT NULL OR access_token_encrypted IS NOT NULL)""",
             (user["tenant_id"],),
         ).fetchall()
     conta_por_provider = {}
@@ -759,12 +822,13 @@ async def _criar_combo_litellm(payload: ComboIn, user: dict, registro: dict, ten
 
     try:
         for modelo, conta in para_criar:
+            chave = await _chave_da_conta(conta)
             await litellm_client.create_deployment(
                 base_url,
                 master_key,
                 model_name=nome_grupo,
                 provider_model=modelo,
-                api_key=decrypt(conta["api_key_encrypted"]),
+                api_key=chave,
                 tenant_id=str(user["tenant_id"]),
             )
         await litellm_client.add_model_to_team(
