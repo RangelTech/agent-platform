@@ -36,6 +36,24 @@ VIEWPORT = {"width": 1280, "height": 800}
 CODEX_CALLBACK_PREFIX = "http://localhost:1455/auth/callback"
 CLAUDE_CALLBACK_MARK = "console.anthropic.com/oauth/code/callback"
 
+# Produto-10 (25/08/2026): Facebook/Instagram "não oficial" não trocam
+# código por token -- a credencial É a sessão do navegador. Em vez de
+# esperar um `code` na URL, esperamos o cookie de sessão crítico aparecer
+# no jar do contexto (mesmo teste que rodou ao vivo com o dono esta
+# madrugada) e devolvemos os cookies inteiros, não um par code/state.
+LOGIN_COOKIE_PROVEDORES = {
+    "facebook_web": {
+        "login_url": "https://www.facebook.com/login",
+        "cookie_domain_match": "facebook.com",
+        "cookie_chave": "c_user",
+    },
+    "instagram_web": {
+        "login_url": "https://www.instagram.com/accounts/login/",
+        "cookie_domain_match": "instagram.com",
+        "cookie_chave": "sessionid",
+    },
+}
+
 _playwright = None
 _browser = None
 sessions: dict[str, dict] = {}
@@ -88,8 +106,8 @@ async def health():
 
 
 class SessaoNovaIn(BaseModel):
-    auth_url: str
-    provider: str  # "claude" | "codex" -- decide a estratégia de captura do código
+    auth_url: str | None = None  # vazio pros provedores de login/cookie -- usam login_url própria
+    provider: str  # "claude" | "codex" | "facebook_web" | "instagram_web"
 
 
 async def _fechar_contexto(sessao: dict) -> None:
@@ -112,10 +130,29 @@ def _extrair_code_state(url: str) -> tuple[str, str]:
     return qs.get("code", [""])[0], qs.get("state", [""])[0]
 
 
+async def _espera_cookie_critico(context, resultado, cookie_domain_match, cookie_chave):
+    """Roda em paralelo enquanto o admin loga -- fica checando o jar do
+    contexto até o cookie de sessão crítico aparecer. Não tem redirect_uri
+    nem código pra interceptar aqui, a sessão inteira é a credencial."""
+    for _ in range(SESSION_TTL_SECONDS // 3):
+        if resultado.done():
+            return
+        try:
+            cookies = await context.cookies()
+        except Exception:  # noqa: BLE001 -- contexto pode ter sido fechado
+            return
+        do_dominio = [c for c in cookies if cookie_domain_match in c["domain"]]
+        if any(c["name"] == cookie_chave for c in do_dominio):
+            if not resultado.done():
+                resultado.set_result({"cookies": do_dominio})
+            return
+        await asyncio.sleep(3)
+
+
 @app.post("/sessions")
 async def criar_sessao(payload: SessaoNovaIn, request: Request):
     require_admin(request)
-    if payload.provider not in ("claude", "codex"):
+    if payload.provider not in ("claude", "codex", *LOGIN_COOKIE_PROVEDORES):
         raise HTTPException(
             status_code=400, detail=f"provedor '{payload.provider}' não suportado aqui"
         )
@@ -157,7 +194,7 @@ async def criar_sessao(payload: SessaoNovaIn, request: Request):
                     resultado.set_result({"code": code, "state": state})
 
         await page.route(f"{CODEX_CALLBACK_PREFIX}*", _intercepta_callback_local)
-    else:
+    elif payload.provider == "claude":
         # Claude pousa numa página real da Anthropic (não interceptamos --
         # é o servidor deles quem decide o que mostrar). Lemos o código da
         # URL final assim que a navegação chega lá.
@@ -169,6 +206,13 @@ async def criar_sessao(payload: SessaoNovaIn, request: Request):
                 resultado.set_result({"code": code, "state": state})
 
         page.on("framenavigated", _ao_navegar)
+    elif payload.provider in LOGIN_COOKIE_PROVEDORES:
+        cfg = LOGIN_COOKIE_PROVEDORES[payload.provider]
+        asyncio.create_task(
+            _espera_cookie_critico(
+                context, resultado, cfg["cookie_domain_match"], cfg["cookie_chave"]
+            )
+        )
 
     sessions[session_id] = {
         "id": session_id,
@@ -181,8 +225,11 @@ async def criar_sessao(payload: SessaoNovaIn, request: Request):
     }
     asyncio.create_task(_autodestruir_apos_ttl(session_id))
 
+    url_inicial = payload.auth_url or LOGIN_COOKIE_PROVEDORES.get(
+        payload.provider, {}
+    ).get("login_url")
     try:
-        await page.goto(payload.auth_url, wait_until="domcontentloaded", timeout=30_000)
+        await page.goto(url_inicial, wait_until="domcontentloaded", timeout=30_000)
     except Exception as exc:  # noqa: BLE001
         await _fechar_contexto(sessions.pop(session_id, {"context": context}))
         raise HTTPException(
@@ -230,7 +277,10 @@ async def stream(ws: WebSocket, session_id: str):
         nonlocal encerrando
         try:
             r = await sessao["resultado"]
-            await ws.send_json({"type": "done", "code": r["code"], "state": r["state"]})
+            if "cookies" in r:
+                await ws.send_json({"type": "done", "cookies": r["cookies"]})
+            else:
+                await ws.send_json({"type": "done", "code": r["code"], "state": r["state"]})
         except asyncio.CancelledError:
             try:
                 await ws.send_json({"type": "erro", "mensagem": "tempo esgotado, tente de novo"})
