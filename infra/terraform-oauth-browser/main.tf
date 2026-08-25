@@ -26,12 +26,17 @@ variable "region" {
   default = "us-central1"
 }
 variable "image" { type = string }
+variable "admin_token" {
+  type      = string
+  sensitive = true
+}
 
 # Navegador remoto pra OAuth de Claude/Codex que só aceita redirect_uri
 # fixo/loopback (produto-08, adendo 24/08/2026) -- ver oauth-browser/app.py.
-# O token administrativo vive no Secret Manager (não no Infisical, ao
-# contrário do padrão do bridge): Cloud Run resolve o valor em runtime com
-# a própria service account, o deploy nunca vê o segredo em texto plano.
+# Token administrativo vem do Infisical (mesmo padrão do custom-tool-runner
+# -- fonte da verdade de todo segredo, decisão do dono). Corrigido em
+# 24/08/2026: nasceu no GCP Secret Manager por um desvio pontual (esta
+# sessão não tinha credencial Infisical carregada na hora), migrado depois.
 resource "google_cloud_run_v2_service" "oauth_browser" {
   name     = "oauth-browser"
   project  = var.project
@@ -48,13 +53,8 @@ resource "google_cloud_run_v2_service" "oauth_browser" {
         }
       }
       env {
-        name = "OAUTH_BROWSER_ADMIN_TOKEN"
-        value_source {
-          secret_key_ref {
-            secret  = "agent-platform-oauth-browser-admin-token"
-            version = "latest"
-          }
-        }
+        name  = "OAUTH_BROWSER_ADMIN_TOKEN"
+        value = var.admin_token
       }
       env {
         name  = "OAUTH_BROWSER_ALLOWED_ORIGIN"

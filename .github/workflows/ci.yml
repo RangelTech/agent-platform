@@ -115,9 +115,13 @@ jobs:
           echo "gemini_cli_oauth_client_secret<<EOF_GC" >> "$GITHUB_OUTPUT"
           fetch_secret GEMINI_CLI_OAUTH_CLIENT_SECRET >> "$GITHUB_OUTPUT"
           echo "EOF_GC" >> "$GITHUB_OUTPUT"
+          echo "oauth_browser_admin_token<<EOF_OBT" >> "$GITHUB_OUTPUT"
+          fetch_secret OAUTH_BROWSER_ADMIN_TOKEN >> "$GITHUB_OUTPUT"
+          echo "EOF_OBT" >> "$GITHUB_OUTPUT"
       - name: Deploy backend to Cloud Run
         env:
           LITELLM_MASTER_KEY: ${{ steps.infisical.outputs.litellm_master_key }}
           ANTIGRAVITY_OAUTH_CLIENT_SECRET: ${{ steps.infisical.outputs.antigravity_oauth_client_secret }}
           GEMINI_CLI_OAUTH_CLIENT_SECRET: ${{ steps.infisical.outputs.gemini_cli_oauth_client_secret }}
+          OAUTH_BROWSER_ADMIN_TOKEN: ${{ steps.infisical.outputs.oauth_browser_admin_token }}
         run: bash ./infra/deploy-cloudrun.sh
