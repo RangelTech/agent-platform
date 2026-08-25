@@ -121,13 +121,6 @@ async def _provisionar_router_em_background(tenant_id: str, tenant_key: str) -> 
         async def _provisionar() -> tuple[str, str, str]:
             team = await litellm_client.create_team(base_url, master_key, team_alias=tenant_key)
             team_id = team["team_id"]
-            # Fallback local liberado desde já pro Team (mesmo motivo de
-            # `provisionar_litellm.py`: sem isso, a virtual key leva 403
-            # `team_model_access_denied` na primeira vez que o fallback
-            # precisar entrar em ação).
-            await litellm_client.add_model_to_team(
-                base_url, master_key, team_id=team_id, model_name="ragentes-local-fallback"
-            )
             bridge_key = await litellm_client.generate_key(
                 base_url, master_key, team_id=team_id, key_alias=f"{tenant_key}-bridge"
             )
