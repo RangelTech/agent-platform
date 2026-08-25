@@ -211,45 +211,8 @@ async def criar_sessao(payload: SessaoNovaIn, request: Request):
     page = await context.new_page()
     resultado: asyncio.Future = asyncio.get_event_loop().create_future()
 
-    if payload.provider == "codex":
-        # O client_id público do Codex CLI só aceita este redirect_uri --
-        # ninguém escuta essa porta de verdade, a rota nunca chega a virar
-        # tráfego de rede: Playwright intercepta a NAVEGAÇÃO em si.
-        async def _intercepta_callback_local(route):
-            code, state = _extrair_code_state(route.request.url)
-            erro = parse_qs(urlparse(route.request.url).query).get("error", [""])[0]
-            await route.fulfill(
-                status=200,
-                content_type="text/html",
-                body="<html><body>Autorização concluída. Pode fechar esta janela.</body></html>",
-            )
-            if not resultado.done():
-                if erro:
-                    resultado.set_exception(RuntimeError(erro))
-                else:
-                    resultado.set_result({"code": code, "state": state})
-
-        await page.route(f"{CODEX_CALLBACK_PREFIX}*", _intercepta_callback_local)
-    elif payload.provider == "claude":
-        # Claude pousa numa página real da Anthropic (não interceptamos --
-        # é o servidor deles quem decide o que mostrar). Lemos o código da
-        # URL final assim que a navegação chega lá.
-        def _ao_navegar(frame):
-            if frame != page.main_frame or CLAUDE_CALLBACK_MARK not in frame.url:
-                return
-            code, state = _extrair_code_state(frame.url)
-            if code and not resultado.done():
-                resultado.set_result({"code": code, "state": state})
-
-        page.on("framenavigated", _ao_navegar)
-    elif payload.provider in LOGIN_COOKIE_PROVEDORES:
-        cfg = LOGIN_COOKIE_PROVEDORES[payload.provider]
-        asyncio.create_task(
-            _espera_cookie_critico(
-                context, resultado, cfg["cookie_domain_match"], cfg["cookie_chave"]
-            )
-        )
-
+    # Precisa existir ANTES de registrar os listeners abaixo -- eles mutam
+    # `sessions[session_id]["page"]` por closure (ver `_ao_abrir_popup`).
     sessions[session_id] = {
         "id": session_id,
         "ws_token": ws_token,
@@ -260,6 +223,67 @@ async def criar_sessao(payload: SessaoNovaIn, request: Request):
         "criada_em": time.time(),
     }
     asyncio.create_task(_autodestruir_apos_ttl(session_id))
+
+    async def _conectar_deteccao(alvo) -> None:
+        """Liga a detecção de code/state numa página -- chamada tanto pra
+        página original quanto pra qualquer popup que abrir nela (ex.:
+        "Continuar com Google" abre uma janela nova; sem isto o mirror e a
+        detecção ficavam presos na página de trás, que nunca navega pra
+        lugar nenhum, e o admin nunca via a tela de login do Google)."""
+        if payload.provider == "codex":
+            async def _intercepta_callback_local(route):
+                code, state = _extrair_code_state(route.request.url)
+                erro = parse_qs(urlparse(route.request.url).query).get("error", [""])[0]
+                await route.fulfill(
+                    status=200,
+                    content_type="text/html",
+                    body=(
+                        "<html><body>Autorização concluída. "
+                        "Pode fechar esta janela.</body></html>"
+                    ),
+                )
+                if not resultado.done():
+                    if erro:
+                        resultado.set_exception(RuntimeError(erro))
+                    else:
+                        resultado.set_result({"code": code, "state": state})
+
+            await alvo.route(f"{CODEX_CALLBACK_PREFIX}*", _intercepta_callback_local)
+        elif payload.provider == "claude":
+            def _ao_navegar(frame):
+                if frame != alvo.main_frame or CLAUDE_CALLBACK_MARK not in frame.url:
+                    return
+                code, state = _extrair_code_state(frame.url)
+                if code and not resultado.done():
+                    resultado.set_result({"code": code, "state": state})
+
+            alvo.on("framenavigated", _ao_navegar)
+
+    def _ao_abrir_popup(nova_pagina) -> None:
+        # A janela de trás (ex.: a tela inicial do Claude) some do mirror
+        # assim que um popup abre -- o admin só interage com o que está de
+        # fato visível/ativo. Se o popup fechar sem concluir (usuário
+        # cancelou o Google, etc.), o mirror volta pra página original.
+        sessions[session_id]["page"] = nova_pagina
+        asyncio.create_task(_conectar_deteccao(nova_pagina))
+        nova_pagina.on(
+            "close",
+            lambda: sessions[session_id].__setitem__("page", page)
+            if session_id in sessions and not resultado.done()
+            else None,
+        )
+
+    context.on("page", _ao_abrir_popup)
+
+    if payload.provider in ("codex", "claude"):
+        await _conectar_deteccao(page)
+    elif payload.provider in LOGIN_COOKIE_PROVEDORES:
+        cfg = LOGIN_COOKIE_PROVEDORES[payload.provider]
+        asyncio.create_task(
+            _espera_cookie_critico(
+                context, resultado, cfg["cookie_domain_match"], cfg["cookie_chave"]
+            )
+        )
 
     url_inicial = payload.auth_url or LOGIN_COOKIE_PROVEDORES.get(
         payload.provider, {}
@@ -386,8 +410,15 @@ async def stream(ws: WebSocket, session_id: str):
         return
 
     await ws.accept()
-    page = sessao["page"]
     encerrando = False
+
+    # Achado real 25/08/2026: "página ativa" muda em tempo real quando um
+    # popup abre (ex.: "Continuar com Google") -- capturar `page` uma vez
+    # aqui deixava o mirror e o relay de mouse/teclado presos na janela de
+    # trás pra sempre. Ler `sessao["page"]` de novo a cada frame/mensagem
+    # segue o que `_ao_abrir_popup` (em `criar_sessao`) for mutando.
+    def _pagina_ativa():
+        return sessao["page"]
 
     # Achado real 25/08/2026: com patchright + Chrome real, uma segunda
     # sessão CDP manual (`new_cdp_session` + `Page.startScreencast`) parou
@@ -399,7 +430,7 @@ async def stream(ws: WebSocket, session_id: str):
     async def _mandar_frames() -> None:
         while not encerrando:
             try:
-                dados = await page.screenshot(type="jpeg", quality=60, timeout=2_000)
+                dados = await _pagina_ativa().screenshot(type="jpeg", quality=60, timeout=2_000)
                 await ws.send_json({"type": "frame", "data": base64.b64encode(dados).decode()})
             except Exception:  # noqa: BLE001 -- página pode estar navegando, tenta de novo
                 pass
@@ -443,16 +474,17 @@ async def stream(ws: WebSocket, session_id: str):
         while not encerrando:
             msg = await ws.receive_json()
             tipo = msg.get("type")
+            alvo = _pagina_ativa()
             if tipo == "mouse":
-                await page.mouse.move(msg["x"], msg["y"])
+                await alvo.mouse.move(msg["x"], msg["y"])
                 if msg.get("click"):
-                    await page.mouse.click(msg["x"], msg["y"])
+                    await alvo.mouse.click(msg["x"], msg["y"])
             elif tipo == "wheel":
-                await page.mouse.wheel(msg.get("dx", 0), msg.get("dy", 0))
+                await alvo.mouse.wheel(msg.get("dx", 0), msg.get("dy", 0))
             elif tipo == "key" and msg.get("text"):
-                await page.keyboard.type(msg["text"])
+                await alvo.keyboard.type(msg["text"])
             elif tipo == "key" and msg.get("key"):
-                await page.keyboard.press(msg["key"])
+                await alvo.keyboard.press(msg["key"])
     except WebSocketDisconnect:
         pass
     finally:
