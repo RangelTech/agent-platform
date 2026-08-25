@@ -26,6 +26,7 @@ import Memories from './pages/Memories'
 import Omnichannel from './pages/Omnichannel'
 import OAuthCallback from './pages/OAuthCallback'
 import Payments from './pages/Payments'
+import EmailAccounts from './pages/EmailAccounts'
 import Customize from './pages/Customize'
 import CustomTools from './pages/CustomTools'
 import Profiles from './pages/Profiles'
@@ -72,6 +73,7 @@ function Shell() {
     { to: '/consumo', label: 'Consumo', show: can('usage', 'view') },
     { to: '/integracoes', label: 'Integrações', show: can('integrations', 'view') },
     { to: '/pagamentos', label: 'Pagamentos', show: can('payments', 'view') },
+    { to: '/contas-de-email', label: 'Contas de email', show: can('email_accounts', 'view') },
     { to: '/mcp-store', label: 'MCP Store', show: can('mcp_store', 'view') },
     { to: '/atendimento', label: 'Atendimento', show: can('omnichannel', 'view') },
     // Chave da instalação inteira (app da Meta, busca na web): é do master, não
@@ -240,6 +242,7 @@ function Shell() {
               <Route path="/consumo" element={<Usage />} />
               <Route path="/integracoes" element={<Integrations />} />
               <Route path="/pagamentos" element={<Payments />} />
+              <Route path="/contas-de-email" element={<EmailAccounts />} />
               <Route path="/mcp-store" element={<McpStore />} />
               <Route path="/atendimento" element={<Omnichannel />} />
               <Route
