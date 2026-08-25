@@ -239,6 +239,114 @@ async def criar_sessao(payload: SessaoNovaIn, request: Request):
     return {"session_id": session_id, "ws_token": ws_token}
 
 
+class FacebookCookiesIn(BaseModel):
+    cookies: list[dict]
+
+
+class FacebookSendIn(BaseModel):
+    cookies: list[dict]
+    thread_id: str
+    text: str
+
+
+@asynccontextmanager
+async def _contexto_com_cookies(cookies: list[dict]):
+    """Contexto Playwright descartável carregado com a sessão salva --
+    mesmo desenho do login (`_browser` global, contexto novo por chamada),
+    só que aqui a sessão já existe (cookies do canal) em vez de fazer login.
+    """
+    context = await _browser.new_context(
+        viewport=VIEWPORT,
+        user_agent=(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+        ),
+    )
+    await context.add_init_script(
+        "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+    )
+    await context.add_cookies(cookies)
+    try:
+        yield context
+    finally:
+        await context.close()
+
+
+@app.post("/facebook/inbox")
+async def facebook_inbox(payload: FacebookCookiesIn, request: Request):
+    """Lista as conversas do Messenger com a última mensagem de cada uma.
+
+    Facebook não tem API HTTP não-oficial funcional (ao contrário do
+    Instagram, ver produto-10 seção 6b) -- messenger.com é SPA JS-only, então
+    isto navega de verdade e lê o DOM. Seletores por `aria-label`/`role`
+    (mais estáveis que classes CSS, que o Facebook ofusca e troca sem
+    aviso) -- ainda assim frágil por natureza; se o Facebook mudar o
+    layout, isto quebra e precisa de ajuste manual.
+    """
+    require_admin(request)
+    async with _contexto_com_cookies(payload.cookies) as context:
+        page = await context.new_page()
+        try:
+            await page.goto(
+                "https://www.facebook.com/messages/t/", wait_until="networkidle", timeout=30_000
+            )
+            await page.wait_for_selector('[aria-label="Chat list"], [role="grid"]', timeout=15_000)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(
+                status_code=502, detail=f"falha ao abrir a caixa de entrada: {exc}"
+            ) from exc
+
+        conversas = await page.evaluate(
+            """() => {
+                const linhas = document.querySelectorAll('[role="row"] a[href*="/messages/t/"]');
+                const vistos = new Set();
+                const out = [];
+                for (const a of linhas) {
+                    const href = a.getAttribute('href') || '';
+                    const m = href.match(/\\/messages\\/t\\/([^/?]+)/);
+                    if (!m || vistos.has(m[1])) continue;
+                    vistos.add(m[1]);
+                    const texto = (a.innerText || '').split('\\n').filter(Boolean);
+                    out.push({
+                        thread_id: m[1],
+                        name: texto[0] || '',
+                        snippet: texto.slice(1).join(' ') || '',
+                    });
+                }
+                return out;
+            }"""
+        )
+        return {"conversations": conversas}
+
+
+@app.post("/facebook/send")
+async def facebook_send(payload: FacebookSendIn, request: Request):
+    """Envia uma mensagem de texto numa conversa existente do Messenger.
+
+    Abre a thread, digita na caixa de composição e manda Enter -- interação
+    de UI real, não chamada de API (Facebook não tem uma que funcione pra
+    isto). NUNCA testado com contato real (produto-10 seção 6c) -- não
+    envie mensagem de teste pra um contato desconhecido do dono.
+    """
+    require_admin(request)
+    async with _contexto_com_cookies(payload.cookies) as context:
+        page = await context.new_page()
+        try:
+            await page.goto(
+                f"https://www.facebook.com/messages/t/{payload.thread_id}",
+                wait_until="networkidle",
+                timeout=30_000,
+            )
+            caixa = page.locator('[aria-label="Message"][contenteditable="true"]').first
+            await caixa.wait_for(timeout=15_000)
+            await caixa.click()
+            await caixa.type(payload.text)
+            await caixa.press("Enter")
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=502, detail=f"falha ao enviar: {exc}") from exc
+        return {"status": "ok"}
+
+
 @app.websocket("/sessions/{session_id}/stream")
 async def stream(ws: WebSocket, session_id: str):
     token = ws.query_params.get("token", "")
