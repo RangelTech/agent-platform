@@ -23,11 +23,14 @@ variable "project" {
 }
 variable "region" {
   type = string
-  # Achado real 25/08/2026: movido de us-central1 pra southamerica-east1 --
-  # o Codex (auth.openai.com) recusava conexão do IP compartilhado padrão;
-  # o VPC connector (network.tf) precisa estar na mesma região do Cloud Run,
-  # por isso o serviço inteiro migrou, não só a rede.
-  default = "southamerica-east1"
+  # Achado real 25/08/2026: tentei mover pra southamerica-east1 com IP
+  # estático dedicado (Cloud NAT) achando que resolveria o bloqueio do
+  # Codex -- não resolveu (auth.openai.com bloqueia QUALQUER IP do Google
+  # Cloud, não só o us-central1 compartilhado, ver produto-08 seção 9b).
+  # Revertido pra us-central1 (decisão do dono: não pagar por infra que não
+  # resolveu o problema) -- o Codex agora usa o proxy da VPS (app.py),
+  # não depende mais de qual região o Cloud Run roda.
+  default = "us-central1"
 }
 variable "image" { type = string }
 variable "admin_token" {
@@ -99,14 +102,6 @@ resource "google_cloud_run_v2_service" "oauth_browser" {
     scaling {
       min_instance_count = 0
       max_instance_count = 3
-    }
-    # Todo tráfego de saída (não só as faixas privadas) passa pelo
-    # connector -> Cloud NAT -> IP estático dedicado de São Paulo
-    # (network.tf) -- é isso que troca o IP que auth.openai.com/claude.ai
-    # veem, não só a rota pra recursos internos do GCP.
-    vpc_access {
-      connector = google_vpc_access_connector.oauth_browser.id
-      egress    = "ALL_TRAFFIC"
     }
     # Uma sessão (um Chromium + uma stream de screencast) monopoliza a
     # instância -- duas sessões concorrentes na mesma instância brigariam
