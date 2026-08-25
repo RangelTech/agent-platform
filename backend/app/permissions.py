@@ -20,6 +20,7 @@ RESOURCES = (
     "omnichannel",
     "ai_router",
     "email_accounts",
+    "google_accounts",
 )
 
 ACTIONS = ("view", "create", "edit", "delete")

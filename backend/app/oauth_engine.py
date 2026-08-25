@@ -124,6 +124,26 @@ GEMINI_CLI = {
     "flow": "redirect_google",
 }
 
+GOOGLE_WORKSPACE = {
+    # Client OAuth PRÓPRIO (não é client público de ferramenta oficial como
+    # os acima) -- criado no projeto GCP do dono pra produto-11 seção 4.
+    # GOOGLE_WORKSPACE_OAUTH_CLIENT_ID/SECRET pendentes: tela de
+    # consentimento OAuth precisa ser criada manualmente no Console (não é
+    # scriptável de forma confiável via gcloud) -- deixar em modo "Testing"
+    # cobre o uso interno sem precisar de verificação do Google.
+    "client_id": os.environ.get("GOOGLE_WORKSPACE_OAUTH_CLIENT_ID", ""),
+    "client_secret": os.environ.get("GOOGLE_WORKSPACE_OAUTH_CLIENT_SECRET", ""),
+    "authorize_url": "https://accounts.google.com/o/oauth2/v2/auth",
+    "token_url": "https://oauth2.googleapis.com/token",
+    "userinfo_url": "https://www.googleapis.com/oauth2/v1/userinfo",
+    "scopes": (
+        "https://www.googleapis.com/auth/calendar "
+        "https://www.googleapis.com/auth/spreadsheets "
+        "https://www.googleapis.com/auth/userinfo.email"
+    ),
+    "flow": "redirect_google",
+}
+
 CLINE = {
     "authorize_url": "https://api.cline.bot/api/v1/auth/authorize",
     "token_exchange_url": "https://api.cline.bot/api/v1/auth/token",
@@ -162,6 +182,7 @@ PROVEDORES_OAUTH: dict[str, dict] = {
     "codex": CODEX,
     "antigravity": ANTIGRAVITY,
     "gemini-cli": GEMINI_CLI,
+    "google-workspace": GOOGLE_WORKSPACE,
     "cline": CLINE,
     "github": GITHUB,
     "kimi": KIMI,
@@ -603,7 +624,7 @@ async def renovar(
                 expires_in=dados.get("expires_in"),
             )
 
-        if provider in ("antigravity", "gemini-cli"):
+        if provider in ("antigravity", "gemini-cli", "google-workspace"):
             resp = await client.post(
                 cfg["token_url"],
                 data={
