@@ -609,7 +609,7 @@ export default function Chat() {
                         onClick={() => fileInputRef.current?.click()}
                         title="Anexar arquivo"
                       >
-                        <Paperclip size={18} aria-hidden="true" />
+                        <Paperclip size={20} aria-hidden="true" />
                       </Button>
                       <Button
                         type="button"
@@ -620,7 +620,7 @@ export default function Chat() {
                         onClick={toggleRecording}
                         title={recording ? 'Parar gravação' : 'Gravar áudio'}
                       >
-                        {recording ? <Square size={16} aria-hidden="true" /> : <Mic size={18} aria-hidden="true" />}
+                        {recording ? <Square size={18} aria-hidden="true" /> : <Mic size={20} aria-hidden="true" />}
                       </Button>
                       <label className="min-w-0">
                         <span className="sr-only">Template ativo</span>
