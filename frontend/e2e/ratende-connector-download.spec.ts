@@ -5,13 +5,15 @@ const MASTER_PASSWORD = process.env.E2E_MASTER_PASSWORD ?? 'admin123'
 
 /**
  * produto-15 §9 -- link de download no Início (Dashboard), não na tela de
- * login. Cobre só a presença do card + que o zip realmente responde 200 no
- * bucket público do GCS (26/08/2026: trocou de asset estático servido pelo
- * backend pra `gs://rangel-tech-ratende-connector`, atualizado pelo CI do
- * repo `ratende-connector` a cada push) -- não testa a extensão em si (isso
- * exige Chrome real, fora do escopo automatizável aqui).
+ * login. Cobre só a presença do card + que o instalador do Windows
+ * realmente responde 200 no bucket público do GCS (26/08/2026: card
+ * principal virou o instalador via política do Chrome, `.bat`/`.deb`,
+ * zip do "carregar sem compactação" virou alternativa manual dentro de
+ * um `<details>`) -- não testa a extensão em si nem o instalador rodando
+ * de verdade (isso exige Chrome real + Windows/Linux reais, fora do
+ * escopo automatizável aqui).
  */
-const DOWNLOAD_URL = 'https://storage.googleapis.com/rangel-tech-ratende-connector/ratende-connector.zip'
+const INSTALLER_URL = 'https://storage.googleapis.com/rangel-tech-ratende-connector/Instalar-RAtende-Connector.bat'
 test('card de download do RAtende Connector aparece no Início e o zip responde', async ({
   page,
   request,
@@ -54,15 +56,20 @@ test('card de download do RAtende Connector aparece no Início e o zip responde'
   await page.click('button[type="submit"]')
 
   await expect(page.getByRole('heading', { name: 'RAtende Connector' })).toBeVisible()
-  const link = page.getByRole('link', { name: 'Baixar RAtende Connector' })
+  const link = page.getByRole('link', { name: 'Instalar no Windows' })
   await expect(link).toBeVisible()
-  await expect(link).toHaveAttribute('href', DOWNLOAD_URL)
+  await expect(link).toHaveAttribute('href', INSTALLER_URL)
+  await expect(page.getByRole('link', { name: 'Instalar no Linux (.deb)' })).toBeVisible()
 
-  const zipResp = await request.get(DOWNLOAD_URL)
-  expect(zipResp.status()).toBe(200)
-  const body = await zipResp.body()
-  expect(body.length).toBeGreaterThan(1000)
-  // Assinatura de arquivo ZIP ("PK\x03\x04") -- prova que é um zip de
-  // verdade, não uma página de erro/HTML disfarçada de 200.
-  expect(body.subarray(0, 2).toString('latin1')).toBe('PK')
+  // Alternativa manual (zip) continua acessível dentro do <details>.
+  await page.getByText('Sem permissão de administrador? Carregue manualmente').click()
+  await expect(page.getByRole('link', { name: 'o zip da extensão' })).toBeVisible()
+
+  const installerResp = await request.get(INSTALLER_URL)
+  expect(installerResp.status()).toBe(200)
+  const body = await installerResp.body()
+  expect(body.length).toBeGreaterThan(200)
+  // Confirma que é o instalador de verdade, não uma página de erro
+  // disfarçada de 200.
+  expect(body.toString('latin1')).toContain('RAtende Connector')
 })
