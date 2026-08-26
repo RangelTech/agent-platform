@@ -68,6 +68,19 @@ BRIDGE_URL=$("$GCLOUD_BIN" run services describe chatwoot-bridge \
 # verdade de todo segredo, decisão do dono).
 : "${OAUTH_BROWSER_ADMIN_TOKEN:?OAUTH_BROWSER_ADMIN_TOKEN não veio do ambiente (esperado do ci.yml via Infisical)}"
 
+# GOOGLE_WORKSPACE_OAUTH_CLIENT_ID/SECRET e MS_OAUTH_CLIENT_ID/SECRET:
+# achado real 25-26/08/2026 -- publicados no Infisical (produto-11/produto-08
+# §12), mas NUNCA chegaram a ser lidos por este script nem pelo ci.yml. O
+# Cloud Run vivo confirmou (`gcloud run services describe`) que essas 4 vars
+# simplesmente não existiam no container -- Google Calendar/Sheets e (quando
+# implementado) Microsoft Outlook/Teams rodavam com client_id vazio, sempre
+# falhando o fluxo de OAuth. Não é rotação: a credencial já existia no
+# Infisical, só faltava o fio até o Cloud Run -- corrigido aqui.
+: "${GOOGLE_WORKSPACE_OAUTH_CLIENT_ID:?GOOGLE_WORKSPACE_OAUTH_CLIENT_ID não veio do ambiente (esperado do ci.yml via Infisical)}"
+: "${GOOGLE_WORKSPACE_OAUTH_CLIENT_SECRET:?GOOGLE_WORKSPACE_OAUTH_CLIENT_SECRET não veio do ambiente (esperado do ci.yml via Infisical)}"
+: "${MS_OAUTH_CLIENT_ID:?MS_OAUTH_CLIENT_ID não veio do ambiente (esperado do ci.yml via Infisical)}"
+: "${MS_OAUTH_CLIENT_SECRET:?MS_OAUTH_CLIENT_SECRET não veio do ambiente (esperado do ci.yml via Infisical)}"
+
 # Achado real 24/08/2026: OAUTH_BROWSER_ADMIN_TOKEN nasceu como
 # --set-secrets (GCP Secret Manager) num deploy anterior -- gcloud recusa
 # trocar o TIPO de uma env var existente (secret -> literal) numa ÚNICA
@@ -85,7 +98,7 @@ BRIDGE_URL=$("$GCLOUD_BIN" run services describe chatwoot-bridge \
   --project=$PROJECT --region=$REGION \
   --image=$REPO/agent-platform-backend:$SHORT_SHA \
   --set-secrets=DATABASE_URL=agent-platform-database-url:latest,ENCRYPTION_KEY=agent-platform-encryption-key:latest,S3_ACCESS_KEY_ID=gcs-hmac-access-key:latest,S3_SECRET_ACCESS_KEY=gcs-hmac-secret-key:latest,KERNEL_INTERNAL_TOKEN=agent-platform-kernel-internal-token:latest,BRIDGE_ADMIN_TOKEN=agent-platform-bridge-admin-token:latest \
-  --set-env-vars="KERNEL_URL=https://kernel-llm-pujq3pjmca-uc.a.run.app,PUBLIC_BASE_URL=https://ia.rangeltech.net,BRIDGE_URL=$BRIDGE_URL,STORAGE_BACKEND=s3,S3_ENDPOINT_URL=https://storage.googleapis.com,S3_REGION=us-east-1,S3_BUCKET=rangel-tech-storage,S3_PREFIX=teste-ia/agent-llm,S3_PUBLIC_BASE_URL=https://storage.googleapis.com/rangel-tech-storage/teste-ia,AWS_REQUEST_CHECKSUM_CALCULATION=when_required,AWS_RESPONSE_CHECKSUM_VALIDATION=when_required,LITELLM_BASE_URL=https://litellm-router-pujq3pjmca-uc.a.run.app,ROUTER_AUTO_PROVISION_ENABLED=true,LITELLM_MASTER_KEY=$LITELLM_MASTER_KEY,ANTIGRAVITY_OAUTH_CLIENT_SECRET=$ANTIGRAVITY_OAUTH_CLIENT_SECRET,GEMINI_CLI_OAUTH_CLIENT_SECRET=$GEMINI_CLI_OAUTH_CLIENT_SECRET,OAUTH_BROWSER_URL=https://oauth-browser-pujq3pjmca-uc.a.run.app,OAUTH_BROWSER_ADMIN_TOKEN=$OAUTH_BROWSER_ADMIN_TOKEN" \
+  --set-env-vars="KERNEL_URL=https://kernel-llm-pujq3pjmca-uc.a.run.app,PUBLIC_BASE_URL=https://ia.rangeltech.net,BRIDGE_URL=$BRIDGE_URL,STORAGE_BACKEND=s3,S3_ENDPOINT_URL=https://storage.googleapis.com,S3_REGION=us-east-1,S3_BUCKET=rangel-tech-storage,S3_PREFIX=teste-ia/agent-llm,S3_PUBLIC_BASE_URL=https://storage.googleapis.com/rangel-tech-storage/teste-ia,AWS_REQUEST_CHECKSUM_CALCULATION=when_required,AWS_RESPONSE_CHECKSUM_VALIDATION=when_required,LITELLM_BASE_URL=https://litellm-router-pujq3pjmca-uc.a.run.app,ROUTER_AUTO_PROVISION_ENABLED=true,LITELLM_MASTER_KEY=$LITELLM_MASTER_KEY,ANTIGRAVITY_OAUTH_CLIENT_SECRET=$ANTIGRAVITY_OAUTH_CLIENT_SECRET,GEMINI_CLI_OAUTH_CLIENT_SECRET=$GEMINI_CLI_OAUTH_CLIENT_SECRET,OAUTH_BROWSER_URL=https://oauth-browser-pujq3pjmca-uc.a.run.app,OAUTH_BROWSER_ADMIN_TOKEN=$OAUTH_BROWSER_ADMIN_TOKEN,GOOGLE_WORKSPACE_OAUTH_CLIENT_ID=$GOOGLE_WORKSPACE_OAUTH_CLIENT_ID,GOOGLE_WORKSPACE_OAUTH_CLIENT_SECRET=$GOOGLE_WORKSPACE_OAUTH_CLIENT_SECRET,MS_OAUTH_CLIENT_ID=$MS_OAUTH_CLIENT_ID,MS_OAUTH_CLIENT_SECRET=$MS_OAUTH_CLIENT_SECRET" \
   --allow-unauthenticated \
   --memory=1Gi --cpu=1 --min-instances=0 --max-instances=5 \
   --timeout=300

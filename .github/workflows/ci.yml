@@ -118,10 +118,26 @@ jobs:
           echo "oauth_browser_admin_token<<EOF_OBT" >> "$GITHUB_OUTPUT"
           fetch_secret OAUTH_BROWSER_ADMIN_TOKEN >> "$GITHUB_OUTPUT"
           echo "EOF_OBT" >> "$GITHUB_OUTPUT"
+          echo "google_workspace_oauth_client_id<<EOF_GWID" >> "$GITHUB_OUTPUT"
+          fetch_secret GOOGLE_WORKSPACE_OAUTH_CLIENT_ID >> "$GITHUB_OUTPUT"
+          echo "EOF_GWID" >> "$GITHUB_OUTPUT"
+          echo "google_workspace_oauth_client_secret<<EOF_GWSEC" >> "$GITHUB_OUTPUT"
+          fetch_secret GOOGLE_WORKSPACE_OAUTH_CLIENT_SECRET >> "$GITHUB_OUTPUT"
+          echo "EOF_GWSEC" >> "$GITHUB_OUTPUT"
+          echo "ms_oauth_client_id<<EOF_MSID" >> "$GITHUB_OUTPUT"
+          fetch_secret MS_OAUTH_CLIENT_ID >> "$GITHUB_OUTPUT"
+          echo "EOF_MSID" >> "$GITHUB_OUTPUT"
+          echo "ms_oauth_client_secret<<EOF_MSSEC" >> "$GITHUB_OUTPUT"
+          fetch_secret MS_OAUTH_CLIENT_SECRET >> "$GITHUB_OUTPUT"
+          echo "EOF_MSSEC" >> "$GITHUB_OUTPUT"
       - name: Deploy backend to Cloud Run
         env:
           LITELLM_MASTER_KEY: ${{ steps.infisical.outputs.litellm_master_key }}
           ANTIGRAVITY_OAUTH_CLIENT_SECRET: ${{ steps.infisical.outputs.antigravity_oauth_client_secret }}
           GEMINI_CLI_OAUTH_CLIENT_SECRET: ${{ steps.infisical.outputs.gemini_cli_oauth_client_secret }}
           OAUTH_BROWSER_ADMIN_TOKEN: ${{ steps.infisical.outputs.oauth_browser_admin_token }}
+          GOOGLE_WORKSPACE_OAUTH_CLIENT_ID: ${{ steps.infisical.outputs.google_workspace_oauth_client_id }}
+          GOOGLE_WORKSPACE_OAUTH_CLIENT_SECRET: ${{ steps.infisical.outputs.google_workspace_oauth_client_secret }}
+          MS_OAUTH_CLIENT_ID: ${{ steps.infisical.outputs.ms_oauth_client_id }}
+          MS_OAUTH_CLIENT_SECRET: ${{ steps.infisical.outputs.ms_oauth_client_secret }}
         run: bash ./infra/deploy-cloudrun.sh

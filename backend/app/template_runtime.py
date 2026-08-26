@@ -14,6 +14,7 @@ from app.crypto import decrypt
 from app.db import get_connection
 from app.routes.email_accounts import accounts_for_run_config
 from app.routes.google_accounts import accounts_for_run_config as _google_accounts_spec
+from app.routes.microsoft_accounts import accounts_for_run_config as _microsoft_accounts_spec
 
 _EFFORT_VALUES = ("low", "medium", "high")
 
@@ -222,6 +223,7 @@ def build_run_payload(tenant_id, template_id: str | None, chat_id: str | None = 
                 "payment": _payment_spec(conn, tenant_id),
                 "email_accounts": accounts_for_run_config(conn, tenant_id),
                 "google_accounts": _google_accounts_spec(conn, tenant_id),
+                "microsoft_accounts": _microsoft_accounts_spec(conn, tenant_id),
                 "tenant_guide_enabled": False,
             }
 
@@ -330,6 +332,7 @@ def build_run_payload(tenant_id, template_id: str | None, chat_id: str | None = 
             "payment": _payment_spec(conn, tenant_id),
             "email_accounts": accounts_for_run_config(conn, tenant_id),
             "google_accounts": _google_accounts_spec(conn, tenant_id),
+            "microsoft_accounts": _microsoft_accounts_spec(conn, tenant_id),
             "write_tables": version.get("write_tables") or [],
             "require_write_confirmation": version.get("require_write_confirmation", True),
             "history_limit": version.get("history_limit", 100),

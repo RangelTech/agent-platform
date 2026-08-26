@@ -81,6 +81,14 @@ test('tela Credenciais: grid de tipos, cadastra conta de email de ponta a ponta'
   await expect(page.getByRole('heading', { name: 'Nova conta de email' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Conectar com Google' })).toBeVisible()
   await expect(page.getByText('Nenhuma conta Google conectada')).toBeVisible()
+
+  // Troca pro card Microsoft (produto-08 §12): painel muda de novo.
+  await expect(page.getByTestId('credencial-tipo-microsoft')).toBeVisible()
+  await page.getByTestId('credencial-tipo-microsoft').click()
+  await expect(page.getByRole('heading', { name: 'Conectar conta Microsoft' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Conectar conta Google' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Conectar com Microsoft' })).toBeVisible()
+  await expect(page.getByText('Nenhuma conta Microsoft conectada')).toBeVisible()
 })
 
 test('membro sem permissão não vê Credenciais no menu', async ({ page, request }) => {

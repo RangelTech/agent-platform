@@ -20,6 +20,7 @@ from app.routes import email_accounts as email_account_routes
 from app.routes import files as file_routes
 from app.routes import google_accounts as google_account_routes
 from app.routes import installation_secrets as installation_secret_routes
+from app.routes import microsoft_accounts as microsoft_account_routes
 from app.routes import integrations as integration_routes
 from app.routes import mcp_store as mcp_store_routes
 from app.routes import memories as memory_routes
@@ -156,6 +157,7 @@ app.include_router(toolkit_routes.router)
 app.include_router(payment_routes.router)
 app.include_router(email_account_routes.router)
 app.include_router(google_account_routes.router)
+app.include_router(microsoft_account_routes.router)
 app.include_router(mcp_store_routes.router)
 app.include_router(omnichannel_routes.router)
 app.include_router(ai_router_routes.router)

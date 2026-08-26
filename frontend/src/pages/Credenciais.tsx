@@ -2,9 +2,10 @@ import { useState, type ReactElement } from 'react'
 import { Badge, PageHeader } from '../components/ui'
 import { EmailAccountsPanel } from '../components/credenciais/EmailAccountsPanel'
 import { GoogleAccountsPanel } from '../components/credenciais/GoogleAccountsPanel'
+import { MicrosoftAccountsPanel } from '../components/credenciais/MicrosoftAccountsPanel'
 import { useAuth } from '../lib/auth'
 
-type TipoCredencial = 'email' | 'google'
+type TipoCredencial = 'email' | 'google' | 'microsoft'
 
 interface TipoDef {
   id: TipoCredencial
@@ -28,6 +29,13 @@ const TIPOS: TipoDef[] = [
     descricao: 'Calendar e Sheets',
     resource: 'google_accounts',
     Panel: GoogleAccountsPanel,
+  },
+  {
+    id: 'microsoft',
+    nome: 'Microsoft',
+    descricao: 'Outlook e Teams',
+    resource: 'microsoft_accounts',
+    Panel: MicrosoftAccountsPanel,
   },
 ]
 

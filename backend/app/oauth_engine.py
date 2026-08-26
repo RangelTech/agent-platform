@@ -144,6 +144,27 @@ GOOGLE_WORKSPACE = {
     "flow": "redirect_google",
 }
 
+MICROSOFT_GRAPH = {
+    # Client OAuth PRÓPRIO -- produto-08 §12, app registrado no Azure Portal
+    # (Entra ID) pelo dono, permissões Graph (Calendars.ReadWrite,
+    # OnlineMeetings.ReadWrite, offline_access, User.Read) já concedidas com
+    # consentimento de admin. Endpoint "common" aceita conta pessoal e
+    # corporativa/escolar -- mesmo app serve qualquer tenant Microsoft do
+    # cliente, não precisamos de app por organização.
+    "client_id": os.environ.get("MS_OAUTH_CLIENT_ID", ""),
+    "client_secret": os.environ.get("MS_OAUTH_CLIENT_SECRET", ""),
+    "authorize_url": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+    "token_url": "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+    "userinfo_url": "https://graph.microsoft.com/v1.0/me",
+    "scopes": (
+        "offline_access "
+        "https://graph.microsoft.com/Calendars.ReadWrite "
+        "https://graph.microsoft.com/OnlineMeetings.ReadWrite "
+        "https://graph.microsoft.com/User.Read"
+    ),
+    "flow": "redirect_microsoft",
+}
+
 CLINE = {
     "authorize_url": "https://api.cline.bot/api/v1/auth/authorize",
     "token_exchange_url": "https://api.cline.bot/api/v1/auth/token",
@@ -183,6 +204,7 @@ PROVEDORES_OAUTH: dict[str, dict] = {
     "antigravity": ANTIGRAVITY,
     "gemini-cli": GEMINI_CLI,
     "google-workspace": GOOGLE_WORKSPACE,
+    "microsoft-graph": MICROSOFT_GRAPH,
     "cline": CLINE,
     "github": GITHUB,
     "kimi": KIMI,
@@ -265,6 +287,23 @@ def iniciar_redirect(provider: str, redirect_uri: str) -> dict:
             "state": state,
             "access_type": "offline",
             "prompt": "consent",
+        }
+        auth_url = f"{cfg['authorize_url']}?{httpx.QueryParams(params)}"
+        return {
+            "auth_url": auth_url,
+            "state": state,
+            "code_verifier": "",
+            "redirect_uri": redirect_uri,
+        }
+
+    if cfg["flow"] == "redirect_microsoft":
+        params = {
+            "client_id": cfg["client_id"],
+            "response_type": "code",
+            "redirect_uri": redirect_uri,
+            "scope": cfg["scopes"],
+            "state": state,
+            "response_mode": "query",
         }
         auth_url = f"{cfg['authorize_url']}?{httpx.QueryParams(params)}"
         return {
@@ -357,6 +396,40 @@ async def concluir_redirect(
                 )
                 if userinfo.status_code < 400:
                     email = userinfo.json().get("email")
+            except httpx.HTTPError:
+                logger.warning("falha ao buscar userinfo do %s (não bloqueia a conexão)", provider)
+            return ResultadoToken(
+                access_token=dados["access_token"],
+                refresh_token=dados.get("refresh_token"),
+                expires_in=dados.get("expires_in"),
+                email=email,
+            )
+
+        if cfg["flow"] == "redirect_microsoft":
+            resp = await client.post(
+                cfg["token_url"],
+                data={
+                    "grant_type": "authorization_code",
+                    "client_id": cfg["client_id"],
+                    "client_secret": cfg["client_secret"],
+                    "code": code,
+                    "redirect_uri": redirect_uri,
+                    "scope": cfg["scopes"],
+                },
+                headers={"Accept": "application/json"},
+            )
+            if resp.status_code >= 400:
+                raise OAuthError(f"troca de token falhou ({provider}): {resp.text[:300]}")
+            dados = resp.json()
+            email = None
+            try:
+                userinfo = await client.get(
+                    cfg["userinfo_url"],
+                    headers={"Authorization": f"Bearer {dados['access_token']}"},
+                )
+                if userinfo.status_code < 400:
+                    corpo = userinfo.json()
+                    email = corpo.get("mail") or corpo.get("userPrincipalName")
             except httpx.HTTPError:
                 logger.warning("falha ao buscar userinfo do %s (não bloqueia a conexão)", provider)
             return ResultadoToken(
@@ -624,7 +697,7 @@ async def renovar(
                 expires_in=dados.get("expires_in"),
             )
 
-        if provider in ("antigravity", "gemini-cli", "google-workspace"):
+        if provider in ("antigravity", "gemini-cli", "google-workspace", "microsoft-graph"):
             resp = await client.post(
                 cfg["token_url"],
                 data={
@@ -638,7 +711,9 @@ async def renovar(
             if resp.status_code >= 400:
                 raise OAuthError(f"renovação falhou ({provider}): {resp.text[:300]}")
             dados = resp.json()
-            # Google não devolve refresh_token de novo na renovação -- mantém o mesmo.
+            # Google não devolve refresh_token de novo na renovação -- mantém
+            # o mesmo. Microsoft normalmente devolve um novo -- usar o que
+            # vier, senão mantém o antigo.
             return ResultadoToken(
                 access_token=dados["access_token"],
                 refresh_token=dados.get("refresh_token", refresh_token),

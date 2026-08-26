@@ -21,6 +21,7 @@ RESOURCES = (
     "ai_router",
     "email_accounts",
     "google_accounts",
+    "microsoft_accounts",
 )
 
 ACTIONS = ("view", "create", "edit", "delete")
