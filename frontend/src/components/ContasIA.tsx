@@ -394,7 +394,11 @@ function ModalConexao({
       }),
     onSuccess: (dados) => {
       setInicio(dados)
-      if (dados.auth_url) window.open(dados.auth_url, '_blank', 'noopener')
+      // Achado real (26/08/2026): `noopener` deixa `window.opener` nulo na
+      // popup, quebrando o postMessage que `OAuthCallback.tsx` usa pra
+      // repassar o código de volta -- sem `noopener` de propósito, é a
+      // própria URL de OAuth confiável que abrimos, não link de terceiro.
+      if (dados.auth_url) window.open(dados.auth_url, '_blank')
       if (dados.modo === 'device') void aguardarConfirmacao(dados)
     },
     onError: (e) => setErro(e instanceof ApiError ? e.message : 'Falha ao iniciar autorização'),

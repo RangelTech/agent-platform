@@ -38,7 +38,12 @@ export function MicrosoftAccountsPanel() {
     mutationFn: () => api<InicioOAuth>('/microsoft-accounts/oauth/iniciar', { method: 'POST' }),
     onSuccess: (dados) => {
       setInicio(dados)
-      window.open(dados.auth_url, '_blank', 'noopener')
+      // Achado real (26/08/2026): `noopener` deixa `window.opener` nulo na
+      // popup, quebrando o postMessage que `OAuthCallback.tsx` usa pra
+      // repassar o código de volta -- a autorização completava no provedor
+      // mas nunca chegava aqui (nada era salvo). Sem `noopener` de propósito:
+      // é a própria URL de OAuth confiável que abrimos, não link de terceiro.
+      window.open(dados.auth_url, '_blank')
     },
     onError: (e) => setError(e instanceof ApiError ? e.message : 'Falha ao iniciar autorização'),
   })
