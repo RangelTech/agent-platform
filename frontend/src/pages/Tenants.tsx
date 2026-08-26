@@ -37,7 +37,7 @@ export default function Tenants() {
         admin_name: adminName || null,
         admin_email: adminEmail || null,
         admin_password: adminPassword || null,
-      } as never),
+      }),
     onSuccess: (created) => {
       // Achado real (produto-14 §4): sem isso, uma empresa recém-criada podia
       // cair fora da página 1 (paginação/ordenação por nome, 25 por página)
@@ -115,7 +115,7 @@ export default function Tenants() {
               hint="Use ao menos 3 caracteres: minúsculas, números e hífen. Ex.: hamburgueria-demo."
               required
               minLength={3}
-              pattern="[a-z0-9][a-z0-9-]*"
+              pattern="[a-z0-9][a-z0-9\-]*"
               title="Ao menos 3 caracteres: minúsculas, números e hífen"
               value={key}
               name="tenant-key"

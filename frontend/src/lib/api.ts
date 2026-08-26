@@ -149,8 +149,13 @@ export const listTenantPage = (q = '', page = 1, pageSize = 25) =>
 // Existing tenant selectors only need a compact option list. The master
 // companies screen uses listTenantPage so it never renders the whole base.
 export const listTenants = async () => (await listTenantPage('', 1, 100)).items
-export const createTenant = (body: { name: string; tenant_key: string }) =>
-  api<Tenant>('/tenants', { method: 'POST', body: JSON.stringify(body) })
+export const createTenant = (body: {
+  name: string
+  tenant_key: string
+  admin_name?: string | null
+  admin_email?: string | null
+  admin_password?: string | null
+}) => api<Tenant>('/tenants', { method: 'POST', body: JSON.stringify(body) })
 export const updateTenant = (id: string, body: Partial<Tenant>) =>
   api<Tenant>(`/tenants/${id}`, { method: 'PUT', body: JSON.stringify(body) })
 
