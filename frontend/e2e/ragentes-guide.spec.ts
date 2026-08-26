@@ -30,6 +30,12 @@ test('guide explains the missing AI prerequisite to a tenant administrator', asy
   expect(created.ok()).toBeTruthy()
 
   await signIn(page, adminEmail, 'senha-forte-123')
+  // Achado real (26/08/2026): `page.goto` logo depois do clique de login
+  // corre risco de disparar antes do POST /api/auth/login terminar e o
+  // token ser salvo -- esperar um elemento que só existe autenticado
+  // antes de navegar evita a corrida (mesma classe de bug do
+  // gotoSection, ver e2e/helpers.ts).
+  await expect(page.getByTestId('current-user')).toBeVisible()
   await page.goto('/chat')
   await expect(page.getByText('Precisa de ajuda com a RAgentes?')).toBeVisible()
   await page.getByRole('button', { name: 'Abrir Assistente RAgentes' }).click()
