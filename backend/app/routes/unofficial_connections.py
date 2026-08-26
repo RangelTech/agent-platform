@@ -119,6 +119,32 @@ def create_unofficial_connection(
     return _serialize(row)
 
 
+class RenomearIn(BaseModel):
+    label: str = Field(min_length=1, max_length=120)
+
+
+@router.patch("/{connection_id}")
+def renomear_unofficial_connection(
+    connection_id: str,
+    payload: RenomearIn,
+    user: dict = Depends(require("unofficial_connections", "edit")),
+):
+    # 26/08/2026, pedido do dono: rotulo automatico (numero da conta) nao
+    # e' bonito nem sempre identifica a conta -- deixa o usuario renomear
+    # pra algo que ele reconheca (ex: "Instagram da loja"). So mexe no
+    # label, nunca em cookies_encrypted/external_label.
+    tenant_id = resolve_target_tenant(user, None)
+    with get_connection() as conn:
+        row = conn.execute(
+            """UPDATE tenant_unofficial_connections SET label = %s, updated_at = now()
+                WHERE id = %s AND tenant_id = %s AND is_active RETURNING *""",
+            (payload.label, connection_id, tenant_id),
+        ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Conexão não encontrada")
+    return _serialize(row)
+
+
 @router.delete("/{connection_id}", status_code=204)
 def delete_unofficial_connection(
     connection_id: str, user: dict = Depends(require("unofficial_connections", "delete"))
