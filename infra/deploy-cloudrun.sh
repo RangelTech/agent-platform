@@ -100,11 +100,9 @@ BRIDGE_URL=$("$GCLOUD_BIN" run services describe chatwoot-bridge \
   --set-secrets=DATABASE_URL=agent-platform-database-url:latest,ENCRYPTION_KEY=agent-platform-encryption-key:latest,S3_ACCESS_KEY_ID=gcs-hmac-access-key:latest,S3_SECRET_ACCESS_KEY=gcs-hmac-secret-key:latest,KERNEL_INTERNAL_TOKEN=agent-platform-kernel-internal-token:latest,BRIDGE_ADMIN_TOKEN=agent-platform-bridge-admin-token:latest \
   --set-env-vars="KERNEL_URL=https://kernel-llm-pujq3pjmca-uc.a.run.app,PUBLIC_BASE_URL=https://ia.rangeltech.net,BRIDGE_URL=$BRIDGE_URL,STORAGE_BACKEND=s3,S3_ENDPOINT_URL=https://storage.googleapis.com,S3_REGION=us-east-1,S3_BUCKET=rangel-tech-storage,S3_PREFIX=teste-ia/agent-llm,S3_PUBLIC_BASE_URL=https://storage.googleapis.com/rangel-tech-storage/teste-ia,AWS_REQUEST_CHECKSUM_CALCULATION=when_required,AWS_RESPONSE_CHECKSUM_VALIDATION=when_required,LITELLM_BASE_URL=https://litellm-router-pujq3pjmca-uc.a.run.app,ROUTER_AUTO_PROVISION_ENABLED=true,LITELLM_MASTER_KEY=$LITELLM_MASTER_KEY,ANTIGRAVITY_OAUTH_CLIENT_SECRET=$ANTIGRAVITY_OAUTH_CLIENT_SECRET,GEMINI_CLI_OAUTH_CLIENT_SECRET=$GEMINI_CLI_OAUTH_CLIENT_SECRET,OAUTH_BROWSER_URL=https://oauth-browser-pujq3pjmca-uc.a.run.app,OAUTH_BROWSER_ADMIN_TOKEN=$OAUTH_BROWSER_ADMIN_TOKEN,GOOGLE_WORKSPACE_OAUTH_CLIENT_ID=$GOOGLE_WORKSPACE_OAUTH_CLIENT_ID,GOOGLE_WORKSPACE_OAUTH_CLIENT_SECRET=$GOOGLE_WORKSPACE_OAUTH_CLIENT_SECRET,MS_OAUTH_CLIENT_ID=$MS_OAUTH_CLIENT_ID,MS_OAUTH_CLIENT_SECRET=$MS_OAUTH_CLIENT_SECRET" \
   --allow-unauthenticated \
-  --memory=1Gi --cpu=1 --min-instances=0 --max-instances=5 \
+  --memory=1Gi --cpu=1 --min-instances=1 --max-instances=5 \
   --timeout=300
-# TEMPORÁRIO (25->26/08/2026, madrugada): min=0 pra economizar custo durante
-# execução autônoma noturna sem tráfego real, pedido explícito do dono.
-# Valor de produção de verdade é min-instances=1 (decisão 24/08/2026, cold
-# start real de 15s+ em min=0 volta a valer -- skill `agentllm`, seção
-# "min_instances provados 23/08/2026") -- REVERTER pra min-instances=1 antes
-# de qualquer tráfego de cliente voltar. Registrado em memoria.md.
+# min-instances=1 (decisão 24/08/2026, cold start real de 15s+ em min=0 --
+# skill `agentllm`, seção "min_instances provados 23/08/2026"). Revertido
+# de volta ao valor de produção 26/08/2026 depois da madrugada de custo
+# reduzido.
