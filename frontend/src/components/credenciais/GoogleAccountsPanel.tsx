@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button, Card, EmptyState, ErrorText, PageHeader, Table, TableSkeleton } from '../components/ui'
-import { api, ApiError } from '../lib/api'
+import { Button, Card, EmptyState, ErrorText, Input, Table, TableSkeleton } from '../ui'
+import { api, ApiError } from '../../lib/api'
 
 interface GoogleAccount {
   id: string
@@ -16,7 +16,12 @@ interface InicioOAuth {
   state: string
 }
 
-export default function GoogleAccounts() {
+/** Painel de "Contas Google" dentro da tela Credenciais (produto-08 §10).
+ * Diferença real do que era a página `/contas-google`: campo de nome
+ * editável antes de conectar (§9, ponto 3) -- sem isso, contas múltiplas
+ * (ex. 1 agenda por médico de uma clínica) ficavam todas rotuladas só pelo
+ * email do OAuth, sem jeito de escolher um nome de negócio. */
+export function GoogleAccountsPanel() {
   const qc = useQueryClient()
   const {
     data: accounts = [],
@@ -27,6 +32,7 @@ export default function GoogleAccounts() {
     queryFn: () => api<GoogleAccount[]>('/google-accounts'),
   })
 
+  const [nomeParaConectar, setNomeParaConectar] = useState('')
   const [inicio, setInicio] = useState<InicioOAuth | null>(null)
   const [error, setError] = useState('')
 
@@ -43,10 +49,11 @@ export default function GoogleAccounts() {
     mutationFn: (code: string) =>
       api('/google-accounts/oauth/concluir', {
         method: 'POST',
-        body: JSON.stringify({ code, redirect_uri: inicio?.redirect_uri }),
+        body: JSON.stringify({ code, redirect_uri: inicio?.redirect_uri, label: nomeParaConectar || null }),
       }),
     onSuccess: () => {
       setInicio(null)
+      setNomeParaConectar('')
       qc.invalidateQueries({ queryKey: ['google-accounts'] })
     },
     onError: (e) => setError(e instanceof ApiError ? e.message : 'Falha ao concluir conexão'),
@@ -77,14 +84,16 @@ export default function GoogleAccounts() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Contas Google"
-        description="Conta Google usada pelos agentes para consultar/marcar compromissos (Calendar) e ler/editar planilhas (Sheets)."
-      />
-
       <Card title="Conectar conta Google">
         <div className="space-y-3">
-          <Button type="button" onClick={() => iniciar.mutate()} disabled={iniciar.isPending}>
+          <Input
+            label="Nome (opcional)"
+            hint='Como esta conta aparece pros agentes quando há mais de uma (ex.: "Dr. Fulano"). Sem preencher, usa o email da conta.'
+            value={nomeParaConectar}
+            onChange={(e) => setNomeParaConectar(e.target.value)}
+            disabled={iniciar.isPending || !!inicio}
+          />
+          <Button type="button" onClick={() => iniciar.mutate()} disabled={iniciar.isPending || !!inicio}>
             {iniciar.isPending ? 'Abrindo…' : 'Conectar com Google'}
           </Button>
           {concluir.isPending && (
@@ -94,7 +103,7 @@ export default function GoogleAccounts() {
         </div>
       </Card>
 
-      <Card title="Contas conectadas">
+      <Card title="Contas Google conectadas">
         {isLoading ? (
           <TableSkeleton columns={3} rows={2} />
         ) : loadError ? (
@@ -102,13 +111,14 @@ export default function GoogleAccounts() {
         ) : accounts.length === 0 ? (
           <EmptyState
             title="Nenhuma conta Google conectada"
-            description="Clique em Conectar com Google acima para os agentes conseguirem usar Calendar e Sheets."
+            description="Conecte acima para os agentes conseguirem usar Calendar e Sheets. Conectando mais de uma, use o campo Nome pra distinguir (ex.: uma agenda por profissional)."
           />
         ) : (
-          <Table headers={['Conta', 'Conectada em', '']}>
+          <Table headers={['Nome', 'Email', 'Conectada em', '']}>
             {accounts.map((a) => (
               <tr key={a.id} className="transition hover:bg-[var(--brand-soft)]/40">
-                <td className="px-4 py-4 text-[var(--text)]">{a.email_address || a.label}</td>
+                <td className="px-4 py-4 text-[var(--text)]">{a.label}</td>
+                <td className="px-4 py-4 text-[var(--text-muted)]">{a.email_address || '—'}</td>
                 <td className="px-4 py-4 text-[var(--text-muted)]">
                   {new Date(a.updated_at).toLocaleString('pt-BR')}
                 </td>

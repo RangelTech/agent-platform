@@ -1,7 +1,7 @@
 import { useState, type ChangeEvent, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button, Card, EmptyState, ErrorText, Input, PageHeader, Table, TableSkeleton } from '../components/ui'
-import { api, ApiError } from '../lib/api'
+import { Button, Card, EmptyState, ErrorText, Input, Table, TableSkeleton } from '../ui'
+import { api, ApiError } from '../../lib/api'
 
 interface EmailAccount {
   id: string
@@ -28,7 +28,10 @@ const EMPTY_FORM = {
   use_tls: 'true',
 }
 
-export default function EmailAccounts() {
+/** Painel de "Contas de email" dentro da tela Credenciais (produto-08 §10).
+ * Conteúdo idêntico ao que era a página `/contas-de-email` -- só perdeu o
+ * próprio `PageHeader`, que agora é da tela-mãe. */
+export function EmailAccountsPanel() {
   const qc = useQueryClient()
   const {
     data: accounts = [],
@@ -85,12 +88,7 @@ export default function EmailAccounts() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Contas de email"
-        description="Contas SMTP/IMAP usadas pelos agentes para ler e enviar email (ver caixa de entrada, mandar email). A senha é gravada criptografada e nunca é exibida de volta."
-      />
-
-      <Card title="Nova conta">
+      <Card title="Nova conta de email">
         <form onSubmit={onSubmit} className="grid gap-4 lg:grid-cols-2">
           <Input label="Nome (label)" hint="Identifica a conta quando há mais de uma." value={form.label} onChange={set('label')} />
           <Input label="Endereço de email" type="email" value={form.email_address} onChange={set('email_address')} />
@@ -118,7 +116,7 @@ export default function EmailAccounts() {
         </form>
       </Card>
 
-      <Card title="Contas cadastradas">
+      <Card title="Contas de email cadastradas">
         {isLoading ? (
           <TableSkeleton columns={4} rows={2} />
         ) : loadError ? (

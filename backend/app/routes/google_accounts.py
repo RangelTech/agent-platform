@@ -82,6 +82,7 @@ def oauth_iniciar(user: dict = Depends(require("google_accounts", "create"))):
 class OAuthFimIn(BaseModel):
     code: str
     redirect_uri: str
+    label: str | None = None  # produto-08 §9: nome editável, ex. "Dr. Fulano"
     tenant_id: str | None = None  # master only
 
 
@@ -102,6 +103,7 @@ async def oauth_concluir(
         if resultado.expires_in
         else None
     )
+    label = (payload.label or "").strip() or resultado.email or "Google"
     with get_connection() as conn:
         row = conn.execute(
             """INSERT INTO tenant_google_accounts
@@ -111,7 +113,7 @@ async def oauth_concluir(
                RETURNING *""",
             (
                 tenant_id,
-                resultado.email or "Google",
+                label,
                 resultado.email,
                 encrypt(resultado.access_token),
                 encrypt(resultado.refresh_token) if resultado.refresh_token else None,
@@ -148,19 +150,11 @@ def _renovar_sync(refresh_token: str) -> oauth_engine.ResultadoToken:
     )
 
 
-def account_for_run_config(conn, tenant_id) -> dict:
-    """Usado por template_runtime.py -- token decifrado e renovado sob
-    demanda (mesmo contrato do `_payment_spec`: só descriptografa aqui,
-    nunca entra no contexto do modelo)."""
-    row = conn.execute(
-        """SELECT * FROM tenant_google_accounts
-             WHERE tenant_id = %s AND is_active
-             ORDER BY updated_at DESC LIMIT 1 FOR UPDATE""",
-        (tenant_id,),
-    ).fetchone()
-    if row is None:
-        return {}
-
+def _account_for_run_config(conn, row: dict) -> dict:
+    """Renova sob demanda (lock já tomado pela row `FOR UPDATE` no
+    chamador) e devolve o token decifrado -- nunca entra no contexto do
+    modelo, só no context de execução server-side (mesmo contrato do
+    `_payment_spec`)."""
     access_token = decrypt(row["access_token_encrypted"])
     expires_at = row["token_expires_at"]
     needs_refresh = (
@@ -195,4 +189,22 @@ def account_for_run_config(conn, tenant_id) -> dict:
                 (encrypt(access_token), new_refresh, new_expires_at, row["id"]),
             )
 
-    return {"access_token": access_token, "email_address": row["email_address"]}
+    return {
+        "label": row["label"],
+        "access_token": access_token,
+        "email_address": row["email_address"],
+    }
+
+
+def accounts_for_run_config(conn, tenant_id) -> list[dict]:
+    """Usado por template_runtime.py -- TODAS as contas Google ativas do
+    tenant, cada uma renovada sob demanda (produto-08 §9: antes só a mais
+    recente era usável, `_email_account`-style resolução por `label` exige
+    a lista inteira, mesmo padrão de `email_accounts.accounts_for_run_config`)."""
+    rows = conn.execute(
+        """SELECT * FROM tenant_google_accounts
+             WHERE tenant_id = %s AND is_active
+             ORDER BY created_at FOR UPDATE""",
+        (tenant_id,),
+    ).fetchall()
+    return [_account_for_run_config(conn, row) for row in rows]
