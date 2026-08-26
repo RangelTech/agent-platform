@@ -22,6 +22,7 @@ RESOURCES = (
     "email_accounts",
     "google_accounts",
     "microsoft_accounts",
+    "unofficial_connections",
 )
 
 ACTIONS = ("view", "create", "edit", "delete")

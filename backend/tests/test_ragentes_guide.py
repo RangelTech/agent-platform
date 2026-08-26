@@ -1,6 +1,10 @@
+import pytest
+
 from app.config import settings
 from app.db import get_connection
 from app.ragentes_guide import SYSTEM_KEY, ensure_for_tenant
+
+pytestmark = pytest.mark.integration
 
 
 def auth(token: str) -> dict:

@@ -1,3 +1,5 @@
+import pytest
+
 from app.db import get_connection
 
 
@@ -18,6 +20,7 @@ def tool_payload(**overrides) -> dict:
     return payload
 
 
+@pytest.mark.integration
 def test_custom_tool_secrets_are_write_only_and_can_be_cleared(client, tenant_admin):
     created = client.post(
         "/api/custom-tools",
@@ -55,6 +58,7 @@ def test_custom_tool_secrets_are_write_only_and_can_be_cleared(client, tenant_ad
     assert encrypted is None
 
 
+@pytest.mark.integration
 def test_custom_tools_cannot_cross_tenant_scope(client, tenant_admin, master_token):
     created = client.post(
         "/api/custom-tools", headers=auth(tenant_admin["token"]), json=tool_payload()
