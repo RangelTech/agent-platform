@@ -666,6 +666,15 @@ function ModalConexao({
 
         {erro && <ErrorText>{erro}</ErrorText>}
 
+        {/* produto-08 §5: cold start do navegador remoto (~13-15s medido em
+            produção) sem nenhum texto/spinner parecia tela travada -- mesmo
+            padrão de aviso que o modo device já usa acima (linha ~659). */}
+        {iniciarNavegador.isPending && (
+          <p className="text-xs text-[var(--text-muted)]">
+            Abrindo o navegador… pode levar até 15 segundos na primeira vez.
+          </p>
+        )}
+
         <div className="flex justify-end gap-2">
           <Button type="button" variant="ghost" onClick={onFechar}>
             Cancelar
@@ -680,11 +689,13 @@ function ModalConexao({
                 conectarChave.isPending
               }
             >
-              {provedor.modo === 'apikey'
-                ? 'Conectar'
-                : inicio
-                  ? 'Concluir'
-                  : 'Abrir autorização'}
+              {iniciarNavegador.isPending
+                ? 'Abrindo…'
+                : provedor.modo === 'apikey'
+                  ? 'Conectar'
+                  : inicio
+                    ? 'Concluir'
+                    : 'Abrir autorização'}
             </Button>
           )}
         </div>
