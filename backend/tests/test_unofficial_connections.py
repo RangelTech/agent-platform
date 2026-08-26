@@ -22,6 +22,41 @@ def test_create_rejects_unknown_provider(client, tenant_admin):
     assert "provider" in r.json()["detail"]
 
 
+def test_create_oauth_provider_requires_oauth_tokens_not_cookies(client, tenant_admin):
+    r = client.post(
+        "/api/unofficial-connections",
+        json={"provider": "codex_cli", "label": "Codex", "cookies": _cookies()},
+        headers=auth(tenant_admin["token"]),
+    )
+    assert r.status_code == 422
+
+
+def test_cookie_provider_requires_cookies_not_oauth_tokens(client, tenant_admin):
+    r = client.post(
+        "/api/unofficial-connections",
+        json={"provider": "tiktok_web", "label": "TikTok", "oauth_tokens": {"access_token": "x"}},
+        headers=auth(tenant_admin["token"]),
+    )
+    assert r.status_code == 422
+
+
+def test_create_oauth_connection_round_trip_never_returns_tokens(client, tenant_admin):
+    r = client.post(
+        "/api/unofficial-connections",
+        json={
+            "provider": "claude_code",
+            "label": "Claude Code principal",
+            "oauth_tokens": {"access_token": "tok-secreto", "refresh_token": "ref-secreto"},
+        },
+        headers=auth(tenant_admin["token"]),
+    )
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["provider"] == "claude_code"
+    assert "oauth_tokens" not in body
+    assert "tok-secreto" not in r.text
+
+
 def test_create_and_list_round_trip_never_returns_cookies(client, tenant_admin):
     r = client.post(
         "/api/unofficial-connections",
