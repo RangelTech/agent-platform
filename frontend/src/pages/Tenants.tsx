@@ -38,7 +38,16 @@ export default function Tenants() {
         admin_email: adminEmail || null,
         admin_password: adminPassword || null,
       } as never),
-    onSuccess: () => {
+    onSuccess: (created) => {
+      // Achado real (produto-14 §4): sem isso, uma empresa recém-criada podia
+      // cair fora da página 1 (paginação/ordenação por nome, 25 por página)
+      // e o admin não via nenhuma confirmação visual de que funcionou. Usa o
+      // tenant_key devolvido pela API (não o state `key`, que pode já ter
+      // sido limpo/mudado por outra renderização) pra garantir que o item
+      // novo apareça, filtrando por ele.
+      setQuery(created.tenant_key)
+      setDebouncedQuery(created.tenant_key)
+      setPage(1)
       setName('')
       setKey('')
       setAdminName('')

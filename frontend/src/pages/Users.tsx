@@ -257,11 +257,6 @@ export default function Users() {
             <div className="lg:col-span-2">
               <ErrorText>{error}</ErrorText>
             </div>
-            <div className="flex justify-end lg:col-span-2">
-              <Button type="submit" disabled={create.isPending}>
-                {create.isPending ? 'Criando…' : 'Novo usuário'}
-              </Button>
-            </div>
           </form>
         </div>
       </Card>
