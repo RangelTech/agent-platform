@@ -256,8 +256,11 @@ export default function Dashboard() {
           pedido explícito do dono), sem Chrome Web Store por enquanto.
           26/08/2026: instalador real (política gerenciada do Chrome/Edge)
           como caminho principal -- "carregar sem compactação" vira
-          alternativa manual pra quem não pode rodar o instalador (ex. sem
-          permissão de administrador na máquina). */}
+          alternativa manual pra quem não pode rodar o instalador. Windows
+          usa .msi (pedido do dono, formato mais corporativo) e Linux tem
+          .deb (Debian/Ubuntu) + .sh universal (qualquer distro) lado a
+          lado. Instaladores per-user (HKCU) -- sem UAC/sudo, só vale pro
+          usuário que instalou. */}
       <Card title="RAtende Connector">
         <div className="space-y-4">
           <p className="text-sm leading-6 text-[var(--text-muted)]">
@@ -267,7 +270,7 @@ export default function Dashboard() {
           </p>
           <div className="flex flex-wrap gap-3">
             <a
-              href="https://storage.googleapis.com/rangel-tech-ratende-connector/RAtende-Connector-Instalador.exe"
+              href="https://storage.googleapis.com/rangel-tech-ratende-connector/RAtende-Connector-Instalador.msi"
               className="inline-flex min-h-11 shrink-0 items-center rounded-full bg-[var(--brand)] px-5 text-sm font-medium text-white"
             >
               Instalar no Windows
@@ -278,13 +281,19 @@ export default function Dashboard() {
             >
               Instalar no Linux (.deb)
             </a>
+            <a
+              href="https://storage.googleapis.com/rangel-tech-ratende-connector/instalar-ratende-connector.sh"
+              className="inline-flex min-h-11 shrink-0 items-center rounded-full border border-[var(--border)] px-5 text-sm font-medium text-[var(--text)]"
+            >
+              Instalar no Linux (.sh, qualquer distro)
+            </a>
           </div>
           <p className="text-xs text-[var(--text-muted)]">
-            Precisa de permissão de administrador (Windows) ou <code className="rounded bg-[var(--surface-soft)] px-1.5 py-0.5">sudo</code> (Linux)
-            — instala a política que faz o Chrome/Edge buscar a extensão sozinho, sem
-            precisar de "Modo desenvolvedor". Rode uma vez e reabra o navegador. Ainda
-            sem certificado de assinatura de código: o instalador do Windows pode disparar
-            um aviso do Defender/SmartScreen na primeira execução.
+            Não precisa de permissão de administrador — instala a política no seu usuário
+            que faz o Chrome/Edge buscar a extensão sozinho, sem precisar de "Modo
+            desenvolvedor". Rode uma vez e reabra o navegador. Ainda sem certificado de
+            assinatura de código: o instalador do Windows pode disparar um aviso do
+            Defender/SmartScreen na primeira execução.
           </p>
           <details className="text-sm text-[var(--text-muted)]">
             <summary className="cursor-pointer font-medium text-[var(--text)]">
