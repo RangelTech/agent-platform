@@ -3,7 +3,6 @@ de provider, isolamento de tenant e que o cookie cifrado nunca volta na
 serialização (mesma regra de senha/token nas outras rotas de credencial)."""
 
 import pytest
-
 from tests.conftest import auth
 
 pytestmark = pytest.mark.integration
@@ -64,7 +63,7 @@ def test_connections_are_isolated_by_tenant(client, master_token, tenant, tenant
     admin_profile = next(
         p for p in profiles if p["tenant_id"] == outro["id"] and p["name"] == "Administrador"
     )
-    r = client.post(
+    client.post(
         "/api/users",
         json={
             "email": "admin-outra@empresa.com",

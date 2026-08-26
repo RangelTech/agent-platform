@@ -73,9 +73,10 @@ def create_unofficial_connection(
     user: dict = Depends(require("unofficial_connections", "create")),
 ):
     if payload.provider not in _PROVIDERS_VALIDOS:
+        validos = sorted(_PROVIDERS_VALIDOS)
         raise HTTPException(
             status_code=400,
-            detail=f"provider inválido: {payload.provider!r} (esperado um de {sorted(_PROVIDERS_VALIDOS)})",
+            detail=f"provider inválido: {payload.provider!r} (esperado um de {validos})",
         )
     tenant_id = resolve_target_tenant(user, payload.tenant_id)
     cookies_json = json.dumps([c.model_dump() for c in payload.cookies])

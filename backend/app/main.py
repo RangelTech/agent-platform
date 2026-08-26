@@ -20,11 +20,10 @@ from app.routes import email_accounts as email_account_routes
 from app.routes import files as file_routes
 from app.routes import google_accounts as google_account_routes
 from app.routes import installation_secrets as installation_secret_routes
-from app.routes import microsoft_accounts as microsoft_account_routes
-from app.routes import unofficial_connections as unofficial_connection_routes
 from app.routes import integrations as integration_routes
 from app.routes import mcp_store as mcp_store_routes
 from app.routes import memories as memory_routes
+from app.routes import microsoft_accounts as microsoft_account_routes
 from app.routes import omnichannel as omnichannel_routes
 from app.routes import payments as payment_routes
 from app.routes import profiles as profile_routes
@@ -34,6 +33,7 @@ from app.routes import templates as template_routes
 from app.routes import tenant_guide as tenant_guide_routes
 from app.routes import tenants as tenant_routes
 from app.routes import toolkits as toolkit_routes
+from app.routes import unofficial_connections as unofficial_connection_routes
 from app.routes import usage as usage_routes
 from app.routes import users as user_routes
 
