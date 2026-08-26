@@ -6,10 +6,12 @@ const MASTER_PASSWORD = process.env.E2E_MASTER_PASSWORD ?? 'admin123'
 /**
  * produto-15 §9 -- link de download no Início (Dashboard), não na tela de
  * login. Cobre só a presença do card + que o zip realmente responde 200 no
- * mesmo domínio (servido pelo backend via _mount_spa) -- não testa a
- * extensão em si (isso exige Chrome real, fora do escopo automatizável
- * aqui).
+ * bucket público do GCS (26/08/2026: trocou de asset estático servido pelo
+ * backend pra `gs://rangel-tech-ratende-connector`, atualizado pelo CI do
+ * repo `ratende-connector` a cada push) -- não testa a extensão em si (isso
+ * exige Chrome real, fora do escopo automatizável aqui).
  */
+const DOWNLOAD_URL = 'https://storage.googleapis.com/rangel-tech-ratende-connector/ratende-connector.zip'
 test('card de download do RAtende Connector aparece no Início e o zip responde', async ({
   page,
   request,
@@ -54,9 +56,9 @@ test('card de download do RAtende Connector aparece no Início e o zip responde'
   await expect(page.getByRole('heading', { name: 'RAtende Connector' })).toBeVisible()
   const link = page.getByRole('link', { name: 'Baixar RAtende Connector' })
   await expect(link).toBeVisible()
-  await expect(link).toHaveAttribute('href', '/ratende-connector.zip')
+  await expect(link).toHaveAttribute('href', DOWNLOAD_URL)
 
-  const zipResp = await request.get('/ratende-connector.zip')
+  const zipResp = await request.get(DOWNLOAD_URL)
   expect(zipResp.status()).toBe(200)
   const body = await zipResp.body()
   expect(body.length).toBeGreaterThan(1000)

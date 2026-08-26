@@ -274,8 +274,7 @@ export default function Dashboard() {
             </ol>
           </div>
           <a
-            href="/ratende-connector.zip"
-            download
+            href="https://storage.googleapis.com/rangel-tech-ratende-connector/ratende-connector.zip"
             className="inline-flex min-h-11 shrink-0 items-center rounded-full bg-[var(--brand)] px-5 text-sm font-medium text-white"
           >
             Baixar RAtende Connector
