@@ -12,6 +12,33 @@ def _cookies():
     return [{"name": "sessionid", "value": "abc123", "domain": "tiktok.com", "path": "/"}]
 
 
+def test_create_dedups_same_account_via_external_label(client, tenant_admin):
+    # 26/08/2026 -- achado ao vivo: checagem de duplicata no lado do
+    # cliente (extensao) nao era atomica, N capturas concorrentes da mesma
+    # conta viravam N linhas duplicadas. Reconectar a mesma conta
+    # (mesmo provider + external_label) tem que sempre atualizar a MESMA
+    # linha, nunca criar outra -- garantido pelo indice unico parcial
+    # (migration 0039) + UPSERT, nao por logica de aplicacao.
+    payload = {
+        "provider": "instagram_web",
+        "label": "Instagram · Antigo",
+        "external_label": "#42",
+        "cookies": _cookies(),
+    }
+    headers = auth(tenant_admin["token"])
+    primeira = client.post("/api/unofficial-connections", json=payload, headers=headers)
+    assert primeira.status_code == 201, primeira.text
+
+    payload["label"] = "Instagram · Novo"
+    segunda = client.post("/api/unofficial-connections", json=payload, headers=headers)
+    assert segunda.status_code == 201, segunda.text
+    assert segunda.json()["id"] == primeira.json()["id"]
+    assert segunda.json()["label"] == "Instagram · Novo"
+
+    listadas = client.get("/api/unofficial-connections", headers=auth(tenant_admin["token"])).json()
+    assert len([c for c in listadas if c["external_label"] == "#42"]) == 1
+
+
 def test_create_rejects_unknown_provider(client, tenant_admin):
     r = client.post(
         "/api/unofficial-connections",

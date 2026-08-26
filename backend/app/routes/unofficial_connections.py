@@ -102,20 +102,51 @@ def create_unofficial_connection(
         else payload.oauth_tokens
     )
     cookies_json = json.dumps(corpo)
+    # 26/08/2026, achado ao vivo: checagem de duplicata no codigo da
+    # extensao (listar -> comparar -> apagar -> criar) nao e' atomica --
+    # varias capturas concorrentes (chrome.cookies.onChanged disparando em
+    # paralelo) passavam pela checagem ao mesmo tempo e criavam N
+    # duplicatas da mesma conta numa unica rodada. UPSERT via ON CONFLICT
+    # no indice unico parcial (migration 0039) e' atomico de verdade --
+    # reconectar a mesma conta (mesmo tenant+provider+external_label)
+    # sempre atualiza em vez de duplicar, garantido pelo banco, nao pelo
+    # cliente.
     with get_connection() as conn:
-        row = conn.execute(
-            """INSERT INTO tenant_unofficial_connections
-                   (tenant_id, provider, label, external_label, cookies_encrypted)
-               VALUES (%s, %s, %s, %s, %s)
-               RETURNING *""",
-            (
-                tenant_id,
-                payload.provider,
-                payload.label,
-                payload.external_label,
-                encrypt(cookies_json),
-            ),
-        ).fetchone()
+        if payload.external_label is not None:
+            row = conn.execute(
+                """INSERT INTO tenant_unofficial_connections
+                       (tenant_id, provider, label, external_label, cookies_encrypted)
+                   VALUES (%s, %s, %s, %s, %s)
+                   ON CONFLICT (tenant_id, provider, external_label)
+                       WHERE is_active AND external_label IS NOT NULL
+                   DO UPDATE SET
+                       label = EXCLUDED.label,
+                       cookies_encrypted = EXCLUDED.cookies_encrypted,
+                       is_active = true,
+                       updated_at = now()
+                   RETURNING *""",
+                (
+                    tenant_id,
+                    payload.provider,
+                    payload.label,
+                    payload.external_label,
+                    encrypt(cookies_json),
+                ),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                """INSERT INTO tenant_unofficial_connections
+                       (tenant_id, provider, label, external_label, cookies_encrypted)
+                   VALUES (%s, %s, %s, %s, %s)
+                   RETURNING *""",
+                (
+                    tenant_id,
+                    payload.provider,
+                    payload.label,
+                    payload.external_label,
+                    encrypt(cookies_json),
+                ),
+            ).fetchone()
     return _serialize(row)
 
 
