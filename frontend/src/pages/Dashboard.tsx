@@ -251,6 +251,37 @@ export default function Dashboard() {
           </div>
         </Card>
       </div>
+
+      {/* produto-15 §9 -- link de download no Início (não na tela de login,
+          pedido explícito do dono), sem Chrome Web Store por enquanto:
+          "carregar sem compactação" (modo desenvolvedor). */}
+      <Card title="RAtende Connector">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="max-w-2xl">
+            <p className="text-sm leading-6 text-[var(--text-muted)]">
+              Extensão de navegador para conectar contas Instagram, Facebook e TikTok
+              direto do seu Chrome, sem depender do navegador remoto. Ainda em fase
+              experimental — baixe e carregue manualmente pra testar.
+            </p>
+            <ol className="mt-3 list-decimal space-y-1 pl-5 text-sm text-[var(--text-muted)]">
+              <li>Extraia o arquivo baixado numa pasta.</li>
+              <li>
+                Abra <code className="rounded bg-[var(--surface-soft)] px-1.5 py-0.5">chrome://extensions</code> no
+                Chrome.
+              </li>
+              <li>Ative o "Modo desenvolvedor" no canto superior direito.</li>
+              <li>Clique em "Carregar sem compactação" e selecione a pasta extraída.</li>
+            </ol>
+          </div>
+          <a
+            href="/ratende-connector.zip"
+            download
+            className="inline-flex min-h-11 shrink-0 items-center rounded-full bg-[var(--brand)] px-5 text-sm font-medium text-white"
+          >
+            Baixar RAtende Connector
+          </a>
+        </div>
+      </Card>
     </div>
   )
 }
