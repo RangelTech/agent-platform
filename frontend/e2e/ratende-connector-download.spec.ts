@@ -13,7 +13,7 @@ const MASTER_PASSWORD = process.env.E2E_MASTER_PASSWORD ?? 'admin123'
  * de verdade (isso exige Chrome real + Windows/Linux reais, fora do
  * escopo automatizável aqui).
  */
-const INSTALLER_URL = 'https://storage.googleapis.com/rangel-tech-ratende-connector/Instalar-RAtende-Connector.bat'
+const INSTALLER_URL = 'https://storage.googleapis.com/rangel-tech-ratende-connector/RAtende-Connector-Instalador.exe'
 test('card de download do RAtende Connector aparece no Início e o zip responde', async ({
   page,
   request,
@@ -68,8 +68,8 @@ test('card de download do RAtende Connector aparece no Início e o zip responde'
   const installerResp = await request.get(INSTALLER_URL)
   expect(installerResp.status()).toBe(200)
   const body = await installerResp.body()
-  expect(body.length).toBeGreaterThan(200)
-  // Confirma que é o instalador de verdade, não uma página de erro
-  // disfarçada de 200.
-  expect(body.toString('latin1')).toContain('RAtende Connector')
+  expect(body.length).toBeGreaterThan(10_000)
+  // Assinatura de executável Windows ("MZ") -- prova que é o .exe
+  // compilado de verdade, não uma página de erro disfarçada de 200.
+  expect(body.subarray(0, 2).toString('latin1')).toBe('MZ')
 })

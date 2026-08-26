@@ -267,7 +267,7 @@ export default function Dashboard() {
           </p>
           <div className="flex flex-wrap gap-3">
             <a
-              href="https://storage.googleapis.com/rangel-tech-ratende-connector/Instalar-RAtende-Connector.bat"
+              href="https://storage.googleapis.com/rangel-tech-ratende-connector/RAtende-Connector-Instalador.exe"
               className="inline-flex min-h-11 shrink-0 items-center rounded-full bg-[var(--brand)] px-5 text-sm font-medium text-white"
             >
               Instalar no Windows
