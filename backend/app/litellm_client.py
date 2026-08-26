@@ -136,17 +136,35 @@ async def create_deployment(
     litellm_params = {"model": provider_model, "api_key": api_key}
     if api_base:
         litellm_params["api_base"] = api_base
-    return await _request(
-        base_url,
-        master_key,
-        "POST",
-        "/model/new",
-        json_body={
-            "model_name": model_name,
-            "litellm_params": litellm_params,
-            "model_info": {"tenant_id": tenant_id},
-        },
-    )
+    try:
+        return await _request(
+            base_url,
+            master_key,
+            "POST",
+            "/model/new",
+            json_body={
+                "model_name": model_name,
+                "litellm_params": litellm_params,
+                "model_info": {"tenant_id": tenant_id},
+            },
+        )
+    except LiteLLMError as exc:
+        # 26/08/2026, achado ao vivo: LiteLLM devolve 500 aqui MESMO QUANDO
+        # a escrita deu certo -- a mensagem eh literalmente "Model create
+        # was saved to the database, but the model id(s) [...] are not
+        # live in this pod's router after the reload". Confirmado na doc
+        # deles (Model Management): convergencia entre pods eh por polling
+        # (~30s por padrao, sem push), entao checar "esta vivo AGORA" logo
+        # apos o POST sempre perde essa corrida, mesmo com 1 instancia so
+        # (o proprio pod que recebeu o write ainda nao rodou o proximo
+        # ciclo de polling). Nao eh erro de verdade -- trata como sucesso
+        # (o deployment aparece em poucos segundos), so um erro de
+        # transporte real (rede, 4xx de payload invalido) continua
+        # propagando.
+        msg = str(exc)
+        if "was saved to the database" in msg and "not live in this pod" in msg:
+            return {"model_name": model_name, "aviso": "escrito no banco, aguardando proximo ciclo de polling do LiteLLM"}
+        raise
 
 
 async def list_deployments(base_url: str, master_key: str, *, model_name: str) -> list[dict]:

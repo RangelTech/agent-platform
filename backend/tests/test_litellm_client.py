@@ -92,6 +92,20 @@ def _fake_litellm():
             "model_info": {"id": str(uuid.uuid4()), **corpo.get("model_info", {})},
         }
         estado["models"].append(deployment)
+        # 26/08/2026, achado ao vivo (produto-08 §6): LiteLLM real devolve
+        # 500 aqui mesmo quando a escrita deu certo, por causa do polling
+        # entre pods (~30s, sem push) -- simula esse comportamento real
+        # quando o model_name pedir explicitamente ("-simula-race-real").
+        if "-simula-race-real" in corpo["model_name"]:
+            model_id = deployment["model_info"]["id"]
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    f"Model create was saved to the database, but the model id(s) ['{model_id}'] "
+                    "are not live in this pod's router after the reload and are not being served "
+                    "by this pod. Other pods reload on their own interval."
+                ),
+            )
         return deployment
 
     @app.get("/model/info")
@@ -296,6 +310,26 @@ async def test_delete_key(litellm):
     )
     await delete_key(base_url, MASTER_KEY, key=key)
     assert key not in estado["keys"]
+
+
+@pytest.mark.asyncio
+async def test_create_deployment_tolera_race_de_polling_entre_pods(litellm):
+    """Achado ao vivo 26/08/2026 (produto-08 §6, contas reais Codex+Claude):
+    LiteLLM devolve 500 "saved to the database, but not live in this pod's
+    router" mesmo quando a escrita deu certo -- convergência entre pods é
+    por polling (~30s, sem push), não dá pra checar "está vivo AGORA" logo
+    depois do POST. Não é erro de verdade, `create_deployment` não deve
+    propagar."""
+    base_url, _ = litellm
+    resultado = await create_deployment(
+        base_url,
+        MASTER_KEY,
+        model_name="tenant-x-simula-race-real",
+        provider_model="cc/claude-sonnet-5",
+        api_key="access-token-fake",
+        tenant_id="tenant-x",
+    )
+    assert resultado["model_name"] == "tenant-x-simula-race-real"
 
 
 @pytest.mark.asyncio
