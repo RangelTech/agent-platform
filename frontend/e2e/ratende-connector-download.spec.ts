@@ -4,17 +4,17 @@ const MASTER_EMAIL = process.env.E2E_MASTER_EMAIL ?? 'master@example.com'
 const MASTER_PASSWORD = process.env.E2E_MASTER_PASSWORD ?? 'admin123'
 
 /**
- * produto-15 §9 -- link de download no Início (Dashboard), não na tela de
- * login. Cobre só a presença do card + que o instalador do Windows
- * realmente responde 200 no bucket público do GCS (26/08/2026: card
- * principal virou o instalador via política do Chrome, `.bat`/`.deb`,
- * zip do "carregar sem compactação" virou alternativa manual dentro de
- * um `<details>`) -- não testa a extensão em si nem o instalador rodando
- * de verdade (isso exige Chrome real + Windows/Linux reais, fora do
- * escopo automatizável aqui).
+ * produto-15 §9 -- teaser no Início (Dashboard) linkando pra página
+ * dedicada /conector (26/08/2026: instaladores por SO + explicação
+ * completa moraram pra lá). Cobre a presença do teaser + da página
+ * dedicada + que o instalador do Windows realmente responde 200 no
+ * bucket público do GCS -- não testa a extensão em si nem o instalador
+ * rodando de verdade (isso exige Chrome real + Windows/Linux/macOS
+ * reais, fora do escopo automatizável aqui).
  */
-const INSTALLER_URL = 'https://storage.googleapis.com/rangel-tech-ratende-connector/RAtende-Connector-Instalador.msi'
-test('card de download do RAtende Connector aparece no Início e o zip responde', async ({
+const BUCKET = 'https://storage.googleapis.com/rangel-tech-ratende-connector'
+const INSTALLER_URL = `${BUCKET}/RAtende-Connector-Instalador.msi`
+test('teaser do RAtende Connector no Início leva pra página dedicada, e o instalador responde', async ({
   page,
   request,
 }) => {
@@ -56,14 +56,16 @@ test('card de download do RAtende Connector aparece no Início e o zip responde'
   await page.click('button[type="submit"]')
 
   await expect(page.getByRole('heading', { name: 'RAtende Connector' })).toBeVisible()
-  const link = page.getByRole('link', { name: 'Instalar no Windows' })
+  await page.getByRole('link', { name: 'Ver instaladores e detalhes' }).click()
+
+  await expect(page).toHaveURL(/\/conector$/)
+  const link = page.getByRole('link', { name: 'Instalador (.msi)' })
   await expect(link).toBeVisible()
   await expect(link).toHaveAttribute('href', INSTALLER_URL)
-  await expect(page.getByRole('link', { name: 'Instalar no Linux (.deb)' })).toBeVisible()
-
-  // Alternativa manual (zip) continua acessível dentro do <details>.
-  await page.getByText('Sem permissão de administrador? Carregue manualmente').click()
-  await expect(page.getByRole('link', { name: 'o zip da extensão' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Pacote (.deb)' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Instalador universal (.sh)' })).toBeVisible()
+  await expect(page.locator(`a[href="${BUCKET}/instalar-ratende-connector-mac.sh"]`)).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Pacote descompactado (.zip)' })).toBeVisible()
 
   const installerResp = await request.get(INSTALLER_URL)
   expect(installerResp.status()).toBe(200)

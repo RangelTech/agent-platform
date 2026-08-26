@@ -30,6 +30,7 @@ import Credenciais from './pages/Credenciais'
 import Customize from './pages/Customize'
 import CustomTools from './pages/CustomTools'
 import Profiles from './pages/Profiles'
+import RatendeConnector from './pages/RatendeConnector'
 import TemplatesPage from './pages/Templates'
 import Tenants from './pages/Tenants'
 import Usage from './pages/Usage'
@@ -76,6 +77,7 @@ function Shell() {
     { to: '/credenciais', label: 'Credenciais', show: can('email_accounts', 'view') || can('google_accounts', 'view') },
     { to: '/mcp-store', label: 'MCP Store', show: can('mcp_store', 'view') },
     { to: '/atendimento', label: 'Atendimento', show: can('omnichannel', 'view') },
+    { to: '/conector', label: 'RAtende Connector', show: !(user?.is_master ?? false) },
     // Chave da instalação inteira (app da Meta, busca na web): é do master, não
     // de uma empresa — por isso não aparece para quem administra um tenant.
     { to: '/chaves-da-instalacao', label: 'Chaves da instalação', show: user?.is_master ?? false },
@@ -245,6 +247,7 @@ function Shell() {
               <Route path="/credenciais" element={<Credenciais />} />
               <Route path="/mcp-store" element={<McpStore />} />
               <Route path="/atendimento" element={<Omnichannel />} />
+              <Route path="/conector" element={<RatendeConnector />} />
               <Route
                 path="/chaves-da-instalacao"
                 element={user?.is_master ? <InstallationSecrets /> : <Navigate to="/usuarios" />}
