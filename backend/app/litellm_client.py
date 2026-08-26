@@ -163,7 +163,10 @@ async def create_deployment(
         # propagando.
         msg = str(exc)
         if "was saved to the database" in msg and "not live in this pod" in msg:
-            return {"model_name": model_name, "aviso": "escrito no banco, aguardando proximo ciclo de polling do LiteLLM"}
+            return {
+                "model_name": model_name,
+                "aviso": "escrito no banco, aguardando proximo ciclo de polling do LiteLLM",
+            }
         raise
 
 
