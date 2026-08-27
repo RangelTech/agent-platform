@@ -780,6 +780,35 @@ async def _chave_da_conta(conta: dict) -> str:
     return resultado.access_token
 
 
+# 26/08/2026 (produto-08 §6): "cc"/"cx" são só rótulo interno nosso
+# (router_catalog.py, pra combo builder) -- o prefixo que o LiteLLM
+# entende de verdade é outro (confirmado na doc oficial dele, tutoriais
+# "Claude Code Max Subscription" e "ChatGPT Subscription").
+_LITELLM_PROVIDER_PREFIX = {"claude": "anthropic", "codex": "chatgpt"}
+
+
+def _provider_model_para_litellm(modelo: str, conta: dict, chave: str) -> tuple[str, dict | None]:
+    """Traduz `cc/claude-sonnet-5` -> `anthropic/claude-sonnet-5` (e
+    equivalente pro Codex) e monta os headers extras que a assinatura
+    OAuth do Claude exige (Authorization: Bearer + headers que só o
+    cliente oficial manda -- generic provider `anthropic/` do LiteLLM
+    manda x-api-key por padrão, que a Anthropic rejeita pra token OAuth).
+    Providers de API key normal (Gemini etc.) não têm entrada aqui e
+    voltam sem alteração nenhuma."""
+    prefixo_litellm = _LITELLM_PROVIDER_PREFIX.get(conta["provider"])
+    if prefixo_litellm is None:
+        return modelo, None
+    _, sufixo = modelo.split("/", 1)
+    provider_model = f"{prefixo_litellm}/{sufixo}"
+    extra_headers = None
+    if conta["provider"] == "claude":
+        extra_headers = {
+            "Authorization": f"Bearer {chave}",
+            **oauth_engine.CLAUDE_INFERENCE_HEADERS,
+        }
+    return provider_model, extra_headers
+
+
 async def _criar_combo_litellm(payload: ComboIn, user: dict, registro: dict, tenant: dict) -> dict:
     """Um combo É o grupo de revezamento (infra-04 seção 2d, decisão final):
     1 combo -> 1 `model_name` do LiteLLM, 1 deployment por modelo do combo,
@@ -823,13 +852,15 @@ async def _criar_combo_litellm(payload: ComboIn, user: dict, registro: dict, ten
     try:
         for modelo, conta in para_criar:
             chave = await _chave_da_conta(conta)
+            provider_model, extra_headers = _provider_model_para_litellm(modelo, conta, chave)
             await litellm_client.create_deployment(
                 base_url,
                 master_key,
                 model_name=nome_grupo,
-                provider_model=modelo,
+                provider_model=provider_model,
                 api_key=chave,
                 tenant_id=str(user["tenant_id"]),
+                extra_headers=extra_headers,
             )
         await litellm_client.add_model_to_team(
             base_url, master_key, team_id=registro["litellm_team_id"], model_name=nome_grupo

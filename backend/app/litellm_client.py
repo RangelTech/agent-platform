@@ -123,6 +123,7 @@ async def create_deployment(
     api_key: str,
     api_base: str | None = None,
     tenant_id: str,
+    extra_headers: dict | None = None,
 ) -> dict:
     """`provider_model` é o identificador que o LiteLLM entende (ex.
     `gemini/gemini-flash-latest`, `openai/gpt-4o`) — quem decide isso é a
@@ -132,10 +133,22 @@ async def create_deployment(
     `model_info.tenant_id` fica salvo pra permitir filtrar/auditar depois
     quais deployments são de qual tenant sem depender só do agrupamento por
     `model_name` (mesmo padrão de auditoria já usado no sandbox de teste desta
-    mega-spec, `infra-04`, Fase A)."""
+    mega-spec, `infra-04`, Fase A).
+
+    `extra_headers` (26/08/2026, produto-08 §6): pro caso de assinatura
+    OAuth (Claude Max/Code) -- o provider `anthropic/` padrão do LiteLLM
+    manda `x-api-key`, mas token OAuth precisa de `Authorization: Bearer`
+    + headers extras que só o cliente oficial manda (confirmado lendo o
+    codigo-fonte real do 9Router, que o dono usou em producao com sucesso
+    por meses: `open-sse/executors/base.js#buildHeaders` +
+    `open-sse/providers/shared.js#CLAUDE_CLI_SPOOF_HEADERS`). `api_key`
+    continua obrigatorio pro LiteLLM aceitar o deployment, mas o header
+    de verdade que sai na chamada real e' o que estiver em extra_headers."""
     litellm_params = {"model": provider_model, "api_key": api_key}
     if api_base:
         litellm_params["api_base"] = api_base
+    if extra_headers:
+        litellm_params["extra_headers"] = extra_headers
     try:
         return await _request(
             base_url,
