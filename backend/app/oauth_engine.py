@@ -73,24 +73,6 @@ CLAUDE = {
     "flow": "redirect_pkce",
 }
 
-# 26/08/2026 (produto-08 §6): headers que o Claude Code CLI de verdade
-# manda em toda chamada de inferência com token OAuth -- Anthropic exige
-# isso além do `Authorization: Bearer`, não é opcional (fiel ao
-# 9Router, que o dono usou em produção por meses:
-# `open-sse/providers/shared.js#CLAUDE_CLI_SPOOF_HEADERS`).
-CLAUDE_INFERENCE_HEADERS = {
-    "Anthropic-Version": "2023-06-01",
-    "Anthropic-Beta": (
-        "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,"
-        "context-management-2025-06-27,prompt-caching-scope-2026-01-05,"
-        "advanced-tool-use-2025-11-20,effort-2025-11-24,structured-outputs-2025-12-15,"
-        "fast-mode-2026-02-01,redact-thinking-2026-02-12,token-efficient-tools-2026-03-28"
-    ),
-    "Anthropic-Dangerous-Direct-Browser-Access": "true",
-    "User-Agent": "claude-cli/2.1.92 (external, sdk-cli)",
-    "X-App": "cli",
-}
-
 CODEX = {
     "client_id": "app_EMoamEEZ73f0CkXaXp7hrann",
     "authorize_url": "https://auth.openai.com/oauth/authorize",

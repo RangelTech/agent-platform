@@ -787,26 +787,24 @@ async def _chave_da_conta(conta: dict) -> str:
 _LITELLM_PROVIDER_PREFIX = {"claude": "anthropic", "codex": "chatgpt"}
 
 
-def _provider_model_para_litellm(modelo: str, conta: dict, chave: str) -> tuple[str, dict | None]:
+def _provider_model_para_litellm(modelo: str, conta: dict) -> str:
     """Traduz `cc/claude-sonnet-5` -> `anthropic/claude-sonnet-5` (e
-    equivalente pro Codex) e monta os headers extras que a assinatura
-    OAuth do Claude exige (Authorization: Bearer + headers que só o
-    cliente oficial manda -- generic provider `anthropic/` do LiteLLM
-    manda x-api-key por padrão, que a Anthropic rejeita pra token OAuth).
-    Providers de API key normal (Gemini etc.) não têm entrada aqui e
-    voltam sem alteração nenhuma."""
+    equivalente pro Codex). Providers de API key normal (Gemini etc.)
+    não têm entrada aqui e voltam sem alteração nenhuma.
+
+    Achado ao vivo (não precisa de header manual nenhum, ao contrário do
+    que uma primeira tentativa assumiu): o próprio LiteLLM já detecta
+    token OAuth de assinatura Claude sozinho -- se `api_key` começar com
+    `sk-ant-oat` (`ANTHROPIC_OAUTH_TOKEN_PREFIX`, confirmado lendo
+    `litellm/llms/anthropic/common_utils.py#get_anthropic_headers`), ele
+    troca `x-api-key` por `Authorization: Bearer` + os headers de OAuth
+    exigidos automaticamente. Só precisa passar o token puro como
+    `api_key`, igual qualquer outro provider -- nada de extra_headers."""
     prefixo_litellm = _LITELLM_PROVIDER_PREFIX.get(conta["provider"])
     if prefixo_litellm is None:
-        return modelo, None
+        return modelo
     _, sufixo = modelo.split("/", 1)
-    provider_model = f"{prefixo_litellm}/{sufixo}"
-    extra_headers = None
-    if conta["provider"] == "claude":
-        extra_headers = {
-            "Authorization": f"Bearer {chave}",
-            **oauth_engine.CLAUDE_INFERENCE_HEADERS,
-        }
-    return provider_model, extra_headers
+    return f"{prefixo_litellm}/{sufixo}"
 
 
 async def _criar_combo_litellm(payload: ComboIn, user: dict, registro: dict, tenant: dict) -> dict:
@@ -852,24 +850,14 @@ async def _criar_combo_litellm(payload: ComboIn, user: dict, registro: dict, ten
     try:
         for modelo, conta in para_criar:
             chave = await _chave_da_conta(conta)
-            provider_model, extra_headers = _provider_model_para_litellm(modelo, conta, chave)
-            # 26/08/2026, achado ao vivo: com extra_headers setado, o
-            # LiteLLM ainda manda `x-api-key: <api_key>` por conta própria
-            # (provider "anthropic/" sempre gera esse header) -- ficava 2
-            # credenciais conflitantes na mesma chamada (x-api-key invalido
-            # + Authorization Bearer valido), Anthropic rejeitava tudo com
-            # "OAuth access token is invalid" mesmo com token fresco.
-            # Placeholder no api_key evita o conflito; a credencial real
-            # que importa vai só no extra_headers.
-            api_key_litellm = "oauth-bearer-in-extra-headers" if extra_headers else chave
+            provider_model = _provider_model_para_litellm(modelo, conta)
             await litellm_client.create_deployment(
                 base_url,
                 master_key,
                 model_name=nome_grupo,
                 provider_model=provider_model,
-                api_key=api_key_litellm,
+                api_key=chave,
                 tenant_id=str(user["tenant_id"]),
-                extra_headers=extra_headers,
             )
         await litellm_client.add_model_to_team(
             base_url, master_key, team_id=registro["litellm_team_id"], model_name=nome_grupo
