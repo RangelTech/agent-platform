@@ -786,25 +786,45 @@ async def _chave_da_conta(conta: dict) -> str:
 # "Claude Code Max Subscription" e "ChatGPT Subscription").
 _LITELLM_PROVIDER_PREFIX = {"claude": "anthropic", "codex": "chatgpt"}
 
+# 26-27/08/2026, achado ao vivo real: LiteLLM autentica certo com só o
+# token (detecção automática de OAuth, ver litellm_client.py), mas sem
+# estes headers a Anthropic aplica rate limit agressivo em tráfego que
+# não parece vir do cliente oficial -- confirmado comparando com o uso
+# normal do dono (sem rate limit nenhum) contra a chamada via LiteLLM
+# (429 direto). Valores fiéis ao Claude Code CLI de verdade, mesmos do
+# 9Router (`open-sse/providers/shared.js#CLAUDE_CLI_SPOOF_HEADERS`, que
+# o dono usou em produção por meses sem esse problema).
+_CLAUDE_CLIENT_HEADERS = {
+    "User-Agent": "claude-cli/2.1.92 (external, sdk-cli)",
+    "X-App": "cli",
+    "X-Stainless-Helper-Method": "stream",
+    "X-Stainless-Retry-Count": "0",
+    "X-Stainless-Runtime-Version": "v24.14.0",
+    "X-Stainless-Package-Version": "0.80.0",
+    "X-Stainless-Runtime": "node",
+    "X-Stainless-Lang": "js",
+    "X-Stainless-Arch": "arm64",
+    "X-Stainless-Os": "MacOS",
+    "X-Stainless-Timeout": "600",
+}
 
-def _provider_model_para_litellm(modelo: str, conta: dict) -> str:
+
+def _provider_model_e_headers(modelo: str, conta: dict) -> tuple[str, dict | None]:
     """Traduz `cc/claude-sonnet-5` -> `anthropic/claude-sonnet-5` (e
-    equivalente pro Codex). Providers de API key normal (Gemini etc.)
-    não têm entrada aqui e voltam sem alteração nenhuma.
-
-    Achado ao vivo (não precisa de header manual nenhum, ao contrário do
-    que uma primeira tentativa assumiu): o próprio LiteLLM já detecta
-    token OAuth de assinatura Claude sozinho -- se `api_key` começar com
-    `sk-ant-oat` (`ANTHROPIC_OAUTH_TOKEN_PREFIX`, confirmado lendo
-    `litellm/llms/anthropic/common_utils.py#get_anthropic_headers`), ele
-    troca `x-api-key` por `Authorization: Bearer` + os headers de OAuth
-    exigidos automaticamente. Só precisa passar o token puro como
-    `api_key`, igual qualquer outro provider -- nada de extra_headers."""
+    equivalente pro Codex) e monta os headers de identificação de
+    cliente que a Anthropic espera pra não tratar como tráfego genérico
+    (ver `_CLAUDE_CLIENT_HEADERS` acima -- NUNCA por `Authorization`
+    aqui, o LiteLLM já cuida disso sozinho a partir do `api_key`,
+    colocar de novo conflita e quebra a autenticação, já foi tentado).
+    Providers de API key normal (Gemini etc.) não têm entrada aqui e
+    voltam sem alteração nenhuma."""
     prefixo_litellm = _LITELLM_PROVIDER_PREFIX.get(conta["provider"])
     if prefixo_litellm is None:
-        return modelo
+        return modelo, None
     _, sufixo = modelo.split("/", 1)
-    return f"{prefixo_litellm}/{sufixo}"
+    provider_model = f"{prefixo_litellm}/{sufixo}"
+    extra_headers = _CLAUDE_CLIENT_HEADERS if conta["provider"] == "claude" else None
+    return provider_model, extra_headers
 
 
 async def _criar_combo_litellm(payload: ComboIn, user: dict, registro: dict, tenant: dict) -> dict:
@@ -850,7 +870,7 @@ async def _criar_combo_litellm(payload: ComboIn, user: dict, registro: dict, ten
     try:
         for modelo, conta in para_criar:
             chave = await _chave_da_conta(conta)
-            provider_model = _provider_model_para_litellm(modelo, conta)
+            provider_model, extra_headers = _provider_model_e_headers(modelo, conta)
             await litellm_client.create_deployment(
                 base_url,
                 master_key,
@@ -858,6 +878,7 @@ async def _criar_combo_litellm(payload: ComboIn, user: dict, registro: dict, ten
                 provider_model=provider_model,
                 api_key=chave,
                 tenant_id=str(user["tenant_id"]),
+                extra_headers=extra_headers,
             )
         await litellm_client.add_model_to_team(
             base_url, master_key, team_id=registro["litellm_team_id"], model_name=nome_grupo

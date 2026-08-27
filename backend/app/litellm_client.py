@@ -123,6 +123,7 @@ async def create_deployment(
     api_key: str,
     api_base: str | None = None,
     tenant_id: str,
+    extra_headers: dict | None = None,
 ) -> dict:
     """`provider_model` é o identificador que o LiteLLM entende (ex.
     `gemini/gemini-flash-latest`, `openai/gpt-4o`) — quem decide isso é a
@@ -130,9 +131,22 @@ async def create_deployment(
     `router_client.create_api_key_connection` recebia `provider` solto.
     Pra assinatura Claude (`anthropic/...`), o LiteLLM já detecta sozinho
     que `api_key` é um token OAuth (prefixo `sk-ant-oat`) e troca
-    `x-api-key` por `Authorization: Bearer` automaticamente -- não requer
-    nada especial daqui (achado ao vivo, produto-08 §6, confirmado lendo
-    `litellm/llms/anthropic/common_utils.py#get_anthropic_headers`).
+    `x-api-key` por `Authorization: Bearer` automaticamente (confirmado
+    lendo `litellm/llms/anthropic/common_utils.py#get_anthropic_headers`)
+    -- não mexer nisso, `api_key` continua sendo o token real puro.
+
+    `extra_headers` (26-27/08/2026, achado ao vivo real): a detecção
+    automática do LiteLLM seta Authorization/anthropic-beta/
+    anthropic-dangerous-direct-browser-access, mas NÃO manda
+    `User-Agent`/`X-Stainless-*` -- headers que fazem a chamada parecer
+    o Claude Code CLI de verdade. Sem eles, autenticação passa mas a
+    Anthropic aplica um rate limit mais agressivo em tráfego que não
+    parece vir do cliente oficial (confirmado: dono usa o Claude normal
+    sem rate limit nenhum, só a chamada via LiteLLM sem esses headers
+    tomava 429). São ADITIVOS aos headers automáticos do LiteLLM, não
+    substituem o Authorization -- nunca colocar `Authorization` aqui de
+    novo (foi tentado antes, conflitava com o x-api-key que o LiteLLM
+    também manda e quebrava a autenticação).
 
     `model_info.tenant_id` fica salvo pra permitir filtrar/auditar depois
     quais deployments são de qual tenant sem depender só do agrupamento por
@@ -141,6 +155,8 @@ async def create_deployment(
     litellm_params = {"model": provider_model, "api_key": api_key}
     if api_base:
         litellm_params["api_base"] = api_base
+    if extra_headers:
+        litellm_params["extra_headers"] = extra_headers
     try:
         return await _request(
             base_url,
