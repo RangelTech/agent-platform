@@ -853,12 +853,21 @@ async def _criar_combo_litellm(payload: ComboIn, user: dict, registro: dict, ten
         for modelo, conta in para_criar:
             chave = await _chave_da_conta(conta)
             provider_model, extra_headers = _provider_model_para_litellm(modelo, conta, chave)
+            # 26/08/2026, achado ao vivo: com extra_headers setado, o
+            # LiteLLM ainda manda `x-api-key: <api_key>` por conta própria
+            # (provider "anthropic/" sempre gera esse header) -- ficava 2
+            # credenciais conflitantes na mesma chamada (x-api-key invalido
+            # + Authorization Bearer valido), Anthropic rejeitava tudo com
+            # "OAuth access token is invalid" mesmo com token fresco.
+            # Placeholder no api_key evita o conflito; a credencial real
+            # que importa vai só no extra_headers.
+            api_key_litellm = "oauth-bearer-in-extra-headers" if extra_headers else chave
             await litellm_client.create_deployment(
                 base_url,
                 master_key,
                 model_name=nome_grupo,
                 provider_model=provider_model,
-                api_key=chave,
+                api_key=api_key_litellm,
                 tenant_id=str(user["tenant_id"]),
                 extra_headers=extra_headers,
             )
