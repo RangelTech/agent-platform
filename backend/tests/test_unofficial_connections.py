@@ -84,6 +84,53 @@ def test_create_oauth_connection_round_trip_never_returns_tokens(client, tenant_
     assert "tok-secreto" not in r.text
 
 
+def test_create_oauth_connection_espelha_automatico(client, tenant_admin, tenant):
+    # 28/08/2026 (correcao-01-execucao-completa.md secao 3c) -- ponte
+    # automatica: salvar OAuth aqui ja tem que aparecer em
+    # tenant_ai_accounts sem rodar script manual nenhum.
+    from app.db import get_connection
+
+    payload = {
+        "provider": "codex_cli",
+        "label": "Codex principal",
+        "external_label": "#codex-user-1",
+        "oauth_tokens": {
+            "access_token": "tok-real",
+            "refresh_token": "ref-real",
+            "expires_in": 3600,
+        },
+    }
+    r = client.post(
+        "/api/unofficial-connections", json=payload, headers=auth(tenant_admin["token"])
+    )
+    assert r.status_code == 201, r.text
+    origem_id = r.json()["id"]
+
+    with get_connection() as conn:
+        conta = conn.execute(
+            "SELECT * FROM tenant_ai_accounts WHERE tenant_id = %s AND provider = 'codex'",
+            (tenant["id"],),
+        ).fetchone()
+    assert conta is not None
+    assert conta["label"] == "Codex principal"
+    assert conta["auth_type"] == "oauth"
+    assert conta["provider_data"]["importado_de"] == origem_id
+
+    # Reconectar a mesma conexao (mesmo external_label -> UPSERT, mesmo id
+    # de origem) nao duplica a conta.
+    payload["oauth_tokens"] = {"access_token": "tok-real-2"}
+    r2 = client.post(
+        "/api/unofficial-connections", json=payload, headers=auth(tenant_admin["token"])
+    )
+    assert r2.json()["id"] == origem_id
+    with get_connection() as conn:
+        contas = conn.execute(
+            "SELECT id FROM tenant_ai_accounts WHERE tenant_id = %s AND provider = 'codex'",
+            (tenant["id"],),
+        ).fetchall()
+    assert len(contas) == 1
+
+
 def test_create_and_list_round_trip_never_returns_cookies(client, tenant_admin):
     r = client.post(
         "/api/unofficial-connections",

@@ -16,6 +16,8 @@ fica pra uma spec de integração depois que a captura for provada estável.
 """
 
 import json
+import logging
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
@@ -25,11 +27,62 @@ from app.crypto import encrypt
 from app.db import get_connection
 from app.tenancy import resolve_target_tenant
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/unofficial-connections", tags=["unofficial-connections"])
 
 _PROVIDERS_COOKIE = {"instagram_web", "facebook_web", "tiktok_web"}
 _PROVIDERS_OAUTH = {"codex_cli", "claude_code"}
 _PROVIDERS_VALIDOS = _PROVIDERS_COOKIE | _PROVIDERS_OAUTH
+
+# 28/08/2026 (correcao-01-execucao-completa.md secao 3c): ponte
+# automatica -- antes disso a extensao salvava OAuth aqui e alguem tinha
+# que rodar `scripts/importar_oauth_extensao.py` na mao pra virar
+# `tenant_ai_accounts` (onde o LiteLLM realmente le). Mesma logica do
+# script, chamada direto na hora do save -- sem intervencao manual.
+_MAPA_PROVIDER_AI = {"claude_code": "claude", "codex_cli": "codex"}
+
+
+def _espelhar_para_tenant_ai_accounts(
+    tenant_id: str, provider_origem: str, label: str, tokens: dict, origem_id: str
+) -> None:
+    provider_destino = _MAPA_PROVIDER_AI.get(provider_origem)
+    if provider_destino is None or "access_token" not in tokens:
+        return
+    with get_connection() as conn:
+        ja_importada = conn.execute(
+            """SELECT 1 FROM tenant_ai_accounts
+                WHERE tenant_id = %s AND provider = %s
+                      AND provider_data->>'importado_de' = %s""",
+            (tenant_id, provider_destino, origem_id),
+        ).fetchone()
+        if ja_importada:
+            return
+
+        expira_em = None
+        if tokens.get("expires_in") is not None:
+            expira_em = datetime.now(UTC) + timedelta(seconds=int(tokens["expires_in"]))
+        conn.execute(
+            """INSERT INTO tenant_ai_accounts
+                   (tenant_id, provider, auth_type, label, access_token_encrypted,
+                    refresh_token_encrypted, token_expires_at, provider_data)
+               VALUES (%s, %s, 'oauth', %s, %s, %s, %s, %s)""",
+            (
+                tenant_id,
+                provider_destino,
+                label,
+                encrypt(tokens["access_token"]),
+                encrypt(tokens["refresh_token"]) if tokens.get("refresh_token") else None,
+                expira_em,
+                json.dumps({"importado_de": origem_id, "origem": "ratende_connector_extensao"}),
+            ),
+        )
+    logger.info(
+        "conexao %s espelhada pra tenant_ai_accounts.%s (tenant=%s)",
+        provider_origem,
+        provider_destino,
+        tenant_id,
+    )
 
 
 class CookieIn(BaseModel):
@@ -147,6 +200,10 @@ def create_unofficial_connection(
                     encrypt(cookies_json),
                 ),
             ).fetchone()
+    if payload.provider in _PROVIDERS_OAUTH and payload.oauth_tokens is not None:
+        _espelhar_para_tenant_ai_accounts(
+            tenant_id, payload.provider, payload.label, payload.oauth_tokens, str(row["id"])
+        )
     return _serialize(row)
 
 

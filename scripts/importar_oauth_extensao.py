@@ -1,12 +1,14 @@
-"""Ponte pontual (produto-08 §6): copia credenciais OAuth de assinatura
-(Claude Code/Codex CLI) já capturadas pela extensão RAtende Connector
-(produto-15, `tenant_unofficial_connections`) pra `tenant_ai_accounts`,
-onde o LiteLLM/`_criar_combo_litellm` realmente lê.
+"""LEGADO (28/08/2026) -- a ponte agora é automática, direto na rota
+(`app/routes/unofficial_connections.py#_espelhar_para_tenant_ai_accounts`,
+chamada na hora do save, ver correcao-01-execucao-completa.md secao 3c).
+Este script só serve mais pra backfill manual de linhas antigas em
+`tenant_unofficial_connections` que ficaram sem espelhar antes da ponte
+automática existir -- não roda mais em fluxo normal.
 
-Não é rota nova nem mecanismo permanente -- é um script de import de
-1 uso, porque os dois sistemas nasceram separados na mesma mega-spec
-sem se falar (produto-15 é genérico, produto-08 é quem sabe virar
-deployment LiteLLM). Ver produto-08 §6 pra contexto completo.
+Copia credenciais OAuth de assinatura (Claude Code/Codex CLI) já
+capturadas pela extensão RAtende Connector (produto-15,
+`tenant_unofficial_connections`) pra `tenant_ai_accounts`, onde o
+LiteLLM/`_criar_combo_litellm` realmente lê.
 
 Uso:
     python scripts/importar_oauth_extensao.py <tenant_key>
