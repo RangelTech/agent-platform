@@ -314,8 +314,20 @@ async def _contexto_com_cookies(cookies: list[dict]):
     """Contexto Playwright descartável carregado com a sessão salva --
     mesmo desenho do login (`_browser` global, contexto novo por chamada),
     só que aqui a sessão já existe (cookies do canal) em vez de fazer login.
+
+    27/08/2026, achado real: essa função só é usada pelo polling do
+    Facebook (todo 2min, 24h/dia) -- sem proxy, cada chamada saía
+    direto do IP do Cloud Run (datacenter Google), completamente
+    diferente de onde o cookie foi capturado (rede do dono). Meta
+    marcou a conta como invadida por causa disso -- polling automatizado
+    o tempo todo de um IP de datacenter nunca visto é sinal clássico de
+    account takeover. Fix: sempre usar o proxy fixo da VPS aqui, mesmo
+    IP usado pelo Codex -- não resolve 100% (ainda é IP de datacenter,
+    não o IP real do dono), mas garante consistência entre chamadas
+    (nunca muda) em vez de IP efêmero do Cloud Run.
     """
-    context = await _browser.new_context(viewport=VIEWPORT)
+    proxy = _proxy_config("codex")  # reaproveita o mesmo proxy fixo da VPS
+    context = await _browser.new_context(viewport=VIEWPORT, proxy=proxy)
     await context.add_cookies(cookies)
     try:
         yield context
