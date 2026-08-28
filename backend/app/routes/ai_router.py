@@ -794,6 +794,23 @@ _LITELLM_PROVIDER_PREFIX = {"claude": "anthropic", "codex": "chatgpt"}
 # (429 direto). Valores fiéis ao Claude Code CLI de verdade, mesmos do
 # 9Router (`open-sse/providers/shared.js#CLAUDE_CLI_SPOOF_HEADERS`, que
 # o dono usou em produção por meses sem esse problema).
+#
+# 28/08/2026, achado real lendo o código do LiteLLM instalado (comparado
+# com `open-sse/providers/registry/claude.js` do 9Router, que o dono usou
+# meses em produção): a detecção automática de OAuth do LiteLLM
+# (`litellm/llms/anthropic/common_utils.py#optionally_handle_anthropic_oauth`)
+# só adiciona 1 flag no `anthropic-beta` (`oauth-2025-04-20`) -- o Claude
+# Code CLI de verdade (e o 9Router, replicando ele) manda 11 flags, incluindo
+# `claude-code-20250219`, a que identifica o tráfego como vindo do cliente
+# oficial. `validate_environment` lê `headers.get("anthropic-beta")` (chave
+# minúscula, `litellm/llms/anthropic/common_utils.py` linha ~700) e FAZ UNION
+# com o que já estiver lá -- ou seja, dá pra completar a lista toda aqui, só
+# que a CHAVE PRECISA ser minúscula (`anthropic-beta`), não `Anthropic-Beta`,
+# senão o lookup não acha e a Anthropic recebe só a flag OAuth sozinha --
+# tráfego de token de assinatura sem o flag `claude-code-*` pode ser tratado
+# como uso indevido da API por trás de uma assinatura, batendo rate limit
+# agressivo (429) mesmo com token válido e recém-renovado (achado ao vivo
+# 27-28/08: renovar o token não resolveu, então não era o token).
 _CLAUDE_CLIENT_HEADERS = {
     "User-Agent": "claude-cli/2.1.92 (external, sdk-cli)",
     "X-App": "cli",
@@ -806,6 +823,12 @@ _CLAUDE_CLIENT_HEADERS = {
     "X-Stainless-Arch": "arm64",
     "X-Stainless-Os": "MacOS",
     "X-Stainless-Timeout": "600",
+    "anthropic-beta": (
+        "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,"
+        "context-management-2025-06-27,prompt-caching-scope-2026-01-05,"
+        "advanced-tool-use-2025-11-20,effort-2025-11-24,structured-outputs-2025-12-15,"
+        "fast-mode-2026-02-01,redact-thinking-2026-02-12,token-efficient-tools-2026-03-28"
+    ),
 }
 
 
