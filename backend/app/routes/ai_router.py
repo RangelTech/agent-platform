@@ -809,22 +809,50 @@ _CLAUDE_CLIENT_HEADERS = {
 }
 
 
-def _provider_model_e_headers(modelo: str, conta: dict) -> tuple[str, dict | None]:
+# 27/08/2026 (produto-08 §6, plano documentado 27/08 manhã): o provider
+# nativo `chatgpt/` do LiteLLM gerencia OAuth próprio via arquivo local
+# (login single-account), incompatível com multi-tenant -- ver achado
+# em produto-08. Caminho real: apontar direto pro endpoint do Codex
+# igual o 9Router faz (`open-sse/executors/codex.js`), via
+# `custom_llm_provider: "openai"` genérico + `api_base` customizado.
+# Riscos conhecidos e não totalmente confirmados (documentados em
+# produto-08): tradução de formato Responses API (system->developer),
+# erro embutido no corpo SSE mesmo com HTTP 200. Por isso o teste real
+# usa 1 chamada simples, sem histórico, sem stream.
+_CODEX_API_BASE = "https://chatgpt.com/backend-api/codex"
+_CODEX_HEADERS = {
+    "originator": "codex_cli_rs",
+    "User-Agent": "codex_cli_rs/0.136.0",
+}
+
+
+def _provider_model_e_extras(modelo: str, conta: dict) -> tuple[str, dict]:
     """Traduz `cc/claude-sonnet-5` -> `anthropic/claude-sonnet-5` (e
-    equivalente pro Codex) e monta os headers de identificação de
-    cliente que a Anthropic espera pra não tratar como tráfego genérico
-    (ver `_CLAUDE_CLIENT_HEADERS` acima -- NUNCA por `Authorization`
-    aqui, o LiteLLM já cuida disso sozinho a partir do `api_key`,
-    colocar de novo conflita e quebra a autenticação, já foi tentado).
-    Providers de API key normal (Gemini etc.) não têm entrada aqui e
-    voltam sem alteração nenhuma."""
-    prefixo_litellm = _LITELLM_PROVIDER_PREFIX.get(conta["provider"])
+    equivalente pro Codex) e monta os headers/params extras que cada
+    provider de assinatura precisa (ver `_CLAUDE_CLIENT_HEADERS`/
+    `_CODEX_API_BASE` acima -- NUNCA por `Authorization` aqui, o
+    LiteLLM já cuida disso sozinho a partir do `api_key` pro Claude;
+    pro Codex o `api_key` vira o Bearer do jeito genérico do
+    `custom_llm_provider: openai`). Providers de API key normal
+    (Gemini etc.) não têm entrada aqui e voltam sem alteração nenhuma.
+
+    Devolve `(provider_model, extras)` -- `extras` é repassado direto
+    pra `litellm_client.create_deployment` via `**extras`."""
+    provider = conta["provider"]
+    if provider == "codex":
+        return "openai/codex-proxy", {
+            "api_base": _CODEX_API_BASE,
+            "extra_headers": _CODEX_HEADERS,
+            "custom_llm_provider": "openai",
+            "model_info_extra": {"mode": "responses"},
+        }
+    prefixo_litellm = _LITELLM_PROVIDER_PREFIX.get(provider)
     if prefixo_litellm is None:
-        return modelo, None
+        return modelo, {}
     _, sufixo = modelo.split("/", 1)
     provider_model = f"{prefixo_litellm}/{sufixo}"
-    extra_headers = _CLAUDE_CLIENT_HEADERS if conta["provider"] == "claude" else None
-    return provider_model, extra_headers
+    extras = {"extra_headers": _CLAUDE_CLIENT_HEADERS} if provider == "claude" else {}
+    return provider_model, extras
 
 
 async def _criar_combo_litellm(payload: ComboIn, user: dict, registro: dict, tenant: dict) -> dict:
@@ -870,7 +898,7 @@ async def _criar_combo_litellm(payload: ComboIn, user: dict, registro: dict, ten
     try:
         for modelo, conta in para_criar:
             chave = await _chave_da_conta(conta)
-            provider_model, extra_headers = _provider_model_e_headers(modelo, conta)
+            provider_model, extras = _provider_model_e_extras(modelo, conta)
             await litellm_client.create_deployment(
                 base_url,
                 master_key,
@@ -878,7 +906,7 @@ async def _criar_combo_litellm(payload: ComboIn, user: dict, registro: dict, ten
                 provider_model=provider_model,
                 api_key=chave,
                 tenant_id=str(user["tenant_id"]),
-                extra_headers=extra_headers,
+                **extras,
             )
         await litellm_client.add_model_to_team(
             base_url, master_key, team_id=registro["litellm_team_id"], model_name=nome_grupo

@@ -124,6 +124,8 @@ async def create_deployment(
     api_base: str | None = None,
     tenant_id: str,
     extra_headers: dict | None = None,
+    custom_llm_provider: str | None = None,
+    model_info_extra: dict | None = None,
 ) -> dict:
     """`provider_model` é o identificador que o LiteLLM entende (ex.
     `gemini/gemini-flash-latest`, `openai/gpt-4o`) — quem decide isso é a
@@ -157,6 +159,11 @@ async def create_deployment(
         litellm_params["api_base"] = api_base
     if extra_headers:
         litellm_params["extra_headers"] = extra_headers
+    if custom_llm_provider:
+        litellm_params["custom_llm_provider"] = custom_llm_provider
+    model_info = {"tenant_id": tenant_id}
+    if model_info_extra:
+        model_info.update(model_info_extra)
     try:
         return await _request(
             base_url,
@@ -166,7 +173,7 @@ async def create_deployment(
             json_body={
                 "model_name": model_name,
                 "litellm_params": litellm_params,
-                "model_info": {"tenant_id": tenant_id},
+                "model_info": model_info,
             },
         )
     except LiteLLMError as exc:
