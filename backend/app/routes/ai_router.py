@@ -780,11 +780,12 @@ async def _chave_da_conta(conta: dict) -> str:
     return resultado.access_token
 
 
-# 26/08/2026 (produto-08 §6): "cc"/"cx" são só rótulo interno nosso
+# 26/08/2026 (produto-08 §6): "cc" é só rótulo interno nosso
 # (router_catalog.py, pra combo builder) -- o prefixo que o LiteLLM
-# entende de verdade é outro (confirmado na doc oficial dele, tutoriais
-# "Claude Code Max Subscription" e "ChatGPT Subscription").
-_LITELLM_PROVIDER_PREFIX = {"claude": "anthropic", "codex": "chatgpt"}
+# entende de verdade é outro (confirmado na doc oficial dele, tutorial
+# "Claude Code Max Subscription"). Codex ("cx") não usa mais este mapa --
+# vira o provider customizado `codex-direct`, ver `_provider_model_e_extras`.
+_LITELLM_PROVIDER_PREFIX = {"claude": "anthropic"}
 
 # 26-27/08/2026, achado ao vivo real: LiteLLM autentica certo com só o
 # token (detecção automática de OAuth, ver litellm_client.py), mas sem
@@ -832,43 +833,36 @@ _CLAUDE_CLIENT_HEADERS = {
 }
 
 
-# 27/08/2026 (produto-08 §6, plano documentado 27/08 manhã): o provider
-# nativo `chatgpt/` do LiteLLM gerencia OAuth próprio via arquivo local
-# (login single-account), incompatível com multi-tenant -- ver achado
-# em produto-08. Caminho real: apontar direto pro endpoint do Codex
-# igual o 9Router faz (`open-sse/executors/codex.js`), via
-# `custom_llm_provider: "openai"` genérico + `api_base` customizado.
-# Riscos conhecidos e não totalmente confirmados (documentados em
-# produto-08): tradução de formato Responses API (system->developer),
-# erro embutido no corpo SSE mesmo com HTTP 200. Por isso o teste real
-# usa 1 chamada simples, sem histórico, sem stream.
-_CODEX_API_BASE = "https://chatgpt.com/backend-api/codex"
-_CODEX_HEADERS = {
-    "originator": "codex_cli_rs",
-    "User-Agent": "codex_cli_rs/0.136.0",
-}
-
-
+# 28/08/2026 (correcao-01-execucao-completa.md secao 3a): Codex roda
+# DENTRO do LiteLLM de verdade agora -- `litellm.CustomLLM` real
+# (`litellm-router/custom_provider.py`, registrado via
+# `litellm_settings.custom_provider_map` no `config.yaml` daquele repo,
+# NÃO mais o caminho antigo `custom_llm_provider: "openai"` genérico que
+# dava 404 (Responses API não é chat/completions, o LiteLLM genérico não
+# traduzia sozinho). Testado ao vivo através do Router (não client
+# direto): sucesso real, streaming e non-streaming, "funcionou" batendo
+# de volta pela mesma engine que os outros providers usam.
+#
+# Achado real testando: `model` NÃO pode vir como `"codex-direct/<modelo>"`
+# (LiteLLM só reconhece prefixo/model pra provider NATIVO conhecido,
+# `get_llm_provider` não olha `_custom_providers` na hora de splitar a
+# string) -- precisa mandar `custom_llm_provider` como campo SEPARADO em
+# `litellm_params`, com `model` sendo só o nome puro do modelo.
 def _provider_model_e_extras(modelo: str, conta: dict) -> tuple[str, dict]:
     """Traduz `cc/claude-sonnet-5` -> `anthropic/claude-sonnet-5` (e
     equivalente pro Codex) e monta os headers/params extras que cada
-    provider de assinatura precisa (ver `_CLAUDE_CLIENT_HEADERS`/
-    `_CODEX_API_BASE` acima -- NUNCA por `Authorization` aqui, o
-    LiteLLM já cuida disso sozinho a partir do `api_key` pro Claude;
-    pro Codex o `api_key` vira o Bearer do jeito genérico do
-    `custom_llm_provider: openai`). Providers de API key normal
-    (Gemini etc.) não têm entrada aqui e voltam sem alteração nenhuma.
+    provider de assinatura precisa (ver `_CLAUDE_CLIENT_HEADERS` acima --
+    NUNCA por `Authorization` aqui, o LiteLLM já cuida disso sozinho a
+    partir do `api_key` pro Claude; pro Codex o `api_key` vira o Bearer
+    dentro do `CodexCustomLLM`). Providers de API key normal (Gemini etc.)
+    não têm entrada aqui e voltam sem alteração nenhuma.
 
     Devolve `(provider_model, extras)` -- `extras` é repassado direto
     pra `litellm_client.create_deployment` via `**extras`."""
     provider = conta["provider"]
     if provider == "codex":
-        return "openai/codex-proxy", {
-            "api_base": _CODEX_API_BASE,
-            "extra_headers": _CODEX_HEADERS,
-            "custom_llm_provider": "openai",
-            "model_info_extra": {"mode": "responses"},
-        }
+        _, sufixo = modelo.split("/", 1)
+        return sufixo, {"custom_llm_provider": "codex-direct"}
     prefixo_litellm = _LITELLM_PROVIDER_PREFIX.get(provider)
     if prefixo_litellm is None:
         return modelo, {}
