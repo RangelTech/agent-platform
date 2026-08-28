@@ -4,6 +4,10 @@ from pydantic import BaseModel, EmailStr, Field
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+    # "extension" (RAtende Connector) marca a sessão como sem expiração por
+    # inatividade -- ver `app.auth.authenticate`. Qualquer outro valor (ou
+    # ausente, o painel web de sempre) segue o timeout normal.
+    client: str | None = None
 
 
 class LoginResponse(BaseModel):

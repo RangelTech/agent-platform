@@ -20,9 +20,13 @@ SELECT u.id, u.tenant_id, u.email, u.name, u.is_master, u.is_active,
 """
 
 
-def authenticate(email: str, password: str) -> str | None:
+def authenticate(email: str, password: str, client: str | None = None) -> str | None:
     """Validate credentials and open a session. Returns the plaintext token,
-    or None when the credentials, the user or the tenant are not usable."""
+    or None when the credentials, the user or the tenant are not usable.
+
+    `client="extension"` (RAtende Connector, produto-15) marks the session
+    to never expire from idleness — ver `resolve_session`. Any other value
+    (or None, o painel web de sempre) segue o comportamento normal."""
     with get_connection() as conn:
         row = conn.execute(
             _USER_QUERY + " WHERE lower(u.email) = lower(%s)", (email,)
@@ -45,12 +49,13 @@ def authenticate(email: str, password: str) -> str | None:
 
         token = new_session_token()
         conn.execute(
-            """INSERT INTO sessions (token_hash, user_id, expires_at)
-               VALUES (%s, %s, %s)""",
+            """INSERT INTO sessions (token_hash, user_id, expires_at, client)
+               VALUES (%s, %s, %s, %s)""",
             (
                 hash_token(token),
                 row["id"],
                 datetime.now(UTC) + timedelta(hours=settings.session_hours),
+                client,
             ),
         )
         return token
@@ -62,7 +67,7 @@ def resolve_session(token: str) -> dict | None:
     now = datetime.now(UTC)
     with get_connection() as conn:
         session = conn.execute(
-            """SELECT token_hash, user_id, expires_at, last_activity_at, revoked_at
+            """SELECT token_hash, user_id, expires_at, last_activity_at, revoked_at, client
                  FROM sessions WHERE token_hash = %s""",
             (hash_token(token),),
         ).fetchone()
@@ -73,7 +78,10 @@ def resolve_session(token: str) -> dict | None:
         # `expires_at` is maintained as last_activity + the inactivity window.
         # Older sessions may have been created under the former 24h absolute
         # policy, so last_activity is the authoritative migration-safe check.
-        if session["last_activity_at"] <= idle_cutoff:
+        # Sessão da extensão (`client == "extension"`) nunca expira por
+        # inatividade -- roda em segundo plano, sem interação humana
+        # constante pra renovar a janela (28/08/2026, pedido do dono).
+        if session["client"] != "extension" and session["last_activity_at"] <= idle_cutoff:
             conn.execute(
                 "UPDATE sessions SET revoked_at = %s WHERE token_hash = %s",
                 (now, session["token_hash"]),

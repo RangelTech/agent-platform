@@ -9,7 +9,7 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 @router.post("/login", response_model=LoginResponse)
 async def login(payload: LoginRequest):
-    token = authenticate(payload.email, payload.password)
+    token = authenticate(payload.email, payload.password, client=payload.client)
     if token is None:
         raise HTTPException(status_code=401, detail="E-mail ou senha inválidos")
 
