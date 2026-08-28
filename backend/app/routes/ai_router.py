@@ -874,7 +874,16 @@ def _provider_model_e_extras(modelo: str, conta: dict) -> tuple[str, dict]:
         return modelo, {}
     _, sufixo = modelo.split("/", 1)
     provider_model = f"{prefixo_litellm}/{sufixo}"
-    extras = {"extra_headers": _CLAUDE_CLIENT_HEADERS} if provider == "claude" else {}
+    # 28/08/2026: LiteLLM retenta 2x sozinho em erro (confirmado nos logs,
+    # "LiteLLM Retried: 2 times") -- 1 chamada nossa virava 3 hits reais
+    # na Anthropic, bem diferente do 9Router (1 request por tentativa).
+    # Desligado pro Claude: reduz volume de chamada real e aproxima do
+    # comportamento do cliente que sabemos que funciona.
+    extras = (
+        {"extra_headers": _CLAUDE_CLIENT_HEADERS, "num_retries": 0}
+        if provider == "claude"
+        else {}
+    )
     return provider_model, extras
 
 

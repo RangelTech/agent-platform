@@ -126,6 +126,7 @@ async def create_deployment(
     extra_headers: dict | None = None,
     custom_llm_provider: str | None = None,
     model_info_extra: dict | None = None,
+    num_retries: int | None = None,
 ) -> dict:
     """`provider_model` é o identificador que o LiteLLM entende (ex.
     `gemini/gemini-flash-latest`, `openai/gpt-4o`) — quem decide isso é a
@@ -161,6 +162,8 @@ async def create_deployment(
         litellm_params["extra_headers"] = extra_headers
     if custom_llm_provider:
         litellm_params["custom_llm_provider"] = custom_llm_provider
+    if num_retries is not None:
+        litellm_params["num_retries"] = num_retries
     model_info = {"tenant_id": tenant_id}
     if model_info_extra:
         model_info.update(model_info_extra)
