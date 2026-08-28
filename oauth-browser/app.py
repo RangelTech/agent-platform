@@ -355,8 +355,18 @@ async def facebook_inbox(payload: FacebookCookiesIn, request: Request):
             )
             await page.wait_for_selector('[aria-label="Chat list"], [role="grid"]', timeout=15_000)
         except Exception as exc:  # noqa: BLE001
+            # 27/08/2026, debug temporário: descobrir se caiu num checkpoint/
+            # interstitial (ex. "confiar neste dispositivo") em vez de erro
+            # de rede -- título+URL da página no momento da falha.
+            titulo = url = "?"
+            try:
+                titulo = await page.title()
+                url = page.url
+            except Exception:  # noqa: BLE001
+                pass
             raise HTTPException(
-                status_code=502, detail=f"falha ao abrir a caixa de entrada: {exc}"
+                status_code=502,
+                detail=f"falha ao abrir a caixa de entrada: {exc} | pagina_no_erro: titulo={titulo!r} url={url!r}",
             ) from exc
 
         conversas = await page.evaluate(
