@@ -32,11 +32,14 @@ CODEX_RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses"
 # Texto identico ao que o Codex CLI real manda (open-sse/config/codexInstructions.js)
 # -- nao confirmado se o backend exige bater exatamente com isso, mas e o que
 # o unico cliente conhecido funcionando (9Router, refletindo o CLI oficial) manda.
-CODEX_DEFAULT_INSTRUCTIONS = """You are Codex, based on GPT-5. You are running as a coding agent in the Codex CLI on a user's computer.
+CODEX_DEFAULT_INSTRUCTIONS = """You are Codex, based on GPT-5. You are running as a coding \
+agent in the Codex CLI on a user's computer.
 
 ## General
 
-- When searching for text or files, prefer using `rg` or `rg --files` respectively because `rg` is much faster than alternatives like `grep`. (If the `rg` command is not found, then use alternatives.)
+- When searching for text or files, prefer using `rg` or `rg --files` respectively because \
+`rg` is much faster than alternatives like `grep`. (If the `rg` command is not found, then \
+use alternatives.)
 
 ## Presenting your work and final message
 
@@ -64,7 +67,8 @@ class CodexResult:
 
 def _convert_system_to_developer(input_items: list[dict]) -> None:
     for item in input_items:
-        if isinstance(item, dict) and item.get("role") == "system" and item.get("type", "message") == "message":
+        eh_mensagem = isinstance(item, dict) and item.get("type", "message") == "message"
+        if eh_mensagem and item.get("role") == "system":
             item["role"] = "developer"
 
 
@@ -72,7 +76,11 @@ def _build_body(model: str, user_text: str, instructions: str) -> dict:
     body = {
         "model": model,
         "input": [
-            {"type": "message", "role": "user", "content": [{"type": "input_text", "text": user_text}]},
+            {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": user_text}],
+            },
         ],
         "instructions": instructions,
         "stream": True,

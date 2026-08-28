@@ -84,7 +84,10 @@ async def test_erro_embutido_no_sse_apesar_de_http_200(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_erro_de_capacidade_por_conta(monkeypatch):
-    sse = 'data: {"type":"error","error":{"message":"model_at_capacity, selected model is at capacity"}}\n\n'
+    sse = (
+        'data: {"type":"error","error":'
+        '{"message":"model_at_capacity, selected model is at capacity"}}\n\n'
+    )
     with pytest.raises(CodexError, match="model_at_capacity"):
         await _rodar(monkeypatch, sse)
 
