@@ -17,6 +17,7 @@ import Chat from './pages/Chat'
 import Dashboard from './pages/Dashboard'
 import Datasources from './pages/Datasources'
 import Files from './pages/Files'
+import HermesAgente from './pages/HermesAgente'
 import InstallationSecrets from './pages/InstallationSecrets'
 import Integrations from './pages/Integrations'
 import Legal from './pages/Legal'
@@ -71,6 +72,7 @@ function Shell() {
     { to: '/fontes-de-dados', label: 'Fontes de dados', show: can('datasources', 'view') },
     { to: '/arquivos', label: 'Arquivos', show: can('files', 'view') },
     { to: '/memorias', label: 'Memórias', show: !(user?.is_master ?? false) },
+    { to: '/hermes-agente', label: 'Hermes agente', show: can('hermes', 'view') },
     { to: '/consumo', label: 'Consumo', show: can('usage', 'view') },
     { to: '/integracoes', label: 'Integrações', show: can('integrations', 'view') },
     { to: '/pagamentos', label: 'Pagamentos', show: can('payments', 'view') },
@@ -241,6 +243,7 @@ function Shell() {
               <Route path="/fontes-de-dados" element={<Datasources />} />
               <Route path="/arquivos" element={<Files />} />
               <Route path="/memorias" element={<Memories />} />
+              <Route path="/hermes-agente" element={<HermesAgente />} />
               <Route path="/consumo" element={<Usage />} />
               <Route path="/integracoes" element={<Integrations />} />
               <Route path="/pagamentos" element={<Payments />} />
