@@ -4,12 +4,13 @@ import uuid
 import psycopg
 import pytest
 import uvicorn
-from app.config import settings
-from app.migrations import run_migrations
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
 from guardas import exigir_banco_descartavel
+
+from app.config import settings
+from app.migrations import run_migrations
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -136,3 +137,35 @@ def tenant_admin(client, master_token, tenant):
         "/api/auth/login", json={"email": email, "password": "senha-forte-123"}
     ).json()["token"]
     return {"user": r.json(), "token": token, "email": email}
+
+
+@pytest.fixture
+def other_tenant_admin(client, master_token):
+    """Admin de um SEGUNDO tenant, independente de `tenant`/`tenant_admin` —
+    para testes de isolamento cross-tenant (seção 7.7 da spec de integração
+    Hermes: nada pode vazar entre tenants)."""
+    key = f"outro-{uuid.uuid4().hex[:8]}"
+    tenant = client.post(
+        "/api/tenants", json={"name": "Outro Tenant", "tenant_key": key}, headers=auth(master_token)
+    ).json()
+    profiles = client.get("/api/user-profiles", headers=auth(master_token)).json()
+    admin_profile = next(
+        p for p in profiles if p["tenant_id"] == tenant["id"] and p["name"] == "Administrador"
+    )
+    email = f"admin-{uuid.uuid4().hex[:8]}@outro.com"
+    r = client.post(
+        "/api/users",
+        json={
+            "email": email,
+            "name": "Admin Outro",
+            "password": "senha-forte-123",
+            "profile_id": admin_profile["id"],
+            "tenant_id": tenant["id"],
+        },
+        headers=auth(master_token),
+    )
+    assert r.status_code == 201, r.text
+    token = client.post(
+        "/api/auth/login", json={"email": email, "password": "senha-forte-123"}
+    ).json()["token"]
+    return {"user": r.json(), "token": token, "email": email, "tenant": tenant}

@@ -20,13 +20,16 @@ SELECT u.id, u.tenant_id, u.email, u.name, u.is_master, u.is_active,
 """
 
 
-def authenticate(email: str, password: str, client: str | None = None) -> str | None:
-    """Validate credentials and open a session. Returns the plaintext token,
-    or None when the credentials, the user or the tenant are not usable.
+def verify_credentials(email: str, password: str) -> dict | None:
+    """Validate email/password without opening a session. Returns the user
+    row (same shape as `_USER_QUERY`), or None when the credentials, the user
+    or the tenant are not usable.
 
-    `client="extension"` (RAtende Connector, produto-15) marks the session
-    to never expire from idleness — ver `resolve_session`. Any other value
-    (or None, o painel web de sempre) segue o comportamento normal."""
+    Factored out of `authenticate` so a caller that needs its own credential
+    (Hermes device pairing, seção 7.2 da spec de integração) can check a
+    password against the RIA's own identity without ever touching the
+    `sessions` table — the device gets its own rotatable credential, not a
+    reused web/OAuth session."""
     with get_connection() as conn:
         row = conn.execute(
             _USER_QUERY + " WHERE lower(u.email) = lower(%s)", (email,)
@@ -46,14 +49,27 @@ def authenticate(email: str, password: str, client: str | None = None) -> str | 
         # A deactivated tenant locks out its users; the master has no tenant.
         if row["tenant_id"] is not None and not row["tenant_is_active"]:
             return None
+        return dict(row)
 
+
+def authenticate(email: str, password: str, client: str | None = None) -> str | None:
+    """Validate credentials and open a session. Returns the plaintext token,
+    or None when the credentials, the user or the tenant are not usable.
+
+    `client="extension"` (RAtende Connector, produto-15) marks the session
+    to never expire from idleness — ver `resolve_session`. Any other value
+    (or None, o painel web de sempre) segue o comportamento normal."""
+    user = verify_credentials(email, password)
+    if user is None:
+        return None
+    with get_connection() as conn:
         token = new_session_token()
         conn.execute(
             """INSERT INTO sessions (token_hash, user_id, expires_at, client)
                VALUES (%s, %s, %s, %s)""",
             (
                 hash_token(token),
-                row["id"],
+                user["id"],
                 datetime.now(UTC) + timedelta(hours=settings.session_hours),
                 client,
             ),

@@ -23,6 +23,13 @@ RESOURCES = (
     "google_accounts",
     "microsoft_accounts",
     "unofficial_connections",
+    # Hermes agente: dispositivos, sessões, comandos e aprovações remotas
+    # (SPEC_HERMES_INTEGRADO_RIA_ATENDIMENTO.md, seção 7.6). "view" é o papel
+    # visualizador; "create" cobre pareamento e envio de comando; "edit" cobre
+    # aprovar/rejeitar e mudar estado de sessão; "delete" cobre revogar
+    # dispositivo. O compartilhamento granular por sessão (seção 16.3) ainda
+    # não tem ADR fechado — esta é a RBAC de tenant, não a de sessão individual.
+    "hermes",
 )
 
 ACTIONS = ("view", "create", "edit", "delete")

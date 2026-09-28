@@ -19,6 +19,11 @@ from app.routes import datasources as datasource_routes
 from app.routes import email_accounts as email_account_routes
 from app.routes import files as file_routes
 from app.routes import google_accounts as google_account_routes
+from app.routes import hermes_approvals as hermes_approval_routes
+from app.routes import hermes_audit as hermes_audit_routes
+from app.routes import hermes_commands as hermes_command_routes
+from app.routes import hermes_devices as hermes_device_routes
+from app.routes import hermes_sessions as hermes_session_routes
 from app.routes import installation_secrets as installation_secret_routes
 from app.routes import integrations as integration_routes
 from app.routes import mcp_store as mcp_store_routes
@@ -164,6 +169,11 @@ app.include_router(mcp_store_routes.router)
 app.include_router(omnichannel_routes.router)
 app.include_router(ai_router_routes.router)
 app.include_router(installation_secret_routes.router)
+app.include_router(hermes_device_routes.router)
+app.include_router(hermes_session_routes.router)
+app.include_router(hermes_command_routes.router)
+app.include_router(hermes_approval_routes.router)
+app.include_router(hermes_audit_routes.router)
 
 
 def _mount_spa(application: FastAPI) -> None:
