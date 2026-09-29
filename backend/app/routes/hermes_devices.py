@@ -3,6 +3,8 @@ integração). O pareamento usa o login já existente do RIA (email/senha) e
 emite uma credencial própria do dispositivo — nunca a senha, nunca um token
 OAuth de outro provider, nunca a sessão web do usuário."""
 
+from datetime import UTC, datetime, timedelta
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
@@ -10,8 +12,14 @@ from app.auth import require, verify_credentials
 from app.db import get_connection
 from app.device_auth import issue_device_credential, require_device
 from app.hermes_service import audit
+from app.security import hash_token, new_session_token
 
 router = APIRouter(prefix="/api/hermes/devices", tags=["hermes"])
+
+# Ticket de handshake WSS (seção 7.2/8.1): curto o bastante para não valer a
+# pena interceptar, longo o bastante para cobrir a reconexão da extensão
+# (backoff) sem exigir uma segunda emissão a cada tentativa.
+WS_TICKET_TTL_SECONDS = 30
 
 
 class PairIn(BaseModel):
@@ -142,6 +150,24 @@ def revoke_device(device_id: str, user: dict = Depends(require("hermes", "delete
             resource_id=device_id,
         )
     return {"status": "ok"}
+
+
+@router.post("/ws-ticket")
+def issue_ws_ticket(device: dict = Depends(require_device)):
+    """Troca a credencial de longa duração por um ticket descartável para o
+    handshake do Hermes Relay -- a credencial nunca vai na query string do
+    WebSocket (ficaria em log de acesso do proxy). Uso único: o Relay marca
+    `used_at` no mesmo UPDATE que valida, então uma segunda tentativa com o
+    mesmo ticket (replay) sempre falha."""
+    token = new_session_token()
+    expires_at = datetime.now(UTC) + timedelta(seconds=WS_TICKET_TTL_SECONDS)
+    with get_connection() as conn:
+        conn.execute(
+            """INSERT INTO hermes_ws_tickets (tenant_id, device_id, token_hash, expires_at)
+               VALUES (%s, %s, %s, %s)""",
+            (device["tenant_id"], device["id"], hash_token(token), expires_at),
+        )
+    return {"ticket": token, "expires_at": expires_at.isoformat()}
 
 
 @router.get("/me")
