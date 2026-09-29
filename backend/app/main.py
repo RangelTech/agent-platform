@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from app.bootstrap import bootstrap_master
 from app.config import settings
+from app.db import get_connection
 from app.migrations import run_migrations
 from app.ragentes_guide import ensure_all_tenants
 from app.routes import ai_router as ai_router_routes
@@ -138,6 +139,27 @@ def health_ready():
             "migrations_ok": status["migrations_ok"],
         },
     )
+
+
+@app.get("/health/db")
+def health_db():
+    """Faz uma ida e volta real no banco a cada chamada -- ao contrário de
+    `/health` (não toca nada) e `/health/ready` (reflete o boot, uma vez só,
+    nunca reavaliado depois). Achado real (29/09/2026): o Postgres de
+    produção ficou em crash-loop por 4 dias sem nenhum alerta disparar,
+    porque nenhum healthcheck em uso realmente reabria uma conexão depois
+    do boot. Este endpoint existe pra um monitor externo (Uptime Kuma, já
+    rodando na VPS) bater nele e pegar isso em minutos, não em dias."""
+    try:
+        with get_connection() as conn:
+            conn.execute("SELECT 1")
+        return {"status": "ok", "service": "backend"}
+    except Exception as exc:
+        detail = _sanitize_error(exc)
+        logger.error("HEALTH_DB_FAILED %s", detail)
+        return JSONResponse(
+            status_code=503, content={"status": "db_unreachable", "service": "backend"}
+        )
 
 
 # API routers are registered here, before the SPA fallback below. Route order
