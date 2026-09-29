@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Badge, Button, Card, EmptyState, ErrorText, PageHeader, Table, TableSkeleton, Textarea } from '../components/ui'
 import { SurfaceSwitcher } from '../components/SurfaceSwitcher'
@@ -15,12 +15,13 @@ const HERMES_RELEASE = {
   notesUrl: 'https://github.com/LucasRangelSSouza/hermes-vscode/releases/tag/v0.1.0',
 }
 
-// Hermes agente (SPEC_HERMES_INTEGRADO_RIA_ATENDIMENTO.md): computadores que
-// pareiam a extensão VS Code "Hermes by Rangel Tech" aparecem aqui como
-// dispositivos, cada sessão Hermes deles vira uma linha com o nome do
-// computador, e um comando enviado daqui chega na extensão em até ~4s (poll
-// HTTP -- ver docs/remote-control.md no repo hermes-by-rangel-tech; o Relay
-// em tempo real é Fase B/futuro, o contrato não muda quando ele chegar).
+// Hermes agente (SPEC_HERMES_INTEGRADO_RIA_ATENDIMENTO.md, seção 6.2):
+// computadores que pareiam a extensão VS Code "Hermes by Rangel Tech"
+// aparecem aqui como a linha de primeiro nível de uma árvore; cada sessão
+// Hermes deles é uma linha filha. Um comando enviado daqui chega na
+// extensão em até ~4s (poll HTTP -- ver docs/remote-control.md no repo
+// hermes-by-rangel-tech; o Relay em tempo real já existe em produção,
+// mas esta tela ainda consome o mesmo contrato HTTP por simplicidade).
 
 interface HermesDevice {
   id: string
@@ -59,6 +60,10 @@ interface HermesCommand {
 
 const SESSION_STATUS_OK = new Set(['idle', 'completed'])
 const COMMAND_TERMINAL_OK = new Set(['completed'])
+// A sessão pode receber comando; só isso ganha o traço azul de
+// disponibilidade (seção 6.2 — "o mesmo traço não deve fingir que uma
+// sessão desconectada está disponível").
+const SESSION_AVAILABLE = new Set(['idle', 'running', 'waiting_approval'])
 
 function eventText(event: HermesEvent): string {
   switch (event.type) {
@@ -75,20 +80,150 @@ function eventText(event: HermesEvent): string {
   }
 }
 
-function DeviceList() {
+/** Bolinha verde/vermelha de presença do dispositivo (seção 6.2) —
+ * cinza pra revogado, nunca verde quando não está de fato conectado. */
+function PresenceDot({ status }: { status: string }) {
+  const color =
+    status === 'connected' ? 'bg-emerald-500' :
+    status === 'revoked' ? 'bg-[var(--text-faint)]' :
+    'bg-red-500'
+  return <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${color}`} aria-hidden />
+}
+
+function sessionStatusMeta(status: string): { label: string; dot: string; pulse?: boolean } {
+  switch (status) {
+    case 'running': return { label: 'executando', dot: 'bg-blue-500', pulse: true }
+    case 'waiting_approval': return { label: 'aguardando aprovação', dot: 'bg-amber-500' }
+    case 'idle': return { label: 'ociosa', dot: 'bg-emerald-500' }
+    case 'completed': return { label: 'concluída', dot: 'bg-[var(--text-faint)]' }
+    case 'failed': return { label: 'erro', dot: 'bg-red-500' }
+    case 'ended': return { label: 'encerrada', dot: 'bg-[var(--text-faint)]' }
+    default: return { label: status, dot: 'bg-[var(--text-faint)]' }
+  }
+}
+
+function DeviceRow({
+  device, sessions, expanded, onToggle, selectedId, onSelectSession, onRevoke, revoking,
+}: {
+  device: HermesDevice
+  sessions: HermesSession[]
+  expanded: boolean
+  onToggle: () => void
+  selectedId: string | null
+  onSelectSession: (id: string) => void
+  onRevoke: (id: string) => void
+  revoking: boolean
+}) {
+  return (
+    <div className="overflow-hidden rounded-[16px] border border-[var(--border)]">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex w-full items-center gap-2 bg-[var(--surface-soft)] px-3 py-2.5 text-left transition hover:bg-[var(--brand-soft)]"
+      >
+        <span className={`text-[var(--text-faint)] transition-transform ${expanded ? 'rotate-90' : ''}`}>▸</span>
+        <PresenceDot status={device.status} />
+        <span className="flex-1 truncate text-sm font-medium text-[var(--text)]">{device.name}</span>
+        <span className="text-xs text-[var(--text-faint)]">{device.platform ?? '—'}</span>
+        <span className="text-xs text-[var(--text-muted)]">
+          {sessions.length > 0 ? `${sessions.length} sessão${sessions.length > 1 ? 'ões' : ''}` : 'sem sessões'}
+        </span>
+        {device.status !== 'revoked' && (
+          <Button
+            variant="ghost"
+            onClick={(e) => { e.stopPropagation(); onRevoke(device.id) }}
+            disabled={revoking}
+          >
+            Revogar
+          </Button>
+        )}
+      </button>
+
+      {expanded && (
+        <div className="divide-y divide-[var(--border)]">
+          {sessions.length === 0 ? (
+            <p className="px-6 py-3 text-xs text-[var(--text-faint)]">
+              Nenhuma sessão neste computador ainda.
+            </p>
+          ) : (
+            sessions.map((s) => {
+              const meta = sessionStatusMeta(s.status)
+              const available = SESSION_AVAILABLE.has(s.status) && device.status === 'connected'
+              const isSelected = s.id === selectedId
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => onSelectSession(s.id)}
+                  className={`flex w-full items-center gap-2 border-l-[3px] py-2.5 pl-6 pr-3 text-left transition ${
+                    isSelected
+                      ? 'border-l-[var(--brand)] bg-[var(--brand-soft)]'
+                      : available
+                        ? 'border-l-[var(--brand)]/50 hover:bg-[var(--surface-elevated)]'
+                        : 'border-l-transparent opacity-70 hover:bg-[var(--surface-elevated)]'
+                  }`}
+                >
+                  <span className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${meta.dot} ${meta.pulse ? 'animate-pulse' : ''}`} aria-hidden />
+                  <span className={`flex-1 truncate text-sm ${isSelected ? 'font-medium text-[var(--text)]' : 'text-[var(--text-muted)]'}`}>
+                    {s.title || s.workspace_path || s.id.slice(0, 8)}
+                  </span>
+                  <span className="text-xs text-[var(--text-faint)]">{meta.label}</span>
+                </button>
+              )
+            })
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function DeviceSessionTree({ selectedId, onSelectSession }: { selectedId: string | null; onSelectSession: (id: string) => void }) {
   const qc = useQueryClient()
-  const { data: devices = [], isLoading, error } = useQuery({
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+
+  const { data: devices = [], isLoading: devicesLoading, error: devicesError } = useQuery({
     queryKey: ['hermes', 'devices'],
     queryFn: () => api<HermesDevice[]>('/hermes/devices'),
     refetchInterval: 10_000,
+  })
+  const { data: sessions = [], isLoading: sessionsLoading, error: sessionsError } = useQuery({
+    queryKey: ['hermes', 'sessions'],
+    queryFn: () => api<HermesSession[]>('/hermes/sessions'),
+    refetchInterval: 5_000,
   })
   const revoke = useMutation({
     mutationFn: (deviceId: string) => api(`/hermes/devices/${deviceId}/revoke`, { method: 'POST' }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['hermes', 'devices'] }),
   })
 
-  if (isLoading) return <TableSkeleton columns={3} />
-  if (error) return <ErrorText>Não foi possível carregar os dispositivos pareados.</ErrorText>
+  const sessionsByDevice = useMemo(() => {
+    const map = new Map<string, HermesSession[]>()
+    for (const s of sessions) {
+      const arr = map.get(s.device_id) ?? []
+      arr.push(s)
+      map.set(s.device_id, arr)
+    }
+    for (const arr of map.values()) {
+      arr.sort((a, b) => new Date(b.last_activity_at).getTime() - new Date(a.last_activity_at).getTime())
+    }
+    return map
+  }, [sessions])
+
+  // Ordenado por disponibilidade e atividade recente (seção 6.2): conectado
+  // com sessão ativa primeiro, depois conectado sem sessão, depois o resto.
+  const orderedDevices = useMemo(() => {
+    return [...devices].sort((a, b) => {
+      const aActive = a.status === 'connected' && (sessionsByDevice.get(a.id)?.length ?? 0) > 0
+      const bActive = b.status === 'connected' && (sessionsByDevice.get(b.id)?.length ?? 0) > 0
+      if (aActive !== bActive) return aActive ? -1 : 1
+      if ((a.status === 'connected') !== (b.status === 'connected')) return a.status === 'connected' ? -1 : 1
+      return a.name.localeCompare(b.name)
+    })
+  }, [devices, sessionsByDevice])
+
+  if (devicesLoading || sessionsLoading) return <TableSkeleton columns={3} />
+  if (devicesError || sessionsError) return <ErrorText>Não foi possível carregar dispositivos e sessões.</ErrorText>
   if (devices.length === 0) {
     return (
       <EmptyState
@@ -97,29 +232,27 @@ function DeviceList() {
       />
     )
   }
+
   return (
-    <Table headers={['Computador', 'Plataforma', 'Status', '']}>
-      {devices.map((d) => (
-        <tr key={d.id} className="transition hover:bg-[var(--brand-soft)]">
-          <td className="px-3 py-2 text-[var(--text)]">{d.name}</td>
-          <td className="px-3 py-2 text-[var(--text-muted)]">{d.platform ?? '—'}</td>
-          <td className="px-3 py-2">
-            <Badge ok={d.status === 'connected'}>{d.status === 'revoked' ? 'revogado' : d.status}</Badge>
-          </td>
-          <td className="px-3 py-2 text-right">
-            {d.status !== 'revoked' && (
-              <Button
-                variant="ghost"
-                onClick={() => revoke.mutate(d.id)}
-                disabled={revoke.isPending}
-              >
-                Revogar
-              </Button>
-            )}
-          </td>
-        </tr>
+    <div className="space-y-2">
+      {orderedDevices.map((d) => (
+        <DeviceRow
+          key={d.id}
+          device={d}
+          sessions={sessionsByDevice.get(d.id) ?? []}
+          expanded={!collapsed.has(d.id)}
+          onToggle={() => setCollapsed((prev) => {
+            const next = new Set(prev)
+            if (next.has(d.id)) next.delete(d.id); else next.add(d.id)
+            return next
+          })}
+          selectedId={selectedId}
+          onSelectSession={onSelectSession}
+          onRevoke={(id) => revoke.mutate(id)}
+          revoking={revoke.isPending}
+        />
       ))}
-    </Table>
+    </div>
   )
 }
 
@@ -227,7 +360,7 @@ function SessionDetail({ session, onClose }: { session: HermesSession; onClose: 
 
 export default function HermesAgente() {
   const [selected, setSelected] = useState<string | null>(null)
-  const { data: sessions = [], isLoading, error } = useQuery({
+  const { data: sessions = [] } = useQuery({
     queryKey: ['hermes', 'sessions'],
     queryFn: () => api<HermesSession[]>('/hermes/sessions'),
     refetchInterval: 5_000,
@@ -280,43 +413,8 @@ export default function HermesAgente() {
         </div>
       </Card>
 
-      <Card title="Meus dispositivos">
-        <DeviceList />
-      </Card>
-
-      <Card title="Sessões">
-        {isLoading ? (
-          <TableSkeleton columns={4} />
-        ) : error ? (
-          <ErrorText>Não foi possível carregar as sessões.</ErrorText>
-        ) : sessions.length === 0 ? (
-          <EmptyState
-            title="Nenhuma sessão ainda"
-            description="Abra um chat no Hermes, na extensão, com um computador já pareado — ele aparece aqui."
-          />
-        ) : (
-          <Table headers={['Computador', 'Sessão', 'Status', 'Última atividade', '']}>
-            {sessions.map((s) => (
-              <tr key={s.id} className="transition hover:bg-[var(--brand-soft)]">
-                <td className="px-3 py-2 text-[var(--text)]">{s.device_name}</td>
-                <td className="px-3 py-2 text-[var(--text-muted)]">
-                  {s.title || s.workspace_path || s.id.slice(0, 8)}
-                </td>
-                <td className="px-3 py-2">
-                  <Badge ok={SESSION_STATUS_OK.has(s.status)}>{s.status}</Badge>
-                </td>
-                <td className="px-3 py-2 text-[var(--text-muted)]">
-                  {new Date(s.last_activity_at).toLocaleString('pt-BR')}
-                </td>
-                <td className="px-3 py-2 text-right">
-                  <Button variant="ghost" onClick={() => setSelected(s.id)}>
-                    Abrir
-                  </Button>
-                </td>
-              </tr>
-            ))}
-          </Table>
-        )}
+      <Card title="Computadores e sessões">
+        <DeviceSessionTree selectedId={selected} onSelectSession={setSelected} />
       </Card>
 
       {openSession && <SessionDetail session={openSession} onClose={() => setSelected(null)} />}
