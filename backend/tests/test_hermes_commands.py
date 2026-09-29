@@ -3,7 +3,9 @@ estados e isolamento entre dispositivos/tenants (seção 6.4/8.3)."""
 
 import uuid
 
+import psycopg
 import pytest
+from app.config import settings
 from tests.conftest import auth
 
 pytestmark = pytest.mark.integration
@@ -44,6 +46,55 @@ def test_create_command_with_repeated_idempotency_key_returns_the_same_command(
     assert first.status_code == 201
     assert second.status_code == 201
     assert first.json()["id"] == second.json()["id"]
+
+
+def test_creating_a_command_notifies_the_devices_channel(client, tenant_admin):
+    """O Hermes Relay (Fase B) escuta este canal pra avisar o dispositivo na
+    hora em vez de esperar o poll -- ver hermes_commands.py:create_command.
+    Só dispara depois que a transação de fato comita (não em rollback)."""
+    device = _pair(client, tenant_admin["email"])
+    session = _session(client, device["credential"])
+
+    listener = psycopg.connect(settings.database_url, autocommit=True)
+    listener.execute("LISTEN hermes_commands")
+    try:
+        r = client.post(
+            f"/api/hermes/sessions/{session['id']}/commands",
+            json={"idempotency_key": "notify-1", "payload": {"text": "oi"}},
+            headers=auth(tenant_admin["token"]),
+        )
+        assert r.status_code == 201
+
+        notified_device_ids = []
+        gen = listener.notifies(timeout=5)
+        for note in gen:
+            notified_device_ids.append(note.payload)
+            break
+        assert notified_device_ids == [device["device"]["id"]]
+    finally:
+        listener.close()
+
+
+def test_a_retry_of_an_existing_command_does_not_notify_again(client, tenant_admin):
+    device = _pair(client, tenant_admin["email"])
+    session = _session(client, device["credential"])
+    body = {"idempotency_key": "notify-retry-1", "payload": {"text": "oi"}}
+    url = f"/api/hermes/sessions/{session['id']}/commands"
+    client.post(url, json=body, headers=auth(tenant_admin["token"]))
+
+    listener = psycopg.connect(settings.database_url, autocommit=True)
+    listener.execute("LISTEN hermes_commands")
+    try:
+        r = client.post(url, json=body, headers=auth(tenant_admin["token"]))
+        assert r.status_code == 201
+
+        got_one = False
+        for _note in listener.notifies(timeout=1):
+            got_one = True
+            break
+        assert got_one is False
+    finally:
+        listener.close()
 
 
 def test_cannot_command_an_ended_session(client, tenant_admin):

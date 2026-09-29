@@ -133,6 +133,11 @@ def create_command(
             resource_id=str(row["id"]),
             metadata={"session_id": session_id},
         )
+        # NOTIFY so a connected Hermes Relay can push the device an
+        # immediate "you have work" ping instead of it waiting for its
+        # next poll -- Postgres only delivers this once the transaction
+        # actually commits, so a rollback above never fires a false one.
+        conn.execute("SELECT pg_notify('hermes_commands', %s)", (str(session["device_id"]),))
     return _serialize(row)
 
 
