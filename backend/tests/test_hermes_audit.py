@@ -4,7 +4,6 @@ comando e resultado ficam registrados; isolamento por tenant."""
 import uuid
 
 import pytest
-
 from tests.conftest import auth
 
 pytestmark = pytest.mark.integration

@@ -4,13 +4,12 @@ import uuid
 import psycopg
 import pytest
 import uvicorn
+from app.config import settings
+from app.migrations import run_migrations
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
 from guardas import exigir_banco_descartavel
-
-from app.config import settings
-from app.migrations import run_migrations
 
 
 @pytest.fixture(scope="session", autouse=True)

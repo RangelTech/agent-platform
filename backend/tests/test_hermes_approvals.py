@@ -3,7 +3,6 @@
 import uuid
 
 import pytest
-
 from tests.conftest import auth
 
 pytestmark = pytest.mark.integration

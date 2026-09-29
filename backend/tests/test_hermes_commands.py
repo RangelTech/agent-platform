@@ -4,7 +4,6 @@ estados e isolamento entre dispositivos/tenants (seção 6.4/8.3)."""
 import uuid
 
 import pytest
-
 from tests.conftest import auth
 
 pytestmark = pytest.mark.integration

@@ -4,7 +4,6 @@ isolamento entre dispositivos e tenants (seção 6/7.4/7.7)."""
 import uuid
 
 import pytest
-
 from tests.conftest import auth
 
 pytestmark = pytest.mark.integration
