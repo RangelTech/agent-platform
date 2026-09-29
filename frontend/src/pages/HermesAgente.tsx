@@ -1,7 +1,19 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Badge, Button, Card, EmptyState, ErrorText, PageHeader, Table, TableSkeleton, Textarea } from '../components/ui'
+import { SurfaceSwitcher } from '../components/SurfaceSwitcher'
 import { api } from '../lib/api'
+
+// Versão publicada real (GitHub Releases do repo hermes-vscode, workflow
+// release.yml a partir de uma tag vX.Y.Z) -- spec seção 7.3. Atualizar
+// junto com um novo corte de release; não há endpoint pra descobrir isso
+// automaticamente sem dar ao RIA acesso à API do GitHub.
+const HERMES_RELEASE = {
+  version: '0.1.0',
+  vsixUrl: 'https://github.com/LucasRangelSSouza/hermes-vscode/releases/download/v0.1.0/hermes-by-rangel-tech-0.1.0.vsix',
+  sha256Url: 'https://github.com/LucasRangelSSouza/hermes-vscode/releases/download/v0.1.0/hermes-by-rangel-tech-0.1.0.vsix.sha256',
+  notesUrl: 'https://github.com/LucasRangelSSouza/hermes-vscode/releases/tag/v0.1.0',
+}
 
 // Hermes agente (SPEC_HERMES_INTEGRADO_RIA_ATENDIMENTO.md): computadores que
 // pareiam a extensão VS Code "Hermes by Rangel Tech" aparecem aqui como
@@ -64,10 +76,15 @@ function eventText(event: HermesEvent): string {
 }
 
 function DeviceList() {
+  const qc = useQueryClient()
   const { data: devices = [], isLoading, error } = useQuery({
     queryKey: ['hermes', 'devices'],
     queryFn: () => api<HermesDevice[]>('/hermes/devices'),
     refetchInterval: 10_000,
+  })
+  const revoke = useMutation({
+    mutationFn: (deviceId: string) => api(`/hermes/devices/${deviceId}/revoke`, { method: 'POST' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['hermes', 'devices'] }),
   })
 
   if (isLoading) return <TableSkeleton columns={3} />
@@ -81,13 +98,24 @@ function DeviceList() {
     )
   }
   return (
-    <Table headers={['Computador', 'Plataforma', 'Status']}>
+    <Table headers={['Computador', 'Plataforma', 'Status', '']}>
       {devices.map((d) => (
         <tr key={d.id} className="transition hover:bg-[var(--brand-soft)]">
           <td className="px-3 py-2 text-[var(--text)]">{d.name}</td>
           <td className="px-3 py-2 text-[var(--text-muted)]">{d.platform ?? '—'}</td>
           <td className="px-3 py-2">
-            <Badge ok={d.status === 'connected'}>{d.status}</Badge>
+            <Badge ok={d.status === 'connected'}>{d.status === 'revoked' ? 'revogado' : d.status}</Badge>
+          </td>
+          <td className="px-3 py-2 text-right">
+            {d.status !== 'revoked' && (
+              <Button
+                variant="ghost"
+                onClick={() => revoke.mutate(d.id)}
+                disabled={revoke.isPending}
+              >
+                Revogar
+              </Button>
+            )}
           </td>
         </tr>
       ))}
@@ -215,12 +243,44 @@ export default function HermesAgente() {
 
   return (
     <div className="space-y-8">
+      <SurfaceSwitcher current="hermes" />
       <PageHeader
         title="Hermes agente"
         description="Computadores com a extensão Hermes by Rangel Tech pareados nesta empresa, suas sessões, e comandos remotos."
       />
 
-      <Card title="Dispositivos pareados">
+      <Card title="Hermes by Rangel Tech">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-1">
+            <p className="text-sm text-[var(--text)]">
+              Extensão para VS Code, versão <span className="font-semibold">{HERMES_RELEASE.version}</span>.
+            </p>
+            <p className="text-sm text-[var(--text-muted)]">
+              Instale, abra o Hermes na barra lateral do VS Code e entre com seu e-mail e senha desta plataforma — o computador aparece aqui.
+            </p>
+            <p className="text-xs text-[var(--text-faint)]">
+              <a href={HERMES_RELEASE.notesUrl} target="_blank" rel="noreferrer" className="underline hover:text-[var(--text)]">
+                Notas de lançamento
+              </a>
+              {' · '}
+              <a href={HERMES_RELEASE.sha256Url} target="_blank" rel="noreferrer" className="underline hover:text-[var(--text)]">
+                checksum SHA-256
+              </a>
+            </p>
+          </div>
+          <a href={HERMES_RELEASE.vsixUrl} download>
+            <Button>Baixar extensão (.vsix)</Button>
+          </a>
+        </div>
+        <div className="mt-4 space-y-1 border-t border-[var(--border)] pt-4 text-xs text-[var(--text-muted)]">
+          <p><span className="font-semibold text-[var(--text)]">1.</span> Baixe o arquivo .vsix acima.</p>
+          <p><span className="font-semibold text-[var(--text)]">2.</span> No VS Code: Extensões → menu "..." → Instalar a partir de VSIX.</p>
+          <p><span className="font-semibold text-[var(--text)]">3.</span> Abra o ícone do Hermes na barra lateral e entre com seu e-mail e senha desta plataforma.</p>
+          <p><span className="font-semibold text-[var(--text)]">4.</span> O computador e suas sessões aparecem logo abaixo.</p>
+        </div>
+      </Card>
+
+      <Card title="Meus dispositivos">
         <DeviceList />
       </Card>
 

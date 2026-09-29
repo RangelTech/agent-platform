@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { ArtifactCard, downloadArtifact, type ArtifactRef } from '../components/ArtifactCard'
 import { MarkdownMessage } from '../components/MarkdownMessage'
+import { SurfaceSwitcher } from '../components/SurfaceSwitcher'
 import { Button } from '../components/ui'
 import { api } from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -324,6 +325,7 @@ export default function Chat() {
         }`}
       >
         <div className="border-b border-[var(--border)] px-5 py-5">
+          {can('hermes', 'view') && <SurfaceSwitcher current="chat" />}
           <div className="mb-4 flex items-start justify-between gap-3">
             <div>
               <p className="text-[11px] font-medium uppercase tracking-[0.24em] text-[var(--text-faint)]">Workspace de chat</p>
