@@ -9,10 +9,10 @@ import { api } from '../lib/api'
 // junto com um novo corte de release; não há endpoint pra descobrir isso
 // automaticamente sem dar ao RIA acesso à API do GitHub.
 const HERMES_RELEASE = {
-  version: '0.1.1',
-  vsixUrl: 'https://github.com/LucasRangelSSouza/hermes-vscode/releases/download/v0.1.1/hermes-by-rangel-tech-0.1.1.vsix',
-  sha256Url: 'https://github.com/LucasRangelSSouza/hermes-vscode/releases/download/v0.1.1/hermes-by-rangel-tech-0.1.1.vsix.sha256',
-  notesUrl: 'https://github.com/LucasRangelSSouza/hermes-vscode/releases/tag/v0.1.1',
+  version: '0.1.2',
+  vsixUrl: 'https://github.com/LucasRangelSSouza/hermes-vscode/releases/download/v0.1.2/hermes-by-rangel-tech-0.1.2.vsix',
+  sha256Url: 'https://github.com/LucasRangelSSouza/hermes-vscode/releases/download/v0.1.2/hermes-by-rangel-tech-0.1.2.vsix.sha256',
+  notesUrl: 'https://github.com/LucasRangelSSouza/hermes-vscode/releases/tag/v0.1.2',
 }
 
 // Hermes agente (SPEC_HERMES_INTEGRADO_RIA_ATENDIMENTO.md, seção 6.2):
