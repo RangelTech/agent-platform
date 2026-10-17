@@ -1,3 +1,6 @@
+# Dev local: Postgres (pgvector) + backend com o SPA embutido. O kernel e
+# outro repo (kernel-llm / kernel-harness); aponte KERNEL_URL para ele se
+# precisar de chat com modelo. Sem ele, o backend sobe normalmente.
 services:
   postgres:
     image: pgvector/pgvector:pg16
@@ -15,47 +18,21 @@ services:
       timeout: 3s
       retries: 10
 
-  kernel:
-    build:
-      context: .
-      dockerfile: kernel/Dockerfile
-    environment:
-      DATABASE_URL: postgresql://agent:agent@postgres:5432/agent_llm
-      PORT: "8080"
-      STORAGE_BACKEND: local
-      # Dev only: both services share one volume standing in for object storage.
-      ARTIFACTS_LOCAL_DIR: /srv/shared-storage
-      # Dev only: local BigQuery ADC for homologacao (mi-prd-lake read access).
-      GOOGLE_APPLICATION_CREDENTIALS: /secrets/mi-prd-lake-sa.json
-    volumes:
-      - shared_storage:/srv/shared-storage
-      - ../../personal-skills/secrets/mi-prd-lake-sa.json:/secrets/mi-prd-lake-sa.json:ro
-    ports:
-      - "8080:8080"
-    depends_on:
-      postgres:
-        condition: service_healthy
-
   backend:
     build:
       context: .
       dockerfile: backend/Dockerfile
     environment:
       DATABASE_URL: postgresql://agent:agent@postgres:5432/agent_llm
-      KERNEL_URL: http://kernel:8080
+      KERNEL_URL: ${KERNEL_URL:-http://host.docker.internal:8080}
       PORT: "8090"
       STORAGE_BACKEND: local
-      STORAGE_LOCAL_DIR: /srv/shared-storage
-    volumes:
-      - shared_storage:/srv/shared-storage
+      STORAGE_LOCAL_DIR: /tmp/storage
     ports:
       - "8090:8090"
     depends_on:
       postgres:
         condition: service_healthy
-      kernel:
-        condition: service_started
 
 volumes:
   pg_data:
-  shared_storage:

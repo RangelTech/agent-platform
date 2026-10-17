@@ -74,3 +74,14 @@ def test_health_db_reports_failure_instead_of_hanging_or_lying(monkeypatch, capl
     assert r.json() == {"status": "db_unreachable", "service": "backend"}
     assert "HEALTH_DB_FAILED" in caplog.text
     assert "1.2.3.4" in caplog.text  # o diagnóstico completo vai pro log, não pra resposta
+
+
+def test_gcp_desligado_por_padrao():
+    # Sem GCP em runtime: com as variaveis vazias o backend nao precisa de
+    # metadata server, Cloud Tasks nem GCS (imports google.* sao preguicosos).
+    from app.config import Settings
+
+    s = Settings(_env_file=None)
+    assert s.kernel_audience == ""
+    assert s.cloud_tasks_queue == ""
+    assert s.gcs_bucket == ""

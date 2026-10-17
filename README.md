@@ -9,7 +9,7 @@ Monorepo:
 | `kernel/` | teste_ia-kernel | AI kernel: LangGraph runtime, LiteLLM providers, in-process MCP tools, SSE streaming |
 | `backend/` | teste_ia-backend | App backend: auth, CRUD, chat gateway, integrations, serves the frontend build |
 | `frontend/` | (static) | React + Vite + TS + Tailwind SPA, built and served by the backend |
-| `infra/` | — | Deploy scripts / Cloud Run configs (GCP project eduk-prd-lake) |
+| `infra/` | — | Sem deploy aqui: entrega por tag `v*` (workflow Release -> image.tar.gz + release-manifest.json); quem implanta e o vps_rt_infra |
 | `docs/` | — | Architecture docs. Decisions and spec live in the legacy repo `agent-llm/docs/replatform/` |
 
 ## Dev quickstart

@@ -1,0 +1,16 @@
+.git
+.github
+**/node_modules
+frontend/dist
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+.venv
+.env
+*.env
+docs
+scripts
+infra
+HANDOFF.md
+oauth-browser
+backend/tests
