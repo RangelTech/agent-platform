@@ -57,7 +57,7 @@ test('admin creates a template with agents, deploys it and chats through it', as
   await signIn(page, email, 'senha-forte-123')
 
   // Create the template.
-  await gotoSection(page, 'Templates')
+  await gotoSection(page, 'Agentes de IA')
   await page.fill('input[name="tpl-name"]', `Atendimento ${suffix}`)
   await page.fill('input[name="tpl-desc"]', 'Assistente de testes E2E')
   await page.getByRole('button', { name: 'Criar template' }).click()

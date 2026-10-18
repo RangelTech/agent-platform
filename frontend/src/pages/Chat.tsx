@@ -1,17 +1,19 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Mic, Paperclip, Send, Square } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { ArtifactCard, downloadArtifact, type ArtifactRef } from '../components/ArtifactCard'
+import { ApprovalCard, type ApprovalView } from '../components/ApprovalCard'
 import { MarkdownMessage } from '../components/MarkdownMessage'
 import { SurfaceSwitcher } from '../components/SurfaceSwitcher'
 import { Button } from '../components/ui'
 import { api } from '../lib/api'
 import { useAuth } from '../lib/auth'
-import { sendMessage, type ChatMessage, type ChatSummary } from '../lib/chat'
+import { listPendingApprovals, type ApprovalStatus } from '../lib/approvals'
+import { cancelRun, CONFLICT_MESSAGE, sendMessage, stepText, type ChatMessage, type ChatSummary, type StepEvent } from '../lib/chat'
 import { fadeUp } from '../lib/motion'
-import { listTemplates } from '../lib/templates'
+import { KIND_GROUP, listTemplates, normalizeKind, type AgentKind } from '../lib/templates'
 
 function useChats() {
   return useQuery({
@@ -93,6 +95,15 @@ export default function Chat() {
   const [workingAgent, setWorkingAgent] = useState('')
   const [pendingFiles, setPendingFiles] = useState<File[]>([])
   const [recording, setRecording] = useState(false)
+  // Sinais do agente por skills: etapas, confirmações, skills sugeridas.
+  const [steps, setSteps] = useState<StepEvent[]>([])
+  const [approvals, setApprovals] = useState<ApprovalView[]>([])
+  const [proposedSkills, setProposedSkills] = useState<{ id: string; name: string }[]>([])
+  const [usageLine, setUsageLine] = useState('')
+  const [stopped, setStopped] = useState(false)
+  const [conflict, setConflict] = useState(false)
+  const runIdRef = useRef<string | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
   const bottomRef = useRef<HTMLDivElement>(null)
   const chatIdRef = useRef<string | null>(null)
@@ -138,6 +149,15 @@ export default function Chat() {
     }
     api<ChatMessage[]>(`/chats/${activeChat}/messages`).then(setMessages)
     api<ArtifactRef[]>(`/chats/${activeChat}/artifacts`).then(setArtifacts).catch(() => setArtifacts([]))
+    listPendingApprovals()
+      .then((list) =>
+        setApprovals(
+          list
+            .filter((p) => p.chat_id === activeChat)
+            .map((p) => ({ approval_id: p.approval_id, summary: p.summary, risk: p.risk, expires_at: p.expires_at })),
+        ),
+      )
+      .catch(() => undefined)
     const chat = chats.find((c) => c.id === activeChat)
     if (chat) setTemplateId(chat.template_id ?? '')
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -145,7 +165,7 @@ export default function Chat() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, streaming, artifacts, workingAgent])
+  }, [messages, streaming, artifacts, workingAgent, steps, approvals])
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
@@ -154,6 +174,13 @@ export default function Chat() {
 
     setDraft('')
     setError('')
+    setConflict(false)
+    setStopped(false)
+    setSteps([])
+    setUsageLine('')
+    runIdRef.current = null
+    const controller = new AbortController()
+    abortRef.current = controller
     setBusy(true)
     setMessages((m) => [
       ...m,
@@ -169,9 +196,38 @@ export default function Chat() {
           chatIdRef.current = id
           if (!activeChat) setActiveChat(id)
         },
+        onRunId: (rid) => {
+          runIdRef.current = rid
+        },
         onToken: (t) => {
           acc += t
           setStreaming(acc)
+        },
+        onStep: (step) =>
+          setSteps((list) => {
+            const idx = list.findIndex((s) => s.kind === step.kind && s.label === step.label)
+            if (idx < 0) return [...list, step]
+            const next = [...list]
+            next[idx] = step
+            return next
+          }),
+        onApprovalRequired: (ap) =>
+          setApprovals((list) =>
+            list.some((x) => x.approval_id === ap.approval_id)
+              ? list
+              : [...list, { approval_id: ap.approval_id, summary: ap.summary, risk: ap.risk, expires_at: ap.expires_at }],
+          ),
+        onSkillProposed: (s) => setProposedSkills((list) => [...list, { id: s.user_skill_id, name: s.name }]),
+        onUsage: (u) => setUsageLine(`Uso: ${u.input_tokens} entrada · ${u.output_tokens} saída`),
+        onAbort: () => {
+          setStreaming('')
+          setWorkingAgent('')
+          setSteps([])
+          setStopped(true)
+          const target = chatIdRef.current
+          if (target) {
+            api<ChatMessage[]>(`/chats/${target}/messages`).then(setMessages).catch(() => undefined)
+          }
         },
         onAgent: (name, status) => {
           setWorkingAgent(status === 'start' ? name : '')
@@ -182,6 +238,7 @@ export default function Chat() {
         onDone: (full) => {
           setStreaming('')
           setWorkingAgent('')
+          setSteps([])
           setMessages((m) => [
             ...m,
             { id: `done-${Date.now()}`, role: 'assistant', content: full, created_at: '' },
@@ -191,15 +248,23 @@ export default function Chat() {
             api<ChatMessage[]>(`/chats/${target}/messages`).then(setMessages).catch(() => undefined)
           }
         },
-        onError: (detail) => {
+        onError: (detail, status) => {
           setStreaming('')
           setWorkingAgent('')
-          setError(detail)
+          setSteps([])
+          if (status === 409) {
+            setConflict(true)
+            setError(detail || CONFLICT_MESSAGE)
+          } else {
+            setError(detail)
+          }
         },
       },
       templateId || null,
       pendingFiles,
+      controller.signal,
     )
+    abortRef.current = null
     setPendingFiles([])
     setBusy(false)
     qc.invalidateQueries({ queryKey: ['chats'] })
@@ -247,6 +312,34 @@ export default function Chat() {
       setHighlightedArtifact((current) => (current === artifact.artifact_id ? null : current))
     }, 1800)
   }
+
+  function stopRun() {
+    const rid = runIdRef.current
+    abortRef.current?.abort()
+    if (rid) cancelRun(rid).catch(() => undefined)
+  }
+
+  function newConversation() {
+    setActiveChat(null)
+    setMessages([])
+    setArtifacts([])
+    setStreaming('')
+    setError('')
+    setConflict(false)
+    setStopped(false)
+    setSteps([])
+    setApprovals([])
+  }
+
+  const resolveApproval = useCallback((id: string, status: ApprovalStatus) => {
+    setApprovals((list) => list.map((x) => (x.approval_id === id ? { ...x, status } : x)))
+  }, [])
+
+  // Seletor agrupado por tipo; agentes sem versão em produção ficam de fora.
+  const pickable = templates.filter((t) => t.active_version_id)
+  const groups = (['structured', 'skills'] as AgentKind[])
+    .map((kind) => ({ kind, items: pickable.filter((t) => normalizeKind(t.agent_kind) === kind) }))
+    .filter((g) => g.items.length > 0)
 
   const activeTemplate = templates.find((t) => t.id === templateId)
   const assistantMessages = messages.filter((m) => m.role === 'assistant').length
@@ -347,13 +440,8 @@ export default function Chat() {
           <Button
             className="w-full rounded-2xl border-[var(--border)] bg-[var(--surface-soft)] py-3 text-sm text-[var(--text)] shadow-[0_18px_48px_rgba(15,23,42,0.16)] hover:bg-[var(--surface-elevated)]"
             variant="ghost"
-            onClick={() => {
-              setActiveChat(null)
-              setMessages([])
-              setArtifacts([])
-              setStreaming('')
-              setError('')
-            }}
+            data-testid="nova-conversa"
+            onClick={newConversation}
           >
             + Nova conversa
           </Button>
@@ -392,8 +480,8 @@ export default function Chat() {
                       {c.channel === 'whatsapp'
                         ? `WhatsApp · ${c.external_contact ?? 'contato'}`
                         : c.template_id
-                          ? 'Template dedicado'
-                          : 'Template padrão'}
+                          ? 'Agente dedicado'
+                          : 'Agente padrão'}
                     </p>
                   </button>
                 )
@@ -546,9 +634,72 @@ export default function Chat() {
                   </motion.article>
                 )}
 
+                {steps.length > 0 && busy && (
+                  <ul data-testid="chat-steps" aria-live="polite" className="flex flex-wrap gap-2">
+                    {steps.map((s, i) => (
+                      <li
+                        key={`${s.kind}:${s.label}:${i}`}
+                        data-testid="chat-step"
+                        data-kind={s.kind}
+                        data-status={s.status}
+                        className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${
+                          s.status === 'error'
+                            ? 'border-[var(--danger)]/40 bg-[var(--danger-soft)] text-[var(--danger)]'
+                            : 'border-[var(--border)] bg-[var(--surface-soft)] text-[var(--text-muted)]'
+                        }`}
+                      >
+                        <span
+                          aria-hidden="true"
+                          className={`h-1.5 w-1.5 rounded-full ${
+                            s.status === 'start' ? 'animate-pulse bg-[var(--info)]' : s.status === 'done' ? 'bg-[var(--success)]' : 'bg-[var(--danger)]'
+                          }`}
+                        />
+                        {stepText(s)}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                {approvals.map((ap) => (
+                  <ApprovalCard key={ap.approval_id} approval={ap} onResolved={resolveApproval} />
+                ))}
+
+                {proposedSkills.map((s) => (
+                  <div
+                    key={s.id}
+                    data-testid="skill-proposed-notice"
+                    className="max-w-3xl rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-3 text-sm text-[var(--text-muted)]"
+                  >
+                    O assistente sugeriu a skill “{s.name}”.{' '}
+                    {can('skills', 'view') ? (
+                      <button
+                        type="button"
+                        data-testid="skill-proposed-link"
+                        className="text-[var(--brand)] underline"
+                        onClick={() => navigate('/skills')}
+                      >
+                        Revisar em Skills
+                      </button>
+                    ) : (
+                      'Ela aguarda a sua revisão.'
+                    )}
+                  </div>
+                ))}
+
+                {stopped && (
+                  <p data-testid="chat-stopped-note" className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-4 py-3 text-sm text-[var(--text-muted)]">
+                    Execução interrompida por você.
+                  </p>
+                )}
+
                 {error && (
                   <p role="alert" className="rounded-2xl border border-[var(--danger)]/20 bg-[var(--danger-soft)] px-4 py-3 text-sm text-[var(--danger)]">
                     {error}
+                    {conflict && (
+                      <Button type="button" variant="ghost" className="ml-3" data-testid="chat-conflict-new" onClick={newConversation}>
+                        Abrir nova conversa
+                      </Button>
+                    )}
                   </p>
                 )}
                 <div ref={bottomRef} />
@@ -625,16 +776,20 @@ export default function Chat() {
                         {recording ? <Square size={18} aria-hidden="true" /> : <Mic size={20} aria-hidden="true" />}
                       </Button>
                       <label className="min-w-0">
-                        <span className="sr-only">Template ativo</span>
+                        <span className="sr-only">Agente</span>
                         <select
                           name="template-picker"
                           value={templateId}
                           onChange={(e) => setTemplateId(e.target.value)}
                           className="max-w-44 rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text)] outline-none transition focus:border-[var(--brand)] focus:bg-[var(--surface-elevated)]"
                         >
-                          <option value="">Template: Padrão</option>
-                          {templates.filter((t) => t.active_version_id).map((t) => (
-                            <option key={t.id} value={t.id}>{t.name}</option>
+                          <option value="">Agente: Padrão</option>
+                          {groups.map((g) => (
+                            <optgroup key={g.kind} label={KIND_GROUP[g.kind]}>
+                              {g.items.map((t) => (
+                                <option key={t.id} value={t.id}>{t.name}</option>
+                              ))}
+                            </optgroup>
                           ))}
                         </select>
                       </label>
@@ -643,8 +798,20 @@ export default function Chat() {
                           ? workingAgent ? `${workingAgent} trabalhando` : 'Pensando...'
                           : draft.trim().length > 0
                             ? `${draft.trim().length} caracteres`
-                            : 'Ocioso'}
+                            : usageLine || 'Ocioso'}
                       </span>
+                      {busy && (
+                        <Button
+                          type="button"
+                          variant="danger"
+                          aria-label="Parar execução"
+                          data-testid="chat-stop"
+                          className="h-10 rounded-2xl px-3"
+                          onClick={stopRun}
+                        >
+                          <Square size={16} aria-hidden="true" /> Parar
+                        </Button>
+                      )}
                       <Button
                         type="submit"
                         disabled={readOnly || busy || (!draft.trim() && pendingFiles.length === 0)}
@@ -765,10 +932,10 @@ export default function Chat() {
           </div>
 
           <div className="rounded-[24px] border border-[var(--border)] bg-[var(--surface)] p-4">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Template ativo</p>
+            <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Agente ativo</p>
             <p className="mt-3 text-base font-semibold text-[var(--text)]">{activeTemplate?.name || 'Padrão'}</p>
             <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">
-              {activeTemplate?.description || 'Use o seletor acima para aplicar um template com ferramentas e guardrails específicos.'}
+              {activeTemplate?.description || 'Use o seletor acima para escolher um agente com ferramentas e guardrails específicos.'}
             </p>
           </div>
 
