@@ -201,9 +201,36 @@ def normalize_manifest(raw: object) -> dict:
     if isinstance(model, dict) and isinstance(model.get("alias"), str) and model["alias"].strip():
         base["model"] = {"alias": model["alias"].strip()}
     limits = raw.get("limits")
-    if isinstance(limits, dict) and isinstance(limits.get("max_turns"), int):
-        base["limits"] = {"max_turns": limits["max_turns"]}
+    if isinstance(limits, dict):
+        out: dict = {}
+        if isinstance(limits.get("max_turns"), int):
+            out["max_turns"] = limits["max_turns"]
+        tables = _clean_list(limits.get("write_tables"), TABLE_RE)
+        if tables:
+            out["write_tables"] = tables
+        hosts = _clean_list(limits.get("http_allowed_hosts"), HOST_RE, lower=True)
+        if hosts:
+            out["http_allowed_hosts"] = hosts
+        base["limits"] = out
     return base
+
+
+TABLE_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,62}(\.[A-Za-z_][A-Za-z0-9_]{0,62})?$")
+HOST_RE = re.compile(r"^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$")
+MAX_LIST = 50
+
+
+def _clean_list(value: object, pattern: re.Pattern, lower: bool = False) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    out: list[str] = []
+    for item in value:
+        if not isinstance(item, str):
+            continue
+        item = item.strip().lower() if lower else item.strip()
+        if pattern.match(item) and item not in out:
+            out.append(item)
+    return out[:MAX_LIST]
 
 
 def validate_manifest(raw: object, tool_ids: set[str]) -> list[Problem]:
@@ -232,8 +259,27 @@ def validate_manifest(raw: object, tool_ids: set[str]) -> list[Problem]:
     ):
         problems.append(Problem("manifest", "bad_manifest", "Configuração de modelo inválida"))
     limits = raw.get("limits")
-    if limits is not None:
-        turns = limits.get("max_turns") if isinstance(limits, dict) else "x"
+    if limits is not None and not isinstance(limits, dict):
+        problems.append(Problem("manifest", "bad_manifest", "Os limites são inválidos"))
+    elif isinstance(limits, dict):
+        for key, pattern, label, lower in (
+            ("write_tables", TABLE_RE, "tabela", False),
+            ("http_allowed_hosts", HOST_RE, "endereço", True),
+        ):
+            vals = limits.get(key)
+            if vals is None:
+                continue
+            if not isinstance(vals, list) or len(vals) > MAX_LIST:
+                problems.append(Problem("manifest", "bad_manifest", f"Lista de {label}s inválida"))
+                continue
+            for v in vals:
+                text = v.strip().lower() if (lower and isinstance(v, str)) else v
+                if not (isinstance(text, str) and pattern.match(text.strip())):
+                    problems.append(
+                        Problem("manifest", "bad_manifest", f"Valor inválido em {label}s: {v!r}")
+                    )
+    if isinstance(limits, dict):
+        turns = limits.get("max_turns")
         if turns is not None and not (
             isinstance(turns, int) and not isinstance(turns, bool) and 1 <= turns <= 200
         ):

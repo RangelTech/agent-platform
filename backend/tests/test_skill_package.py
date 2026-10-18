@@ -193,3 +193,28 @@ def test_frontmatter_roundtrip():
     data["description"] = "Nova"
     again, _body, err = pkg.split_frontmatter(pkg.render_frontmatter(data, body))
     assert err is None and again["description"] == "Nova"
+
+
+def test_manifest_limits_write_tables_and_hosts_are_kept_and_cleaned():
+    raw = {
+        "tools": ["rt_sql_write", "rt_http"],
+        "limits": {
+            "max_turns": 30,
+            "write_tables": ["vendas", "public.pedidos", "vendas", "1ruim", "x; drop"],
+            "http_allowed_hosts": ["API.Exemplo.com", "api.exemplo.com", "ip-literal", ""],
+        },
+    }
+    got = pkg.normalize_manifest(raw)["limits"]
+    assert got["max_turns"] == 30
+    assert got["write_tables"] == ["vendas", "public.pedidos"]
+    assert got["http_allowed_hosts"] == ["api.exemplo.com"]
+
+
+def test_manifest_limits_validation_flags_bad_entries():
+    ok = {"limits": {"write_tables": ["vendas"], "http_allowed_hosts": ["api.exemplo.com"]}}
+    assert not pkg.has_errors(pkg.validate_package(_files(), ok, TOOLS))
+    bad = {"limits": {"write_tables": ["vendas; drop table x"], "http_allowed_hosts": "nao-lista"}}
+    problems = pkg.validate_package(_files(), bad, TOOLS)
+    assert "bad_manifest" in codes(problems)
+    assert pkg.has_errors(problems)
+    assert pkg.has_errors(pkg.validate_package(_files(), {"limits": 7}, TOOLS))

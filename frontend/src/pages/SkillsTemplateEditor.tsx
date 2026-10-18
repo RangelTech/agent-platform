@@ -543,7 +543,7 @@ export default function SkillsTemplateEditor() {
           </span>
         )}
         {!readOnly && (
-          <label className="ml-auto flex min-w-0 flex-1 items-center gap-2 sm:max-w-sm sm:flex-none">
+          <label className="ml-auto flex min-w-0 flex-1 items-center gap-2 sm:w-80 sm:flex-none">
             <span className="sr-only">Notas da versão</span>
             <input
               name="version-notes"
@@ -816,10 +816,42 @@ export default function SkillsTemplateEditor() {
                   disabled={readOnly}
                   value={manifest.limits.max_turns ?? ''}
                   onChange={(e) =>
-                    setManifest((m) => ({
-                      ...m,
-                      limits: e.target.value ? { ...m.limits, max_turns: Number(e.target.value) } : {},
-                    }))
+                    setManifest((m) => {
+                      const { max_turns: _drop, ...rest } = m.limits
+                      return { ...m, limits: e.target.value ? { ...rest, max_turns: Number(e.target.value) } : rest }
+                    })
+                  }
+                />
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Input
+                  label="Tabelas que o agente pode alterar"
+                  name="manifest-write-tables"
+                  data-testid="manifest-write-tables"
+                  disabled={readOnly}
+                  value={(manifest.limits.write_tables ?? []).join(', ')}
+                  placeholder="ex.: vendas, pedidos (vazio = nenhuma)"
+                  onChange={(e) =>
+                    setManifest((m) => {
+                      const list = e.target.value.split(/[,\s]+/).filter(Boolean)
+                      const { write_tables: _drop, ...rest } = m.limits
+                      return { ...m, limits: list.length ? { ...rest, write_tables: list } : rest }
+                    })
+                  }
+                />
+                <Input
+                  label="Endereços externos permitidos"
+                  name="manifest-http-hosts"
+                  data-testid="manifest-http-hosts"
+                  disabled={readOnly}
+                  value={(manifest.limits.http_allowed_hosts ?? []).join(', ')}
+                  placeholder="ex.: api.minhaempresa.com.br"
+                  onChange={(e) =>
+                    setManifest((m) => {
+                      const list = e.target.value.split(/[,\s]+/).filter(Boolean)
+                      const { http_allowed_hosts: _drop, ...rest } = m.limits
+                      return { ...m, limits: list.length ? { ...rest, http_allowed_hosts: list } : rest }
+                    })
                   }
                 />
               </div>
