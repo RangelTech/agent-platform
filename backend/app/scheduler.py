@@ -260,9 +260,15 @@ async def tick() -> int:
 
 
 async def loop() -> None:
+    n = 0
     while True:
         try:
             await tick()
+            n += 1
+            if n % 20 == 1:  # a cada ~10 min
+                swept = await asyncio.to_thread(chat_runs.sweep_stale)
+                if swept:
+                    logger.info("runs presas encerradas: %s", swept)
         except Exception:  # noqa: BLE001
             logger.exception("tick do agendador falhou")
         await asyncio.sleep(TICK_SECONDS)
