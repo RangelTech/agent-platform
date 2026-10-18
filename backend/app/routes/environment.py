@@ -18,6 +18,7 @@ from psycopg.errors import UniqueViolation
 from psycopg.types.json import Json
 from pydantic import BaseModel, Field
 
+from app import runtime_client as rt
 from app.auth import require
 from app.config import settings
 from app.db import get_connection
@@ -52,27 +53,35 @@ def _tenant(user: dict):
 # --------------------------------------------------- gerenciador (opcional) ---
 
 
-def _rm_call(method: str, path: str, tenant_id, body: dict | None = None) -> dict | None:
+def _rm_call(method: str, path: str, tenant_id, body: dict | None = None,
+             *, admin: bool = False) -> dict | None:
     """None = modo simulado. Levanta 502 se o gerenciador falhar."""
-    if not settings.runtime_manager_url:
+    if not rt.configured():
         return None
-    headers = (
-        {"Authorization": f"Bearer {settings.runtime_manager_token}"}
-        if settings.runtime_manager_token
-        else {}
-    )
-    url = f"{settings.runtime_manager_url.rstrip('/')}/v1/tenants/{tenant_id}/environment{path}"
+    rmt = rt.rm_tenant(tenant_id)
     try:
-        response = httpx.request(method, url, json=body, headers=headers, timeout=20.0)
+        return rt.call(method, f"/v1/tenants/{rmt}{path}", scope="*" if admin else rmt, body=body,
+                       timeout=180.0)
+    except rt.RMError as exc:
+        if exc.status == 404 and not admin:
+            raise
+        logger.warning("environment manager refused: %s", exc.code)
+        raise HTTPException(status_code=502, detail="O ambiente não aceitou a operação") from exc
     except httpx.HTTPError as exc:
         logger.warning("environment manager unreachable: %s", exc.__class__.__name__)
         raise HTTPException(status_code=502, detail="Ambiente indisponível no momento") from exc
-    if response.status_code >= 400:
-        raise HTTPException(status_code=502, detail="O ambiente não aceitou a operação")
+
+
+def _rm_view(tenant_id) -> dict | None:
+    """Estado do ambiente no gerenciador; cria no primeiro uso. None = modo simulado."""
+    if not rt.configured():
+        return None
     try:
-        return response.json()
-    except ValueError:
-        return {}
+        return _rm_call("GET", "", tenant_id)
+    except rt.RMError:
+        _rm_call("POST", "", tenant_id, {"plan": "standard", "runtime": False, "workspace": True},
+                 admin=True)
+        return _rm_call("GET", "", tenant_id)
 
 
 def _event(conn, tenant_id, kind: str, user: dict, detail: dict | None = None) -> None:
@@ -149,27 +158,53 @@ def _snapshot(conn, tenant_id) -> dict:
     }
 
 
+_OBSERVED_STATE = {"running": "running", "exited": "stopped", "created": "stopped",
+                   "absent": "stopped", "paused": "degraded", "restarting": "degraded"}
+
+
 def _mirror(conn, tenant_id, remote: dict) -> None:
-    """Grava no Postgres o estado informado pelo gerenciador."""
+    """Grava no Postgres o estado informado pelo gerenciador (visão do tenant)."""
     if not isinstance(remote, dict):
         return
-    state = remote.get("state")
-    if state in ("stopped", "starting", "running", "degraded", "suspended"):
+    obs = ((remote.get("observed") or {}).get("workspace") or {}).get("state")
+    state = "suspended" if remote.get("suspended") else _OBSERVED_STATE.get(obs)
+    if state:
         conn.execute(
             """UPDATE tenant_environment SET state = %s, updated_at = now()
                 WHERE tenant_id = %s""",
             (state, tenant_id),
-        )
-    if isinstance(remote.get("usage"), dict):
-        conn.execute(
-            "UPDATE tenant_environment SET usage = %s WHERE tenant_id = %s",
-            (Json(remote["usage"]), tenant_id),
         )
     if remote.get("plan"):
         conn.execute(
             "UPDATE tenant_environment SET plan = %s WHERE tenant_id = %s",
             (str(remote["plan"]), tenant_id),
         )
+    usage = remote.get("usage")
+    if isinstance(usage, list) and usage and isinstance(usage[0], dict):
+        u = usage[0]
+        conn.execute(
+            "UPDATE tenant_environment SET usage = %s WHERE tenant_id = %s",
+            (Json({"cpu_pct": u.get("cpu_pct", 0), "ram_mb": u.get("ram_mb", 0),
+                   "disk_gb": u.get("disk_gb", 0)}), tenant_id),
+        )
+    # apps publicados (o agente publica direto no gerenciador): espelha a lista
+    rmt = rt.rm_tenant(tenant_id)
+    names = []
+    for e in remote.get("exposures") or []:
+        name = str(e.get("app"))
+        names.append(name)
+        conn.execute(
+            """INSERT INTO tenant_exposures (tenant_id, name, port, url, status)
+               VALUES (%s, %s, %s, %s, 'online')
+               ON CONFLICT (tenant_id, name)
+               DO UPDATE SET port = EXCLUDED.port, url = EXCLUDED.url""",
+            (tenant_id, name, int(e.get("port") or 0),
+             f"https://{name}-{rmt}.{settings.apps_base_domain}"),
+        )
+    conn.execute(
+        "DELETE FROM tenant_exposures WHERE tenant_id = %s AND NOT (name = ANY(%s))",
+        (tenant_id, names),
+    )
 
 
 # --------------------------------------------------------------- rotas ---
@@ -190,10 +225,10 @@ def get_environment(user: dict = Depends(require("environment", "view"))):
     tenant_id = user["tenant_id"]
     with get_connection() as conn:
         snapshot = _snapshot(conn, tenant_id)
-        if snapshot["enabled"] and settings.runtime_manager_url:
+        if snapshot["enabled"] and rt.configured():
             try:
-                remote = _rm_call("GET", "", tenant_id)
-            except HTTPException:
+                remote = _rm_view(tenant_id)
+            except (HTTPException, httpx.HTTPError, rt.RMError):
                 snapshot["state"] = "degraded"
                 return snapshot
             _mirror(conn, tenant_id, remote or {})
@@ -208,9 +243,11 @@ def _action(user: dict, action: str, new_state: str | None):
         env = _ensure_row(conn, tenant_id)
         if env["state"] == "suspended":
             raise HTTPException(status_code=409, detail="O ambiente está suspenso")
-        remote = _rm_call("POST", f"/{action}", tenant_id)
-        if remote is not None:
-            _mirror(conn, tenant_id, remote)
+        if rt.configured():
+            _rm_view(tenant_id)  # garante que o ambiente existe
+            path = "/backup" if action == "backup" else f"/workspace:{action}"
+            _rm_call("POST", path, tenant_id, {})
+            _mirror(conn, tenant_id, _rm_call("GET", "", tenant_id) or {})
         elif new_state:
             conn.execute(
                 "UPDATE tenant_environment SET state = %s, updated_at = now() WHERE tenant_id = %s",
@@ -259,9 +296,6 @@ def add_domain(payload: DomainIn, user: dict = Depends(require("environment", "m
         ).fetchone()
         if app is None:
             raise HTTPException(status_code=404, detail="Aplicativo não encontrado")
-        tenant_key = conn.execute(
-            "SELECT tenant_key FROM tenants WHERE id = %s", (tenant_id,)
-        ).fetchone()["tenant_key"]
         txt_value = "rt-verify=" + pysecrets.token_hex(16)
         try:
             row = conn.execute(
@@ -271,17 +305,20 @@ def add_domain(payload: DomainIn, user: dict = Depends(require("environment", "m
             ).fetchone()
         except UniqueViolation as exc:
             raise HTTPException(status_code=409, detail="Este domínio já está em uso") from exc
-        _rm_call(
-            "POST",
-            "/domains",
-            tenant_id,
-            {"host": host, "app": app["name"], "txt_value": txt_value},
-        )
+        remote_dom = _rm_call("POST", "/domains", tenant_id, {"host": host, "app": app["name"]})
+        if remote_dom:
+            txt_value = remote_dom.get("txt_value") or txt_value
+            conn.execute(
+                "UPDATE tenant_domains SET txt_name = %s, txt_value = %s WHERE id = %s",
+                (remote_dom.get("txt_name") or row["txt_name"], txt_value, row["id"]),
+            )
+            row = {**row, "txt_name": remote_dom.get("txt_name") or row["txt_name"],
+                   "txt_value": txt_value}
         _event(conn, tenant_id, "domain_add", user, {"host": host})
     return {
         **_domain_view(row),
         "cname_name": host,
-        "cname_value": f"{app['name']}-{tenant_key}.{settings.apps_base_domain}",
+        "cname_value": f"{app['name']}-{rt.rm_tenant(tenant_id)}.{settings.apps_base_domain}",
     }
 
 
@@ -297,7 +334,6 @@ def remove_domain(domain_id: str, user: dict = Depends(require("environment", "m
         ).fetchone()
         if row is None:
             raise HTTPException(status_code=404, detail="Domínio não encontrado")
-        _rm_call("DELETE", f"/domains/{row['host']}", tenant_id)
         _event(conn, tenant_id, "domain_remove", user, {"host": row["host"]})
     return {"status": "ok"}
 
@@ -319,6 +355,6 @@ def unpublish_app(app_id: str, user: dict = Depends(require("environment", "mana
             (row["id"],),
         )
         conn.execute("DELETE FROM tenant_exposures WHERE id = %s", (row["id"],))
-        _rm_call("DELETE", f"/apps/{row['name']}", tenant_id)
+        _rm_call("DELETE", f"/exposures/{row['name']}", tenant_id)
         _event(conn, tenant_id, "app_unpublish", user, {"app": row["name"]})
     return {"status": "ok"}
