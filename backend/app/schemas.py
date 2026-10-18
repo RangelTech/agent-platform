@@ -26,6 +26,8 @@ class TenantIn(BaseModel):
 class TenantUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     is_active: bool | None = None
+    # Liga/desliga os agentes por skills da empresa (só o master altera).
+    harness_enabled: bool | None = None
 
 
 class ProfileIn(BaseModel):

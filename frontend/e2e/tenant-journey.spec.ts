@@ -67,7 +67,7 @@ test('full company-admin journey: keys, Excel catalog, seller template, chat sal
   )
 
   // 3. Builds the seller template: one specialist with RAG over the sheet.
-  await gotoSection(page, 'Templates')
+  await gotoSection(page, 'Agentes de IA')
   await page.fill('input[name="tpl-name"]', 'Vendedor')
   await page.fill('input[name="tpl-desc"]', 'Vende os produtos do catálogo')
   await page.getByRole('button', { name: 'Criar template' }).click()

@@ -3,8 +3,10 @@ import { useState, type FormEvent } from 'react'
 import { Badge, Button, Card, EmptyState, ErrorText, Input, PageHeader, Table, TableSkeleton } from '../components/ui'
 import { api, listProfiles, type Profile } from '../lib/api'
 
-const RESOURCES: { key: string; label: string }[] = [
-  { key: 'templates', label: 'Templates' },
+const RESOURCES: { key: string; label: string; actions?: string[] }[] = [
+  { key: 'templates', label: 'Agentes de IA' },
+  { key: 'skills', label: 'Skills' },
+  { key: 'environment', label: 'Ambiente do agente', actions: ['view', 'manage'] },
   { key: 'ai_services', label: 'Serviços de IA' },
   { key: 'datasources', label: 'Fontes de dados' },
   { key: 'files', label: 'Arquivos' },
@@ -15,11 +17,13 @@ const RESOURCES: { key: string; label: string }[] = [
   { key: 'chats', label: 'Chat' },
   { key: 'usage', label: 'Consumo' },
 ]
+const DEFAULT_ACTIONS = ['view', 'create', 'edit', 'delete']
 const ACTIONS: { key: string; label: string }[] = [
   { key: 'view', label: 'Ver' },
   { key: 'create', label: 'Criar' },
   { key: 'edit', label: 'Editar' },
   { key: 'delete', label: 'Excluir' },
+  { key: 'manage', label: 'Gerenciar' },
 ]
 
 function PermissionGrid({
@@ -55,13 +59,13 @@ function PermissionGrid({
               <td className="px-2 py-1.5 text-[var(--text)]">{r.label}</td>
               {ACTIONS.map((a) => (
                 <td key={a.key} className="px-2 py-1.5 text-center">
-                  <input
+                  {(r.actions ?? DEFAULT_ACTIONS).includes(a.key) && <input
                     type="checkbox"
                     data-testid={`perm-${r.key}-${a.key}`}
                     checked={(permissions[r.key] ?? []).includes(a.key)}
                     onChange={() => toggle(r.key, a.key)}
                     className="h-4 w-4 accent-[var(--brand)]"
-                  />
+                  />}
                 </td>
               ))}
             </tr>

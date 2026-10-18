@@ -106,14 +106,16 @@ def _log_message(integration_id, session_id: str, direction: str, content: str) 
         )
 
 
-async def _kernel_headers() -> dict:
-    if settings.kernel_audience:
-        from app.gcp_auth import id_token_for
+async def _kernel_headers(kernel_payload: dict | None = None) -> dict:
+    from app.kernel_router import kernel_headers, target_for_payload
 
-        return {"Authorization": f"Bearer {await id_token_for(settings.kernel_audience)}"}
-    if settings.kernel_internal_token:
-        return {"Authorization": f"Bearer {settings.kernel_internal_token}"}
-    return {}
+    return await kernel_headers(target_for_payload(kernel_payload or {}))
+
+
+def _runs_url(kernel_payload: dict) -> str:
+    from app.kernel_router import target_for_payload
+
+    return target_for_payload(kernel_payload).runs_url
 
 
 def _store_public_attachments(
@@ -180,6 +182,31 @@ def _build_kernel_payload(integration: dict, payload: PublicMessageIn) -> dict:
             raise HTTPException(status_code=422, detail="message é obrigatório")
 
     thread_id = f"ext-{integration['id']}-{payload.external_session_id}"
+    if template_id:
+        from app.kernel_router import ensure_skills_enabled, target_for_kind, template_row
+
+        with get_connection() as conn:
+            row = template_row(conn, integration["tenant_id"], template_id)
+            if row is not None and row["agent_kind"] == "skills":
+                ensure_skills_enabled(conn, integration["tenant_id"])
+                target_for_kind("skills")
+                from app.harness_runtime import prepare_harness_run
+
+                return prepare_harness_run(
+                    tenant_id=integration["tenant_id"],
+                    template_id=template_id,
+                    chat_id=thread_id,
+                    message=message,
+                    user=None,
+                    attachments=stored_attachments,
+                    transcription=transcription,
+                    channel="api",
+                    actor={
+                        "type": "external",
+                        "name": payload.external_session_id,
+                        "role": "external",
+                    },
+                )
     run = build_run_payload(integration["tenant_id"], template_id, thread_id)
     kernel_payload = {"thread_id": thread_id, "message": message, **run}
     if stored_attachments:
@@ -198,14 +225,27 @@ async def _run_to_completion(kernel_payload: dict) -> tuple[str, list[dict]]:
     machine-to-machine API, while they worked fine on the web chat (which
     talks to the kernel's own SSE stream directly, not through here).
     """
+    try:
+        return await _stream_to_completion(kernel_payload)
+    finally:
+        if "contract_version" in kernel_payload:
+            from app import chat_runs
+
+            chat_runs.finish_run(kernel_payload["run_id"], "done")
+
+
+async def _stream_to_completion(kernel_payload: dict) -> tuple[str, list[dict]]:
     reply = ""
     artifacts: list[dict] = []
-    async with httpx.AsyncClient(timeout=httpx.Timeout(310.0)) as client:
+    timeout = 310.0 if "contract_version" not in kernel_payload else float(
+        settings.harness_run_timeout_seconds
+    )
+    async with httpx.AsyncClient(timeout=httpx.Timeout(timeout)) as client:
         async with client.stream(
             "POST",
-            f"{settings.kernel_url}/v1/runs",
+            _runs_url(kernel_payload),
             json=kernel_payload,
-            headers=await _kernel_headers(),
+            headers=await _kernel_headers(kernel_payload),
         ) as response:
             if response.status_code != 200:
                 detail = (await response.aread()).decode()[:300]
@@ -288,9 +328,9 @@ async def public_message(request: Request, payload: PublicMessageIn, background:
             async with httpx.AsyncClient(timeout=httpx.Timeout(310.0)) as client:
                 async with client.stream(
                     "POST",
-                    f"{settings.kernel_url}/v1/runs",
+                    _runs_url(kernel_payload),
                     json=kernel_payload,
-                    headers=await _kernel_headers(),
+                    headers=await _kernel_headers(kernel_payload),
                 ) as response:
                     async for line in response.aiter_lines():
                         yield line + "\n"

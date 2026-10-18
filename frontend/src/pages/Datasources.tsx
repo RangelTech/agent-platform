@@ -188,7 +188,7 @@ export default function Datasources() {
             </Select>
             {isSql && (
               <>
-                <Input label="Host" hint="Hostname acessível pelo backend/kernel." required value={form.host} onChange={(e) => setForm({ ...form, host: e.target.value })} />
+                <Input label="Host" hint="Hostname acessível pelo servidor da plataforma." required value={form.host} onChange={(e) => setForm({ ...form, host: e.target.value })} />
                 <Input label="Porta" hint="Use a porta padrão ou a exposta pelo ambiente." type="number" placeholder={String(DEFAULT_PORTS[form.kind] ?? 5432)} value={form.port} onChange={(e) => setForm({ ...form, port: e.target.value })} />
                 <Input label="Database" hint="Banco ou schema primário da conexão." required value={form.database} onChange={(e) => setForm({ ...form, database: e.target.value })} />
                 <Input label="Usuário" hint="Usuário técnico com o menor privilégio necessário." required value={form.user} onChange={(e) => setForm({ ...form, user: e.target.value })} />

@@ -66,6 +66,7 @@ def _serialize(row: dict) -> dict:
         "branding_sync_status": row.get("branding_sync_status", "pending"),
         "has_logo": bool(row.get("brand_logo_url")),
         "is_active": row["is_active"],
+        "harness_enabled": bool(row.get("harness_enabled", False)),
         "router_provisioning_status": row.get("router_provisioning_status", "pending"),
         "router_provisioning_error": row.get("router_provisioning_error"),
     }
@@ -428,6 +429,9 @@ def update_tenant(tenant_id: str, payload: TenantUpdate, user: dict = Depends(_m
     if payload.is_active is not None:
         fields.append("is_active = %s")
         values.append(payload.is_active)
+    if payload.harness_enabled is not None:
+        fields.append("harness_enabled = %s")
+        values.append(payload.harness_enabled)
     if not fields:
         raise HTTPException(status_code=400, detail="Nada para atualizar")
 

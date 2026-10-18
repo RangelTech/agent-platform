@@ -14,22 +14,23 @@ logger = logging.getLogger(__name__)
 
 
 async def _call_kernel(path: str, payload: dict) -> None:
-    headers = {}
-    try:
-        if settings.kernel_audience:
-            from app.gcp_auth import id_token_for
+    from app.kernel_router import kernel_headers, target_for_kind
 
-            headers["Authorization"] = f"Bearer {await id_token_for(settings.kernel_audience)}"
-        elif settings.kernel_internal_token:
-            headers["Authorization"] = f"Bearer {settings.kernel_internal_token}"
+    try:
+        # Extração de memórias e afins só existem no fluxo estruturado.
+        target = target_for_kind("graph")
+        headers = await kernel_headers(target)
         async with httpx.AsyncClient(timeout=300.0) as client:
-            await client.post(f"{settings.kernel_url}{path}", json=payload, headers=headers)
+            await client.post(f"{target.url}{path}", json=payload, headers=headers)
     except httpx.HTTPError:
         logger.exception("kernel task call failed: %s", path)
 
 
 def enqueue_kernel_task(path: str, payload: dict) -> None:
     """Schedule POST kernel<path> with the given JSON body."""
+    from app.kernel_router import target_for_kind
+
+    target = target_for_kind("graph")
     if settings.cloud_tasks_queue:
         from google.cloud import tasks_v2
 
@@ -39,12 +40,12 @@ def enqueue_kernel_task(path: str, payload: dict) -> None:
             task={
                 "http_request": {
                     "http_method": tasks_v2.HttpMethod.POST,
-                    "url": f"{settings.kernel_url}{path}",
+                    "url": f"{target.url}{path}",
                     "headers": {"Content-Type": "application/json"},
                     "body": json.dumps(payload).encode(),
                     "oidc_token": {
                         "service_account_email": settings.tasks_service_account,
-                        "audience": settings.kernel_audience or settings.kernel_url,
+                        "audience": target.audience or target.url,
                     },
                 }
             },

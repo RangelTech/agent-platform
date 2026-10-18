@@ -1,10 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useState, type FormEvent } from 'react'
-import { Badge, Button, Card, ErrorText, Input, PageHeader, Select, Table } from '../components/ui'
-import { api } from '../lib/api'
-import { listCustomTools } from '../lib/customTools'
+import { useEffect, useState } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
+import { Button, Card, ErrorText, Input, PageHeader, Select } from '../../components/ui'
+import { VersionsCard } from '../../components/VersionsCard'
+import { api } from '../../lib/api'
+import { listCustomTools } from '../../lib/customTools'
 import {
-  createTemplate,
   createVersion,
   deployVersion,
   getVersion,
@@ -14,7 +15,7 @@ import {
   type AgentDraft,
   type TemplateSummary,
   type ToolInfo,
-} from '../lib/templates'
+} from '../../lib/templates'
 
 interface AiServiceOption {
   id: string
@@ -184,9 +185,15 @@ function AgentEditor({
   )
 }
 
-export default function Templates() {
+/** Editor do agente estruturado (rota /templates/estruturado/:id). Comportamento inalterado. */
+export default function StructuredEditor() {
   const qc = useQueryClient()
-  const { data: templates = [] } = useQuery({ queryKey: ['templates'], queryFn: listTemplates })
+  const navigate = useNavigate()
+  const { id: routeId } = useParams()
+  const { data: templates = [], isLoading: loadingTemplates } = useQuery({
+    queryKey: ['templates'],
+    queryFn: listTemplates,
+  })
   const { data: services = [] } = useQuery({
     queryKey: ['ai-services'],
     queryFn: () => api<AiServiceOption[]>('/ai-services'),
@@ -205,7 +212,7 @@ export default function Templates() {
     ...customTools
       .filter((tool) => tool.enabled)
       // ExternalServers namespaces every MCP tool. Persist the exact public
-      // name that the kernel will expose to the specialist.
+      // name that the platform will expose to the specialist.
       .map((tool) => ({
         name: `ext_custom_tools_${tool.name}`,
         description: `[Custom Tool] ${tool.description}`,
@@ -213,8 +220,6 @@ export default function Templates() {
   ]
 
   const [selected, setSelected] = useState<TemplateSummary | null>(null)
-  const [newName, setNewName] = useState('')
-  const [newDescription, setNewDescription] = useState('')
   const [error, setError] = useState('')
 
   // Version draft
@@ -274,18 +279,6 @@ export default function Templates() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected?.id, versions.length])
 
-  const create = useMutation({
-    mutationFn: () => createTemplate({ name: newName, description: newDescription }),
-    onSuccess: (t) => {
-      setNewName('')
-      setNewDescription('')
-      setError('')
-      qc.invalidateQueries({ queryKey: ['templates'] })
-      setSelected(t)
-    },
-    onError: (e: Error) => setError(e.message),
-  })
-
   const saveVersion = useMutation({
     mutationFn: async () => {
       const v = await createVersion(selected!.id, {
@@ -310,11 +303,6 @@ export default function Templates() {
     onError: (e: Error) => setError(e.message),
   })
 
-  const archiveTemplate = useMutation({
-    mutationFn: (id: string) => api(`/templates/${id}`, { method: 'DELETE' }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['templates'] }),
-  })
-
   const deploy = useMutation({
     mutationFn: (versionId: string) => deployVersion(selected!.id, versionId),
     onSuccess: (_result, versionId) => {
@@ -327,67 +315,35 @@ export default function Templates() {
     },
   })
 
-  function onCreate(e: FormEvent) {
-    e.preventDefault()
-    create.mutate()
-  }
+  // Deep link: o agente vem da URL; a lista de templates é a fonte.
+  useEffect(() => {
+    const found = templates.find((t) => t.id === routeId)
+    if (found && selected?.id !== found.id) setSelected(found)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templates, routeId])
 
   if (!selected) {
     return (
-      <div className="space-y-6">
-        <PageHeader title="Templates" description="Monte supervisores e agentes especialistas versionados para o chat." />
-
-        <Card title="Novo template">
-          <form onSubmit={onCreate} className="grid gap-3 sm:grid-cols-3 sm:items-end">
-            <Input label="Nome" required name="tpl-name" value={newName} onChange={(e) => setNewName(e.target.value)} />
-            <Input
-              label="Descrição (aparece no seletor do chat)"
-              name="tpl-desc"
-              value={newDescription}
-              onChange={(e) => setNewDescription(e.target.value)}
-            />
-            <Button type="submit" disabled={create.isPending}>
-              Criar template
+      <div className="space-y-6" data-testid="structured-editor">
+        <PageHeader
+          title="Agente estruturado"
+          actions={
+            <Button variant="ghost" onClick={() => navigate('/templates')}>
+              ← Voltar
             </Button>
-            <div className="sm:col-span-3">
-              <ErrorText>{error}</ErrorText>
-            </div>
-          </form>
-        </Card>
-
-        <Card title="Todos os templates">
-          <Table headers={['Nome', 'Descrição', 'Versão ativa', '']}>
-            {templates.map((t) => (
-              <tr key={t.id} data-testid="template-row" className="transition hover:bg-[var(--brand-soft)]">
-                <td className="px-3 py-2 text-[var(--text)]">{t.name}</td>
-                <td className="px-3 py-2 text-[var(--text-muted)]">{t.description}</td>
-                <td className="px-3 py-2">
-                  {t.active_version_number ? (
-                    <Badge ok>v{t.active_version_number}</Badge>
-                  ) : (
-                    <Badge ok={false}>sem deploy</Badge>
-                  )}
-                </td>
-                <td className="px-3 py-2 text-right">
-                  <div className="flex justify-end gap-2">
-                    <Button variant="ghost" onClick={() => setSelected(t)}>
-                      Editar
-                    </Button>
-                    <Button variant="ghost" onClick={() => archiveTemplate.mutate(t.id)}>
-                      Arquivar
-                    </Button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </Table>
-        </Card>
+          }
+        />
+        {loadingTemplates ? (
+          <p className="text-sm text-[var(--text-muted)]">Carregando…</p>
+        ) : (
+          <ErrorText>Agente não encontrado. Ele pode ter sido arquivado.</ErrorText>
+        )}
       </div>
     )
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-testid="structured-editor">
       <PageHeader
         title={selected.name}
         description={
@@ -396,7 +352,7 @@ export default function Templates() {
             : 'Ainda sem versão publicada'
         }
         actions={
-          <Button variant="ghost" onClick={() => setSelected(null)}>
+          <Button variant="ghost" data-testid="editor-back" onClick={() => navigate('/templates')}>
             ← Voltar
           </Button>
         }
@@ -583,28 +539,17 @@ export default function Templates() {
         <ErrorText>{error}</ErrorText>
       </div>
 
-      <Card title="Versões">
-        <Table headers={['Versão', 'Criada em', 'Status', '']}>
-          {versions.map((v) => (
-            <tr key={v.id} data-testid="version-row" className="transition hover:bg-[var(--brand-soft)]">
-              <td className="px-3 py-2 text-[var(--text)]">v{v.version_number}</td>
-              <td className="px-3 py-2 text-[var(--text-muted)]">
-                {new Date(v.created_at).toLocaleString('pt-BR')}
-              </td>
-              <td className="px-3 py-2">
-                {selected.active_version_id === v.id && <Badge ok>em produção</Badge>}
-              </td>
-              <td className="px-3 py-2 text-right">
-                {selected.active_version_id !== v.id && (
-                  <Button variant="ghost" onClick={() => deploy.mutate(v.id)} disabled={deploy.isPending}>
-                    Fazer deploy
-                  </Button>
-                )}
-              </td>
-            </tr>
-          ))}
-        </Table>
-      </Card>
+      <VersionsCard
+        versions={versions.map((v) => ({
+          id: v.id,
+          number: v.version_number,
+          created_at: v.created_at,
+        }))}
+        activeId={selected.active_version_id}
+        actionLabel="Fazer deploy"
+        busy={deploy.isPending}
+        onAction={(vid) => deploy.mutate(vid)}
+      />
     </div>
   )
 }

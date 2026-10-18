@@ -30,12 +30,24 @@ RESOURCES = (
     # dispositivo. O compartilhamento granular por sessão (seção 16.3) ainda
     # não tem ADR fechado — esta é a RBAC de tenant, não a de sessão individual.
     "hermes",
+    # Agentes por skills (spec 04): skills da empresa e ambiente do cliente.
+    "skills",
+    "environment",
 )
 
 ACTIONS = ("view", "create", "edit", "delete")
 
+# Recursos com vocabulário próprio de ações. `environment` não é CRUD: ver e
+# gerir (iniciar, parar, publicar, domínios).
+RESOURCE_ACTIONS = {"environment": ("view", "manage")}
+
+
+def actions_for(resource: str) -> tuple[str, ...]:
+    return RESOURCE_ACTIONS.get(resource, ACTIONS)
+
+
 # Seeded per tenant on creation.
-ADMIN_PERMISSIONS = {r: list(ACTIONS) for r in RESOURCES}
+ADMIN_PERMISSIONS = {r: list(actions_for(r)) for r in RESOURCES}
 MEMBER_PERMISSIONS = {"chats": ["view", "create"], "templates": ["view"]}
 
 
@@ -54,5 +66,5 @@ def validate_permissions(permissions: dict) -> None:
         if not isinstance(actions, list):
             raise ValueError(f"actions for {resource} must be a list")
         for action in actions:
-            if action not in ACTIONS:
+            if action not in actions_for(resource):
                 raise ValueError(f"unknown action for {resource}: {action}")

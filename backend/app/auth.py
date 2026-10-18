@@ -13,7 +13,7 @@ _USER_QUERY = """
 SELECT u.id, u.tenant_id, u.email, u.name, u.is_master, u.is_active,
        u.profile_id, p.permissions, t.is_active AS tenant_is_active,
        t.tenant_key, t.name AS tenant_name, t.brand_name, t.brand_logo_url,
-       t.brand_color, t.brand_theme
+       t.brand_color, t.brand_theme, t.harness_enabled
   FROM users u
   LEFT JOIN user_profiles p ON p.id = u.profile_id
   LEFT JOIN tenants t ON t.id = u.tenant_id
