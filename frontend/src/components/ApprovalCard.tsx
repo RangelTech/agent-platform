@@ -10,7 +10,7 @@ export interface ApprovalView {
   risk: Risk
   expires_at: string
   /** Resultado já conhecido (decidido, expirado) */
-  status?: ApprovalStatus
+  status?: ApprovalStatus | 'stopped'
 }
 
 const RISK_TONE: Record<Risk, string> = {
@@ -19,10 +19,11 @@ const RISK_TONE: Record<Risk, string> = {
   high: 'bg-[var(--danger-soft)] text-[var(--danger)]',
 }
 
-const RESULT_TEXT: Record<ApprovalStatus, string> = {
+const RESULT_TEXT: Record<ApprovalStatus | 'stopped', string> = {
   approved: 'Você aprovou esta ação.',
   denied: 'Você negou esta ação.',
   expired: 'O prazo para confirmar acabou. A ação não foi executada.',
+  stopped: 'A execução foi interrompida. A ação não foi executada.',
 }
 
 function remainingSeconds(expiresAt: string): number {
@@ -85,13 +86,13 @@ export function ApprovalCard({
       data-testid="approval-card"
       data-status={status ?? 'pending'}
       data-risk={approval.risk}
-      aria-label="Confirmação necessária"
+      aria-label={status ? 'Confirmação registrada' : 'Confirmação necessária'}
       className="max-w-3xl rounded-[24px] border border-[var(--border-strong)] bg-[var(--surface)] px-5 py-4 shadow-[0_18px_60px_rgba(15,23,42,0.18)]"
     >
       <div className="flex flex-wrap items-center gap-3">
         <ShieldAlert size={18} aria-hidden="true" className="text-[var(--text-muted)]" />
         <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">
-          Aguardando sua confirmação
+          {status ? 'Confirmação' : 'Aguardando sua confirmação'}
         </span>
         <span
           data-testid="approval-risk"

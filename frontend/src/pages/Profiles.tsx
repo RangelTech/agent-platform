@@ -18,6 +18,30 @@ const RESOURCES: { key: string; label: string; actions?: string[] }[] = [
   { key: 'usage', label: 'Consumo' },
 ]
 const DEFAULT_ACTIONS = ['view', 'create', 'edit', 'delete']
+/** Nomes em português para o resumo de permissões de cada perfil. */
+const SUMMARY_LABEL: Record<string, string> = {
+  templates: 'Agentes de IA',
+  skills: 'Skills',
+  environment: 'Ambiente do agente',
+  ai_services: 'Serviços de IA',
+  datasources: 'Fontes de dados',
+  files: 'Arquivos',
+  secrets: 'Segredos',
+  users: 'Usuários',
+  user_profiles: 'Perfis',
+  integrations: 'Integrações',
+  chats: 'Chat',
+  usage: 'Consumo',
+  payments: 'Pagamentos',
+  mcp_store: 'Loja de ferramentas',
+  omnichannel: 'Atendimento',
+  ai_router: 'Roteador de IA',
+  email_accounts: 'Contas de e-mail',
+  google_accounts: 'Contas Google',
+  microsoft_accounts: 'Contas Microsoft',
+  unofficial_connections: 'Conexões não oficiais',
+}
+
 const ACTIONS: { key: string; label: string }[] = [
   { key: 'view', label: 'Ver' },
   { key: 'create', label: 'Criar' },
@@ -188,13 +212,13 @@ export default function Profiles() {
               <td className="px-3 py-2">
                 <div className="flex flex-wrap gap-1">
                   {Object.entries(p.permissions)
-                    .filter(([, actions]) => actions.length > 0)
+                    .filter(([resource, actions]) => actions.length > 0 && resource in SUMMARY_LABEL)
                     .map(([resource, actions]) => (
                       <span
                         key={resource}
                         className="rounded bg-[var(--border)] px-2 py-0.5 text-xs text-[var(--text-muted)]"
                       >
-                        {resource}: {actions.join(', ')}
+                        {SUMMARY_LABEL[resource]}: {actions.map((a) => ACTIONS.find((x) => x.key === a)?.label ?? a).join(', ')}
                       </span>
                     ))}
                 </div>

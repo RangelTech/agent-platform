@@ -138,4 +138,5 @@ export const PROBLEM_TITLE: Record<string, string> = {
   unknown_tool: 'Ferramenta desconhecida',
   broken_reference: 'Referência quebrada',
   bad_extension: 'Extensão não permitida',
+  bad_manifest: 'Manifesto inválido',
 }

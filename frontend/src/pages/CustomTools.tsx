@@ -139,6 +139,7 @@ export default function CustomTools() {
               <Suspense fallback={<div className="flex h-80 items-center justify-center text-sm text-[var(--text-muted)]">Carregando editor…</div>}>
                 <MonacoEditor
                   height="22rem"
+                  loading={<span className="text-sm text-[var(--text-muted)]">Carregando editor…</span>}
                   defaultLanguage="python"
                   theme={monacoTheme}
                   value={code}

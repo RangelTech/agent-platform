@@ -6,6 +6,7 @@ import {
   Badge,
   Button,
   Card,
+  ConfirmDialog,
   EmptyState,
   ErrorText,
   Input,
@@ -69,6 +70,10 @@ function NewAgentModal({ open, onClose, skillsEnabled }: { open: boolean; onClos
     setError('')
     if (!name.trim()) {
       setNameError('Informe um nome para o agente.')
+      return
+    }
+    if (name.trim().length > 200) {
+      setNameError('O nome pode ter no máximo 200 caracteres.')
       return
     }
     setNameError('')
@@ -145,15 +150,20 @@ export default function TemplateList() {
   const [search, setSearch] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [actionError, setActionError] = useState('')
+  const [archiving, setArchiving] = useState<TemplateSummary | null>(null)
 
   const archive = useMutation({
     mutationFn: (id: string) => archiveTemplate(id),
     onSuccess: () => {
       setActionError('')
+      setArchiving(null)
       qc.invalidateQueries({ queryKey: ['templates'] })
       toast('Agente arquivado.')
     },
-    onError: (e: Error) => setActionError(e.message),
+    onError: (e: Error) => {
+      setArchiving(null)
+      setActionError(e.message)
+    },
   })
 
   const visible = useMemo(() => {
@@ -273,7 +283,7 @@ export default function TemplateList() {
                           data-testid="template-archive"
                           disabled={Boolean(t.system_key) || archive.isPending}
                           title={t.system_key ? 'Agentes de sistema não podem ser arquivados.' : undefined}
-                          onClick={() => archive.mutate(t.id)}
+                          onClick={() => setArchiving(t)}
                         >
                           Arquivar
                         </Button>
@@ -286,6 +296,18 @@ export default function TemplateList() {
           </Table>
         )}
       </Card>
+
+      <ConfirmDialog
+        open={archiving !== null}
+        title="Arquivar agente"
+        message={`Arquivar o agente “${archiving?.name ?? ''}”? Ele deixa de aparecer no chat e na lista.`}
+        confirmLabel="Arquivar"
+        danger
+        busy={archive.isPending}
+        onClose={() => setArchiving(null)}
+        onConfirm={() => archiving && archive.mutate(archiving.id)}
+        testId="archive-dialog"
+      />
 
       {modalOpen && <NewAgentModal open onClose={() => setModalOpen(false)} skillsEnabled={skillsEnabled} />}
     </div>

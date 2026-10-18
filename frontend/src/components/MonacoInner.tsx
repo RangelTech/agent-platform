@@ -29,6 +29,7 @@ export default function MonacoInner({ value, language, readOnly, ariaLabel, mode
   return (
     <Editor
       height={height}
+      loading={<span className="text-sm text-[var(--text-muted)]">Carregando editor…</span>}
       path={`inmemory://model/${modelPath}`}
       language={language}
       theme={theme}

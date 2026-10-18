@@ -382,7 +382,7 @@ export function Tabs({
             data-testid={item.testId}
             onClick={() => onChange(item.id)}
             className={cx(
-              '-mb-px inline-flex min-h-11 items-center gap-2 border-b-2 px-4 py-2 text-sm font-medium transition',
+              '-mb-px inline-flex min-h-11 items-center gap-2 border-b-2 px-3 py-2 text-sm font-medium transition',
               active
                 ? 'border-[var(--brand)] text-[var(--text)]'
                 : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text)]',

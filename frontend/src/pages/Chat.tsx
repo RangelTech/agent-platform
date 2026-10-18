@@ -205,7 +205,7 @@ export default function Chat() {
         },
         onStep: (step) =>
           setSteps((list) => {
-            const idx = list.findIndex((s) => s.kind === step.kind && s.label === step.label)
+            const idx = list.findIndex((s) => s.kind === step.kind && (step.kind === 'queue' || s.label === step.label))
             if (idx < 0) return [...list, step]
             const next = [...list]
             next[idx] = step
@@ -224,6 +224,7 @@ export default function Chat() {
           setWorkingAgent('')
           setSteps([])
           setStopped(true)
+          setApprovals((list) => list.map((x) => (x.status ? x : { ...x, status: 'stopped' })))
           const target = chatIdRef.current
           if (target) {
             api<ChatMessage[]>(`/chats/${target}/messages`).then(setMessages).catch(() => undefined)
