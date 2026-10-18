@@ -9,12 +9,13 @@ configured).
 import asyncio
 import json
 import logging
+import uuid
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from psycopg.types.json import Json
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from app import chat_runs
 
@@ -47,6 +48,25 @@ class SendRequest(BaseModel):
     # Pins/switches the conversation's template. Persisted on the chat.
     template_id: str | None = None
 
+    @field_validator("message")
+    @classmethod
+    def _message_clean(cls, v: str) -> str:
+        if "\x00" in v:
+            raise ValueError("A mensagem contém caracteres inválidos")
+        if not v.strip():
+            raise ValueError("A mensagem está vazia")
+        return v
+
+    @field_validator("chat_id", "template_id")
+    @classmethod
+    def _uuid_or_none(cls, v: str | None) -> str | None:
+        if v is None or v == "":
+            return None
+        try:
+            return str(uuid.UUID(v))
+        except ValueError as exc:
+            raise ValueError("Identificador inválido") from exc
+
 
 def _agent_kind(row: dict) -> str:
     """'structured' | 'skills' (o kernel gravado no chat manda; senão, o template)."""
@@ -71,6 +91,13 @@ def _serialize_chat(row: dict) -> dict:
     }
 
 
+def _need_uuid(value: str) -> None:
+    try:
+        uuid.UUID(value)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Conversa não encontrada") from None
+
+
 @router.get("/chats")
 def list_chats(user: dict = Depends(current_user)):
     with get_connection() as conn:
@@ -88,6 +115,7 @@ def list_chats(user: dict = Depends(current_user)):
 
 @router.get("/chats/{chat_id}")
 def get_chat(chat_id: str, user: dict = Depends(current_user)):
+    _need_uuid(chat_id)
     with get_connection() as conn:
         row = conn.execute(
             """SELECT c.*, t.agent_kind FROM chats c
@@ -137,6 +165,7 @@ def open_ragentes_guide(user: dict = Depends(current_user)):
 
 @router.get("/chats/{chat_id}/messages")
 def list_messages(chat_id: str, user: dict = Depends(current_user)):
+    _need_uuid(chat_id)
     with get_connection() as conn:
         # Conversas de canal externo (WhatsApp) não têm dono na plataforma:
         # quem enxerga é a empresa inteira, em modo leitura.
@@ -296,11 +325,15 @@ async def send_message(request: Request, user: dict = Depends(current_user)):
     content_type = request.headers.get("content-type", "")
     if content_type.startswith("multipart/"):
         form = await request.form()
-        payload = SendRequest(
-            message=str(form.get("message") or "").strip() or "(anexo enviado)",
-            chat_id=str(form.get("chat_id") or "") or None,
-            template_id=str(form.get("template_id") or "") or None,
-        )
+        try:
+            payload = SendRequest(
+                message=str(form.get("message") or "").strip() or "(anexo enviado)",
+                chat_id=str(form.get("chat_id") or "") or None,
+                template_id=str(form.get("template_id") or "") or None,
+            )
+        except ValidationError as exc:
+            msg = "; ".join(str(e["msg"]).replace("Value error, ", "") for e in exc.errors())
+            raise HTTPException(status_code=422, detail=msg or "Mensagem inválida") from exc
         attachments = await _store_uploads(user, form.getlist("files"))
     else:
         try:
@@ -308,7 +341,13 @@ async def send_message(request: Request, user: dict = Depends(current_user)):
         except ValueError as exc:
             # Corpo inválido é erro do cliente, não falha do servidor.
             raise HTTPException(status_code=400, detail="Corpo da requisição inválido") from exc
-        payload = SendRequest(**body)
+        try:
+            payload = SendRequest(**body) if isinstance(body, dict) else None
+        except ValidationError as exc:
+            msg = "; ".join(str(e["msg"]).replace("Value error, ", "") for e in exc.errors())
+            raise HTTPException(status_code=422, detail=msg or "Mensagem inválida") from exc
+        if payload is None:
+            raise HTTPException(status_code=400, detail="Corpo da requisição inválido")
         attachments = []
 
     chat = _ensure_chat(user, payload, attachments)

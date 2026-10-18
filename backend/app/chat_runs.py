@@ -27,6 +27,19 @@ def new_run_id() -> str:
     return str(uuid.uuid4())
 
 
+def sweep_stale(minutes: int = 25) -> int:
+    """Runs que ficaram `running` (reinício do kernel, queda) viram `error`: revoga o run_token."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            """UPDATE chat_runs SET status = 'error', finished_at = now()
+                WHERE status IN ('running', 'cancelling')
+                  AND created_at < now() - make_interval(mins => %s)
+                RETURNING run_id""",
+            (minutes,),
+        ).fetchall()
+    return len(rows)
+
+
 def finish_run(run_id: str, status: str) -> None:
     """Fecha a run (revoga o run_token). Não rebaixa uma run já encerrada."""
     with get_connection() as conn:
