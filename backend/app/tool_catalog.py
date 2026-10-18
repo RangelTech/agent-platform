@@ -147,3 +147,30 @@ def catalog() -> list[dict]:
 
 def tool_ids() -> set[str]:
     return {t["id"] for t in TOOLS}
+
+
+# Ferramenta -> tipo de credencial que ela usa. O agente só enxerga credenciais dos tipos das
+# ferramentas que o manifesto liga (princípio do menor privilégio; spec 04 §6).
+_CREDENTIAL_KIND = {
+    "rt_data_describe": "datasource",
+    "rt_sql_read": "datasource",
+    "rt_sql_write": "datasource",
+    "rt_sql_transaction": "datasource",
+    "rt_mongo_find": "datasource",
+    "rt_pix_create": "mercado_pago",
+    "rt_payment_status": "mercado_pago",
+    "rt_mp_read": "mercado_pago",
+    "rt_email_list": "email",
+    "rt_email_send": "email",
+    "rt_http": "secrets",
+}
+
+
+def credential_kinds(tools: list[str]) -> list[str]:
+    """Tipos de credencial implicados pelas ferramentas do manifesto (sem repetir)."""
+    out: list[str] = []
+    for t in tools:
+        kind = _CREDENTIAL_KIND.get(t)
+        if kind and kind not in out:
+            out.append(kind)
+    return out

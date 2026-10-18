@@ -17,6 +17,7 @@ from app.crypto import decrypt
 from app.db import get_connection
 from app.run_tokens import issue_run_token
 from app.skill_package import default_manifest, normalize_manifest
+from app.tool_catalog import credential_kinds
 
 CONTRACT_VERSION = 1
 INLINE_PACKAGE_LIMIT = 700 * 1024
@@ -206,6 +207,10 @@ def prepare_harness_run(
                 (version["id"],),
             ).fetchall()
         ]
+        # Concessões explícitas (tabela) + as implícitas das ferramentas do manifesto.
+        for kind in credential_kinds(manifest["tools"]):
+            if not any(g["kind"] == kind for g in grants):
+                grants.append({"kind": kind, "id": None})
         credentials = _credentials(conn, tenant_id)
         catalog = _catalog(credentials)
         if attachments:
