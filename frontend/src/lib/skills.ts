@@ -20,7 +20,7 @@ export interface Manifest {
   tools: string[]
   environment: { enabled: boolean }
   model: { alias?: string } | null
-  limits: { max_turns?: number }
+  limits: { max_turns?: number; write_tables?: string[]; http_allowed_hosts?: string[] }
 }
 
 export const EMPTY_MANIFEST: Manifest = {
