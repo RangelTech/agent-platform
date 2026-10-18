@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button, ErrorText, Input } from '../components/ui'
+import { SESSION_EXPIRED_KEY } from '../lib/api'
 import { useAuth } from '../lib/auth'
 
 const highlights = [
@@ -28,6 +29,15 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [expired] = useState(() => {
+    try {
+      const flag = sessionStorage.getItem(SESSION_EXPIRED_KEY) === '1'
+      sessionStorage.removeItem(SESSION_EXPIRED_KEY)
+      return flag
+    } catch {
+      return false
+    }
+  })
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
@@ -119,6 +129,11 @@ export default function Login() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
+              {expired && !error && (
+                <p role="status" data-testid="session-expired" className="text-sm text-[var(--text-muted)]">
+                  Sua sessão expirou. Entre de novo para continuar; o rascunho do editor fica guardado neste navegador.
+                </p>
+              )}
               <ErrorText>{error}</ErrorText>
               <Button type="submit" disabled={busy} className="w-full">
                 {busy ? 'Entrando…' : 'Acessar plataforma'}

@@ -1,4 +1,4 @@
-import { api, getToken } from './api'
+import { api, getToken, statusMessage } from './api'
 
 export interface ChatSummary {
   id: string
@@ -121,7 +121,7 @@ export async function sendMessage(
         ? detail
         : res.status === 409
           ? CONFLICT_MESSAGE
-          : `Erro ${res.status}`
+          : statusMessage(res.status)
     callbacks.onError?.(text, res.status)
     return
   }

@@ -115,6 +115,7 @@ export default function SkillsTemplateEditor() {
   const [notes, setNotes] = useState('')
   const [error, setError] = useState('')
   const [backup, setBackup] = useState<{ files: SkillFile[]; manifest: Manifest } | null>(null)
+  const [restoring, setRestoring] = useState<string | null>(null)
   const [loadFromVersion, setLoadFromVersion] = useState<string | null>(null)
 
   // ---- carga do rascunho (uma vez por resposta) --------------------------------
@@ -551,7 +552,7 @@ export default function SkillsTemplateEditor() {
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Notas da versão (opcional)"
-              className="w-full rounded-2xl border border-[var(--border)] bg-[var(--surface-solid)] px-3 py-2 text-sm text-[var(--text)] outline-none focus:border-[var(--brand)]"
+              className="w-full rounded-2xl border border-[var(--border)] bg-[var(--surface-solid)] px-3 py-2 text-sm text-[var(--text)] outline-none focus:border-[var(--brand)] focus:ring-2 focus:ring-[var(--brand-soft)]"
             />
           </label>
         )}
@@ -870,7 +871,7 @@ export default function SkillsTemplateEditor() {
         actionLabel="Restaurar"
         busy={restore.isPending}
         readOnly={readOnly}
-        onAction={(vid) => restore.mutate(vid)}
+        onAction={(vid) => setRestoring(vid)}
         extra={(v) =>
           readOnly ? null : (
             <Button variant="ghost" data-testid="version-load" onClick={() => setLoadFromVersion(v.id)}>
@@ -893,7 +894,11 @@ export default function SkillsTemplateEditor() {
                 ? 'Renomear ou mover pasta'
                 : 'Renomear ou mover arquivo'
         }
-        description="Use o caminho completo, por exemplo skills/triagem/SKILL.md ou skills/triagem/references/precos.md."
+        description={
+          pathDialog?.mode === 'new-folder' || (pathDialog?.mode === 'rename' && pathDialog.kind === 'folder')
+            ? 'Use o caminho completo da pasta, por exemplo skills/triagem ou skills/triagem/references.'
+            : 'Use o caminho completo, por exemplo skills/triagem/SKILL.md ou skills/triagem/references/precos.md.'
+        }
       >
         <form onSubmit={submitPath} className="space-y-4" noValidate>
           <Input
@@ -953,6 +958,21 @@ export default function SkillsTemplateEditor() {
       />
 
       <ConfirmDialog
+        open={restoring !== null}
+        title="Restaurar versão"
+        message="Esta versão volta a ser a que está em produção e passa a valer no chat agora."
+        confirmLabel="Restaurar"
+        busy={restore.isPending}
+        onClose={() => setRestoring(null)}
+        onConfirm={() => {
+          const vid = restoring
+          setRestoring(null)
+          if (vid) restore.mutate(vid)
+        }}
+        testId="restore-dialog"
+      />
+
+      <ConfirmDialog
         open={loadFromVersion !== null}
         title="Abrir versão no rascunho"
         message="Os arquivos do rascunho atual serão substituídos pelos desta versão. Você ainda precisa salvar para guardar."
@@ -999,7 +1019,11 @@ function TestBox({ templateId, hasActiveVersion }: { templateId: string; hasActi
           acc += t
           setOutput(acc)
         },
-        onStep: (s) => setSteps((list) => [...list.filter((x) => x.label !== s.label || x.kind !== s.kind), s]),
+        onStep: (s) =>
+          setSteps((list) => [
+            ...list.filter((x) => x.kind !== s.kind || (s.kind !== 'queue' && x.label !== s.label)),
+            s,
+          ]),
         onDone: (full) => setOutput(full || acc),
         onError: (detail) => setError(detail),
       },
@@ -1029,7 +1053,7 @@ function TestBox({ templateId, hasActiveVersion }: { templateId: string; hasActi
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="Escreva uma mensagem para o agente"
-          className="w-full rounded-2xl border border-[var(--border)] bg-[var(--surface-solid)] px-3 py-2 text-sm text-[var(--text)] outline-none focus:border-[var(--brand)]"
+          className="w-full rounded-2xl border border-[var(--border)] bg-[var(--surface-solid)] px-3 py-2 text-sm text-[var(--text)] outline-none focus:border-[var(--brand)] focus:ring-2 focus:ring-[var(--brand-soft)]"
         />
       </label>
       <Button type="submit" disabled={!hasActiveVersion || busy || !text.trim()} data-testid="test-message-send">

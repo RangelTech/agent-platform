@@ -6,6 +6,7 @@ import {
   Badge,
   Button,
   Card,
+  ConfirmDialog,
   EmptyState,
   ErrorText,
   Input,
@@ -69,6 +70,10 @@ function NewAgentModal({ open, onClose, skillsEnabled }: { open: boolean; onClos
     setError('')
     if (!name.trim()) {
       setNameError('Informe um nome para o agente.')
+      return
+    }
+    if (name.trim().length > 200) {
+      setNameError('O nome pode ter no máximo 200 caracteres.')
       return
     }
     setNameError('')
@@ -145,15 +150,20 @@ export default function TemplateList() {
   const [search, setSearch] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [actionError, setActionError] = useState('')
+  const [archiving, setArchiving] = useState<TemplateSummary | null>(null)
 
   const archive = useMutation({
     mutationFn: (id: string) => archiveTemplate(id),
     onSuccess: () => {
       setActionError('')
+      setArchiving(null)
       qc.invalidateQueries({ queryKey: ['templates'] })
       toast('Agente arquivado.')
     },
-    onError: (e: Error) => setActionError(e.message),
+    onError: (e: Error) => {
+      setArchiving(null)
+      setActionError(e.message)
+    },
   })
 
   const visible = useMemo(() => {
@@ -233,7 +243,15 @@ export default function TemplateList() {
             <EmptyState title="Nenhum agente encontrado" description="Ajuste o filtro ou a busca." />
           )
         ) : (
-          <Table headers={['Nome', 'Tipo', 'Versão', 'Atualizado', '']}>
+          <Table
+            headers={[
+              'Nome',
+              'Tipo',
+              { label: 'Versão', className: 'hidden sm:table-cell' },
+              { label: 'Atualizado', className: 'hidden sm:table-cell' },
+              '',
+            ]}
+          >
             {visible.map((t) => {
               const kind = normalizeKind(t.agent_kind)
               return (
@@ -250,18 +268,18 @@ export default function TemplateList() {
                   <td className="px-3 py-2 text-[var(--text-muted)]" data-testid="template-kind">
                     {KIND_SHORT[kind]}
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="hidden px-3 py-2 sm:table-cell">
                     {t.active_version_number ? (
                       <Badge ok>v{t.active_version_number}</Badge>
                     ) : (
                       <Badge ok={false}>sem deploy</Badge>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-[var(--text-muted)]">
+                  <td className="hidden px-3 py-2 text-[var(--text-muted)] sm:table-cell">
                     {t.updated_at ? new Date(t.updated_at).toLocaleDateString('pt-BR') : '—'}
                   </td>
                   <td className="px-3 py-2 text-right">
-                    <div className="flex justify-end gap-2">
+                    <div className="flex flex-wrap justify-end gap-2">
                       {canEdit && (
                         <Button variant="ghost" data-testid="template-edit" onClick={() => navigate(editorPath(t))}>
                           Editar
@@ -273,7 +291,7 @@ export default function TemplateList() {
                           data-testid="template-archive"
                           disabled={Boolean(t.system_key) || archive.isPending}
                           title={t.system_key ? 'Agentes de sistema não podem ser arquivados.' : undefined}
-                          onClick={() => archive.mutate(t.id)}
+                          onClick={() => setArchiving(t)}
                         >
                           Arquivar
                         </Button>
@@ -286,6 +304,18 @@ export default function TemplateList() {
           </Table>
         )}
       </Card>
+
+      <ConfirmDialog
+        open={archiving !== null}
+        title="Arquivar agente"
+        message={`Arquivar o agente “${archiving?.name ?? ''}”? Ele deixa de aparecer no chat e na lista.`}
+        confirmLabel="Arquivar"
+        danger
+        busy={archive.isPending}
+        onClose={() => setArchiving(null)}
+        onConfirm={() => archiving && archive.mutate(archiving.id)}
+        testId="archive-dialog"
+      />
 
       {modalOpen && <NewAgentModal open onClose={() => setModalOpen(false)} skillsEnabled={skillsEnabled} />}
     </div>

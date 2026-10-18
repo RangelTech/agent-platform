@@ -71,11 +71,14 @@ export function FrontmatterForm({
         onChange={(e) => onChange(patchFrontmatter(content, { description: e.target.value }))}
       />
       {tools.length > 0 && (
-        <div>
-          <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">
+        <details className="group" data-testid="fm-tools-details">
+          <summary className="flex cursor-pointer select-none items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">
             Ferramentas desta skill
-          </span>
-          <div className="flex flex-wrap gap-2" data-testid="fm-tools">
+            <span className="rounded-full bg-[var(--surface-solid)] px-2 py-0.5 text-[11px] normal-case tracking-normal">
+              {fm.tools.length === 0 ? 'nenhuma' : `${fm.tools.length} marcada${fm.tools.length > 1 ? 's' : ''}`}
+            </span>
+          </summary>
+          <div className="mt-2 flex flex-wrap gap-2" data-testid="fm-tools">
             {tools.map((t) => (
               <Chip
                 key={t.id}
@@ -92,7 +95,7 @@ export function FrontmatterForm({
           <p className="mt-1.5 text-xs text-[var(--text-faint)]">
             A skill só pode usar ferramentas liberadas no painel Manifesto do agente.
           </p>
-        </div>
+        </details>
       )}
     </div>
   )

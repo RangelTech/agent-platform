@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
-import { fetchMe, getToken, heartbeat, login as apiLogin, logout as apiLogout, setToken, type Me } from './api'
+import { fetchMe, getToken, heartbeat, login as apiLogin, logout as apiLogout, SESSION_EXPIRED_KEY, setToken, type Me } from './api'
 
 interface AuthState {
   user: Me | null
@@ -55,7 +55,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     // api() fires this when the backend rejects the session.
-    const onExpired = () => setUser(null)
+    const onExpired = () => {
+      try {
+        sessionStorage.setItem(SESSION_EXPIRED_KEY, '1')
+      } catch {
+        // armazenamento indisponível: o aviso só não aparece
+      }
+      setUser(null)
+    }
     window.addEventListener('auth:expired', onExpired)
     return () => window.removeEventListener('auth:expired', onExpired)
   }, [])
