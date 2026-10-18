@@ -147,3 +147,20 @@ def test_memory_proposals_review_flow_and_recall(client, enabled, tenant_admin, 
     assert discarded["status"] == "discarded"
     final = client.post("/internal/memories/recall", json=recall, headers=bearer).json()
     assert final["memories"] == []
+
+
+def test_run_files_read_attachment_of_the_runs_tenant_only(
+    client, enabled, tenant_admin, fake_harness
+):
+    from app.storage import save_bytes
+
+    run_id, _ = _run_for(client, tenant_admin, fake_harness)
+    rel = f"tenants/{enabled['id']}/chats/attachments/x/planilha.xlsx"
+    ok_path = save_bytes(rel, b"XLSX", "x/y")
+    got = client.get(f"/internal/runs/{run_id}/files", params={"ref": ok_path}, headers=SERVICE)
+    assert got.status_code == 200 and got.content == b"XLSX"
+    other = save_bytes("tenants/00000000-0000-0000-0000-000000000000/a.bin", b"OUTRA", "x/y")
+    assert client.get(f"/internal/runs/{run_id}/files", params={"ref": other},
+                      headers=SERVICE).status_code == 403
+    assert client.get(f"/internal/runs/{run_id}/files", params={"ref": ok_path + "/../x"},
+                      headers=SERVICE).status_code == 403

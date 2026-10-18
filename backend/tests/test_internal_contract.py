@@ -20,6 +20,7 @@ KERNEL_CALLS = [
     ("POST", "/internal/runs/{run_id}/schedules"),
     ("POST", "/internal/search/docs"),
     ("POST", "/internal/memories/recall"),
+    ("GET", "/internal/runs/{run_id}/files"),
 ]
 
 
