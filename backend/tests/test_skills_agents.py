@@ -1171,3 +1171,23 @@ def test_client_facing_texts_never_name_internal_components(
     )
     for text in seen:
         assert not any(w in text.lower() for w in FORBIDDEN_WORDS), text
+
+
+def test_run_payload_grants_follow_manifest_tools(client, enabled, tenant_admin, fake_harness):
+    h = auth(tenant_admin["token"])
+    t = _setup_runtime(client, tenant_admin, tools=["rt_pix_create", "rt_sql_read"])
+    r = client.post("/api/chat/send", json={"message": "oi", "template_id": t["id"]}, headers=h)
+    assert r.status_code == 200
+    _sse(r)
+    sent = fake_harness.calls["runs"][-1]
+    kinds = {g["kind"] for g in sent["manifest"]["credential_grants"]}
+    assert kinds == {"mercado_pago", "datasource"}  # nada de e-mail nem segredos sem a ferramenta
+
+
+def test_run_payload_without_credential_tools_grants_nothing(
+    client, enabled, tenant_admin, fake_harness
+):
+    h = auth(tenant_admin["token"])
+    t = _setup_runtime(client, tenant_admin, tools=["rt_search_docs"])
+    _sse(client.post("/api/chat/send", json={"message": "oi", "template_id": t["id"]}, headers=h))
+    assert fake_harness.calls["runs"][-1]["manifest"]["credential_grants"] == []
