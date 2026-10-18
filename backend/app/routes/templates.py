@@ -7,14 +7,19 @@ resolves the active version into the kernel's run payload.
 
 import re
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from psycopg.errors import UniqueViolation
 from psycopg.types.json import Json
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
+from app import skill_package as pkg
 from app.auth import require
 from app.db import get_connection
+from app.kernel_router import NOT_ENABLED, ensure_skills_enabled, tenant_skills_enabled
 from app.tenancy import resolve_target_tenant
+from app.tool_catalog import tool_ids
 
 router = APIRouter(prefix="/api/templates", tags=["templates"])
 
@@ -64,6 +69,24 @@ class TemplateIn(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     description: str = Field(default="", max_length=2000)
     tenant_id: str | None = None  # master only
+    # Imutável depois de criado. 'structured' = supervisor + especialistas;
+    # 'skills' = pacote de arquivos Markdown.
+    agent_kind: str = Field(default="structured", pattern=r"^(structured|skills)$")
+
+
+class DraftFileIn(BaseModel):
+    path: str = Field(max_length=500)
+    content: str
+
+
+class DraftIn(BaseModel):
+    files: list[DraftFileIn]
+    manifest: dict = Field(default_factory=dict)
+
+
+class SkillsVersionIn(BaseModel):
+    source: str = Field(default="draft", pattern=r"^draft$")
+    notes: str = Field(default="", max_length=2000)
 
 
 def _template_scoped(conn, template_id: str, user: dict) -> dict:
@@ -88,19 +111,47 @@ def _serialize_template(row: dict, active_version_number: int | None = None) -> 
         "tenant_id": str(row["tenant_id"]),
         "name": row["name"],
         "description": row["description"],
+        "agent_kind": row.get("agent_kind") or "structured",
         "active_version_id": str(row["active_version_id"]) if row["active_version_id"] else None,
         "active_version_number": active_version_number,
+        "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
+        "system_key": row.get("system_key"),
+    }
+
+
+def _skills_template(conn, template_id: str, user: dict) -> dict:
+    """Template do tipo `skills` do chamador, com o recurso habilitado."""
+    template = _template_scoped(conn, template_id, user)
+    _reject_system_template(template)
+    if template["agent_kind"] != "skills":
+        raise HTTPException(status_code=400, detail="Este agente não usa pacote de arquivos")
+    if not user["is_master"] and not tenant_skills_enabled(conn, template["tenant_id"]):
+        raise HTTPException(status_code=403, detail=NOT_ENABLED)
+    return template
+
+
+def _file_view(f: dict) -> dict:
+    return {
+        "path": f["path"],
+        "content": f["content"],
+        "size_bytes": pkg.size_bytes(f["content"]),
     }
 
 
 @router.get("")
 def list_templates(user: dict = Depends(require("templates", "view"))):
     with get_connection() as conn:
-        scope = "" if user["is_master"] else " AND t.tenant_id = %s"
+        # Com a flag da empresa desligada, os agentes por skills não aparecem.
+        scope = (
+            ""
+            if user["is_master"]
+            else " AND t.tenant_id = %s AND (t.agent_kind <> 'skills' OR tn.harness_enabled)"
+        )
         params = () if user["is_master"] else (user["tenant_id"],)
         rows = conn.execute(
             f"""SELECT t.*, v.version_number AS active_version_number
                   FROM templates t
+                  JOIN tenants tn ON tn.id = t.tenant_id
                   LEFT JOIN template_versions v ON v.id = t.active_version_id
                  WHERE NOT t.is_deleted{scope}
                  ORDER BY t.name""",
@@ -113,11 +164,13 @@ def list_templates(user: dict = Depends(require("templates", "view"))):
 def create_template(payload: TemplateIn, user: dict = Depends(require("templates", "create"))):
     tenant_id = resolve_target_tenant(user, payload.tenant_id)
     with get_connection() as conn:
+        if payload.agent_kind == "skills":
+            ensure_skills_enabled(conn, tenant_id)
         try:
             row = conn.execute(
-                """INSERT INTO templates (tenant_id, name, description)
-                   VALUES (%s, %s, %s) RETURNING *""",
-                (tenant_id, payload.name, payload.description),
+                """INSERT INTO templates (tenant_id, name, description, agent_kind)
+                   VALUES (%s, %s, %s, %s) RETURNING *""",
+                (tenant_id, payload.name, payload.description, payload.agent_kind),
             ).fetchone()
         except UniqueViolation as exc:
             raise HTTPException(
@@ -279,15 +332,93 @@ def create_guided_template(conn, *, tenant_id, created_by, plan: dict) -> dict:
     }
 
 
+def _version_view(row: dict, active_id) -> dict:
+    return {
+        "id": str(row["id"]),
+        "number": row["version_number"],
+        "version_number": row["version_number"],
+        "notes": row["notes"],
+        "created_at": row["created_at"].isoformat(),
+        "created_by": str(row["created_by"]) if row.get("created_by") else None,
+        "is_active": bool(active_id) and str(active_id) == str(row["id"]),
+    }
+
+
+def _create_skills_version(conn, template: dict, user: dict, payload: SkillsVersionIn):
+    draft = conn.execute(
+        "SELECT files, manifest FROM template_skill_drafts WHERE template_id = %s",
+        (template["id"],),
+    ).fetchone()
+    if draft is None:
+        raise HTTPException(status_code=422, detail="Não há rascunho para publicar")
+    problems = pkg.validate_package(draft["files"], draft["manifest"], tool_ids())
+    if pkg.has_errors(problems):
+        return JSONResponse(
+            status_code=422,
+            content={
+                "detail": "O pacote tem problemas e não pode ser publicado",
+                "problems": [p.as_dict() for p in problems],
+            },
+        )
+    manifest = pkg.normalize_manifest(draft["manifest"])
+    number = conn.execute(
+        """SELECT COALESCE(MAX(version_number), 0) + 1 AS n
+             FROM template_versions WHERE template_id = %s""",
+        (template["id"],),
+    ).fetchone()["n"]
+    version = conn.execute(
+        """INSERT INTO template_versions
+               (template_id, version_number, supervisor_prompt, created_by, notes, manifest)
+           VALUES (%s, %s, '', %s, %s, %s) RETURNING *""",
+        (template["id"], number, user["id"], payload.notes, Json(manifest)),
+    ).fetchone()
+    for f in draft["files"]:
+        kind, _ = pkg.classify_path(f["path"])
+        conn.execute(
+            """INSERT INTO template_skill_files
+                   (version_id, path, kind, content, sha256, size_bytes)
+               VALUES (%s, %s, %s, %s, %s, %s)""",
+            (
+                version["id"],
+                f["path"],
+                kind,
+                f["content"],
+                pkg.sha256_text(f["content"]),
+                pkg.size_bytes(f["content"]),
+            ),
+        )
+    return JSONResponse(
+        status_code=201, content=_version_view(version, template["active_version_id"])
+    )
+
+
+def _validation_error(exc: ValidationError) -> RequestValidationError:
+    return RequestValidationError(
+        exc.errors(include_url=False, include_context=False, include_input=False)
+    )
+
+
 @router.post("/{template_id}/versions", status_code=201)
 def create_version(
     template_id: str,
-    payload: VersionIn,
+    body: dict = Body(...),
     user: dict = Depends(require("templates", "edit")),
 ):
     with get_connection() as conn:
         template = _template_scoped(conn, template_id, user)
         _reject_system_template(template)
+        if template["agent_kind"] == "skills":
+            if not user["is_master"] and not tenant_skills_enabled(conn, template["tenant_id"]):
+                raise HTTPException(status_code=403, detail=NOT_ENABLED)
+            try:
+                skills_payload = SkillsVersionIn.model_validate(body)
+            except ValidationError as exc:
+                raise _validation_error(exc) from exc
+            return _create_skills_version(conn, template, user, skills_payload)
+        try:
+            payload = VersionIn.model_validate(body)
+        except ValidationError as exc:
+            raise _validation_error(exc) from exc
         _validate_version(conn, payload, template["tenant_id"])
 
         number = conn.execute(
@@ -302,28 +433,124 @@ def create_version(
             created_by=user["id"],
             version_number=number,
         )
-    return {"id": str(version["id"]), "version_number": number}
+    return {"id": str(version["id"]), "version_number": number, "number": number}
 
 
 @router.get("/{template_id}/versions")
 def list_versions(template_id: str, user: dict = Depends(require("templates", "view"))):
     with get_connection() as conn:
-        _template_scoped(conn, template_id, user)
+        template = _template_scoped(conn, template_id, user)
         rows = conn.execute(
-            """SELECT id, version_number, notes, created_at
+            """SELECT id, version_number, notes, created_at, created_by
                  FROM template_versions
                 WHERE template_id = %s ORDER BY version_number DESC""",
             (template_id,),
         ).fetchall()
-    return [
-        {
-            "id": str(r["id"]),
-            "version_number": r["version_number"],
-            "notes": r["notes"],
-            "created_at": r["created_at"].isoformat(),
-        }
-        for r in rows
-    ]
+    return [_version_view(r, template["active_version_id"]) for r in rows]
+
+
+# ---------------------------------------------------------------- skills ---
+
+
+def _draft_response(row: dict) -> dict:
+    return {
+        "files": [_file_view(f) for f in row["files"]],
+        "manifest": pkg.normalize_manifest(row["manifest"]),
+        "updated_at": row["updated_at"].isoformat(),
+        "updated_by": str(row["updated_by"]) if row["updated_by"] else None,
+    }
+
+
+@router.get("/{template_id}/draft")
+def get_draft(template_id: str, user: dict = Depends(require("templates", "view"))):
+    with get_connection() as conn:
+        template = _skills_template(conn, template_id, user)
+        row = conn.execute(
+            "SELECT * FROM template_skill_drafts WHERE template_id = %s", (template["id"],)
+        ).fetchone()
+        if row is None:
+            files, manifest = pkg.initial_package()
+            row = conn.execute(
+                """INSERT INTO template_skill_drafts (template_id, files, manifest, updated_by)
+                   VALUES (%s, %s, %s, %s) RETURNING *""",
+                (template["id"], Json(files), Json(manifest), user["id"]),
+            ).fetchone()
+    return _draft_response(row)
+
+
+@router.put("/{template_id}/draft")
+def put_draft(
+    template_id: str, payload: DraftIn, user: dict = Depends(require("templates", "edit"))
+):
+    files = [{"path": f.path, "content": f.content} for f in payload.files]
+    with get_connection() as conn:
+        template = _skills_template(conn, template_id, user)
+        conn.execute(
+            """INSERT INTO template_skill_drafts (template_id, files, manifest, updated_by)
+               VALUES (%s, %s, %s, %s)
+               ON CONFLICT (template_id) DO UPDATE
+                  SET files = EXCLUDED.files, manifest = EXCLUDED.manifest,
+                      updated_by = EXCLUDED.updated_by, updated_at = now()""",
+            (template["id"], Json(files), Json(payload.manifest), user["id"]),
+        )
+        conn.execute("UPDATE templates SET updated_at = now() WHERE id = %s", (template["id"],))
+    problems = pkg.validate_package(files, payload.manifest, tool_ids())
+    return {"ok": not pkg.has_errors(problems), "problems": [p.as_dict() for p in problems]}
+
+
+@router.post("/{template_id}/validate")
+def validate_draft(
+    template_id: str, payload: DraftIn, user: dict = Depends(require("templates", "edit"))
+):
+    files = [{"path": f.path, "content": f.content} for f in payload.files]
+    with get_connection() as conn:
+        _skills_template(conn, template_id, user)
+    problems = pkg.validate_package(files, payload.manifest, tool_ids())
+    return {"ok": not pkg.has_errors(problems), "problems": [p.as_dict() for p in problems]}
+
+
+def _skills_version(conn, template_id: str, version_id: str) -> dict:
+    row = conn.execute(
+        "SELECT * FROM template_versions WHERE id::text = %s AND template_id = %s",
+        (version_id, template_id),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Versão não encontrada")
+    return row
+
+
+@router.get("/{template_id}/versions/{version_id}/files")
+def list_version_files(
+    template_id: str, version_id: str, user: dict = Depends(require("templates", "view"))
+):
+    with get_connection() as conn:
+        _skills_template(conn, template_id, user)
+        version = _skills_version(conn, template_id, version_id)
+        rows = conn.execute(
+            """SELECT path, size_bytes, sha256 FROM template_skill_files
+                WHERE version_id = %s ORDER BY path""",
+            (version["id"],),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@router.get("/{template_id}/versions/{version_id}/files/{path:path}")
+def get_version_file(
+    template_id: str,
+    version_id: str,
+    path: str,
+    user: dict = Depends(require("templates", "view")),
+):
+    with get_connection() as conn:
+        _skills_template(conn, template_id, user)
+        version = _skills_version(conn, template_id, version_id)
+        row = conn.execute(
+            "SELECT path, content FROM template_skill_files WHERE version_id = %s AND path = %s",
+            (version["id"], path),
+        ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Arquivo não encontrado")
+    return {"path": row["path"], "content": row["content"]}
 
 
 @router.get("/{template_id}/versions/{version_id}")
@@ -339,6 +566,12 @@ def get_version(
         ).fetchone()
         if version is None:
             raise HTTPException(status_code=404, detail="Versão não encontrada")
+        if template["agent_kind"] == "skills":
+            return {
+                **_version_view(version, template["active_version_id"]),
+                "agent_kind": "skills",
+                "manifest": pkg.normalize_manifest(version["manifest"]),
+            }
         agents = conn.execute(
             "SELECT * FROM template_agents WHERE version_id = %s ORDER BY sort_order",
             (version_id,),

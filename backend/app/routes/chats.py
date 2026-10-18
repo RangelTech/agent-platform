@@ -6,6 +6,7 @@ the model comes from backend settings (stub by default, Gemini when a key is
 configured).
 """
 
+import asyncio
 import json
 import logging
 
@@ -19,9 +20,20 @@ from pydantic import BaseModel, Field
 # use the exact same storage/transcription logic instead of duplicating it.
 from app.attachments import store_uploads as _store_uploads
 from app.attachments import transcription_spec as _transcription_spec
+from app import chat_runs
 from app.auth import current_user
 from app.config import settings
 from app.db import get_connection
+from app.kernel_router import (
+    SWITCH_CONFLICT,
+    chat_kernel_of,
+    ensure_skills_enabled,
+    kernel_headers,
+    kind_of,
+    kind_of_chat_kernel,
+    target_for_kind,
+    template_row,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -35,10 +47,21 @@ class SendRequest(BaseModel):
     template_id: str | None = None
 
 
+def _agent_kind(row: dict) -> str:
+    """'structured' | 'skills' (o kernel gravado no chat manda; senão, o template)."""
+    kernel = row.get("kernel")
+    if kernel == "harness":
+        return "skills"
+    if kernel == "llm":
+        return "structured"
+    return "skills" if row.get("agent_kind") == "skills" else "structured"
+
+
 def _serialize_chat(row: dict) -> dict:
     return {
         "id": str(row["id"]),
         "title": row["title"],
+        "agent_kind": _agent_kind(row),
         "template_id": str(row["template_id"]) if row.get("template_id") else None,
         "channel": row.get("channel") or "web",
         "external_contact": row.get("external_contact"),
@@ -51,14 +74,30 @@ def _serialize_chat(row: dict) -> dict:
 def list_chats(user: dict = Depends(current_user)):
     with get_connection() as conn:
         rows = conn.execute(
-            """SELECT * FROM chats
-                WHERE NOT is_hidden
-                  AND (user_id = %s
-                       OR (channel <> 'web' AND tenant_id = %s))
-                ORDER BY updated_at DESC""",
+            """SELECT c.*, t.agent_kind FROM chats c
+                 LEFT JOIN templates t ON t.id = c.template_id
+                WHERE NOT c.is_hidden
+                  AND (c.user_id = %s
+                       OR (c.channel <> 'web' AND c.tenant_id = %s))
+                ORDER BY c.updated_at DESC""",
             (user["id"], user["tenant_id"]),
         ).fetchall()
     return [_serialize_chat(r) for r in rows]
+
+
+@router.get("/chats/{chat_id}")
+def get_chat(chat_id: str, user: dict = Depends(current_user)):
+    with get_connection() as conn:
+        row = conn.execute(
+            """SELECT c.*, t.agent_kind FROM chats c
+                 LEFT JOIN templates t ON t.id = c.template_id
+                WHERE c.id::text = %s
+                  AND (c.user_id = %s OR (c.channel <> 'web' AND c.tenant_id = %s))""",
+            (chat_id, user["id"], user["tenant_id"]),
+        ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Conversa não encontrada")
+    return _serialize_chat(row)
 
 
 @router.post("/chats/ragentes-guide")
@@ -146,13 +185,14 @@ def _ensure_chat(user: dict, payload: SendRequest, attachments: list[dict] | Non
         # users. This also guarantees chats always carry a tenant_id.
         raise HTTPException(status_code=400, detail="Usuário master não participa de conversas")
     with get_connection() as conn:
+        requested = None
         if payload.template_id:
-            owned = conn.execute(
-                """SELECT 1 FROM templates
+            requested = conn.execute(
+                """SELECT id, agent_kind FROM templates
                     WHERE id = %s AND tenant_id = %s AND NOT is_deleted""",
                 (payload.template_id, user["tenant_id"]),
             ).fetchone()
-            if owned is None:
+            if requested is None:
                 raise HTTPException(status_code=404, detail="Template não encontrado")
         if payload.chat_id:
             chat = conn.execute(
@@ -161,17 +201,44 @@ def _ensure_chat(user: dict, payload: SendRequest, attachments: list[dict] | Non
             ).fetchone()
             if chat is None:
                 raise HTTPException(status_code=404, detail="Conversa não encontrada")
+            effective = requested
+            if effective is None and chat["template_id"]:
+                effective = template_row(conn, user["tenant_id"], chat["template_id"])
+            kind = kind_of(effective["agent_kind"] if effective else None)
+            pinned = kind_of_chat_kernel(chat["kernel"])
+            # Uma conversa não troca de tipo de agente no meio: o histórico de
+            # um não é conversível no outro.
+            if pinned is not None and pinned != kind:
+                raise HTTPException(status_code=409, detail=SWITCH_CONFLICT)
+            if kind == "skills":
+                ensure_skills_enabled(conn, user["tenant_id"])
+                target_for_kind("skills")
             if payload.template_id and str(chat["template_id"] or "") != payload.template_id:
                 chat = conn.execute(
                     "UPDATE chats SET template_id = %s WHERE id = %s RETURNING *",
                     (payload.template_id, chat["id"]),
                 ).fetchone()
+            if chat["kernel"] is None:
+                chat = conn.execute(
+                    "UPDATE chats SET kernel = %s WHERE id = %s RETURNING *",
+                    (chat_kernel_of(kind), chat["id"]),
+                ).fetchone()
         else:
+            kind = kind_of(requested["agent_kind"] if requested else None)
+            if kind == "skills":
+                ensure_skills_enabled(conn, user["tenant_id"])
+                target_for_kind("skills")
             title = payload.message[:60] + ("…" if len(payload.message) > 60 else "")
             chat = conn.execute(
-                """INSERT INTO chats (tenant_id, user_id, title, template_id)
-                   VALUES (%s, %s, %s, %s) RETURNING *""",
-                (user["tenant_id"], user["id"], title, payload.template_id),
+                """INSERT INTO chats (tenant_id, user_id, title, template_id, kernel)
+                   VALUES (%s, %s, %s, %s, %s) RETURNING *""",
+                (
+                    user["tenant_id"],
+                    user["id"],
+                    title,
+                    payload.template_id,
+                    chat_kernel_of(kind),
+                ),
             ).fetchone()
         conn.execute(
             """INSERT INTO chat_messages (chat_id, role, content, attachments)
@@ -180,6 +247,46 @@ def _ensure_chat(user: dict, payload: SendRequest, attachments: list[dict] | Non
         )
         conn.execute("UPDATE chats SET updated_at = now() WHERE id = %s", (chat["id"],))
     return chat
+
+
+def _sse(event: str, data: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+# Tarefas de fundo das runs de skills: referência forte para não serem coletadas
+# enquanto a resposta ainda está sendo recebida sem cliente conectado.
+_BACKGROUND: set[asyncio.Task] = set()
+
+
+@router.post("/chat/runs/{run_id}/cancel")
+async def cancel_run(run_id: str, user: dict = Depends(current_user)):
+    with get_connection() as conn:
+        run = conn.execute(
+            """SELECT * FROM chat_runs
+                WHERE run_id::text = %s AND tenant_id = %s AND user_id = %s""",
+            (run_id, user["tenant_id"], user["id"]),
+        ).fetchone()
+        if run is None:
+            raise HTTPException(status_code=404, detail="Execução não encontrada")
+        if run["status"] not in ("running", "cancelling"):
+            raise HTTPException(status_code=409, detail="Esta execução já terminou")
+        conn.execute(
+            "UPDATE chat_runs SET status = 'cancelling' WHERE run_id = %s", (run["run_id"],)
+        )
+    event = chat_runs.CANCEL_EVENTS.get(str(run["run_id"]))
+    if event is not None:
+        event.set()
+    if run["kernel"] == "harness":
+        try:
+            target = target_for_kind("skills")
+            async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client:
+                await client.post(
+                    f"{target.url.rstrip('/')}/v1/runs/{run['run_id']}/cancel",
+                    headers=await kernel_headers(target),
+                )
+        except (httpx.HTTPError, HTTPException):
+            logger.warning("cancel could not be forwarded for run %s", run["run_id"])
+    return {"status": "cancelling"}
 
 
 @router.post("/chat/send")
@@ -205,10 +312,15 @@ async def send_message(request: Request, user: dict = Depends(current_user)):
 
     chat = _ensure_chat(user, payload, attachments)
     chat_id = str(chat["id"])
+    template_id = str(chat["template_id"]) if chat["template_id"] else None
+
+    if chat["kernel"] == "harness":
+        return await _send_to_skills_agent(
+            user, chat_id, template_id, payload.message, attachments
+        )
 
     from app.template_runtime import build_run_payload
 
-    template_id = str(chat["template_id"]) if chat["template_id"] else None
     run = build_run_payload(user["tenant_id"], template_id, chat_id)
     kernel_payload = {
         "thread_id": chat_id,
@@ -218,29 +330,37 @@ async def send_message(request: Request, user: dict = Depends(current_user)):
         "user_id": str(user["id"]),
         **run,
     }
-    headers = {}
-    if settings.kernel_audience:
-        from app.gcp_auth import id_token_for
-
-        headers["Authorization"] = f"Bearer {await id_token_for(settings.kernel_audience)}"
-    elif settings.kernel_internal_token:
-        headers["Authorization"] = f"Bearer {settings.kernel_internal_token}"
+    target = target_for_kind("graph")
+    headers = await kernel_headers(target)
+    run_id = chat_runs.new_run_id()
+    chat_runs.register_run(
+        run_id=run_id,
+        tenant_id=user["tenant_id"],
+        user_id=user["id"],
+        chat_id=chat_id,
+        template_id=template_id,
+        kernel="llm",
+    )
+    cancelled = asyncio.Event()
+    chat_runs.CANCEL_EVENTS[run_id] = cancelled
 
     async def relay():
         # chat_id first, so a brand-new conversation appears in the sidebar
         # before the first token arrives.
-        yield f"event: chat\ndata: {json.dumps({'chat_id': chat_id})}\n\n"
+        yield f"event: chat\ndata: {json.dumps({'chat_id': chat_id, 'run_id': run_id})}\n\n"
         assistant_text = ""
+        outcome = "done"
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(310.0)) as client:
                 async with client.stream(
                     "POST",
-                    f"{settings.kernel_url}/v1/runs",
+                    target.runs_url,
                     json=kernel_payload,
                     headers=headers,
                 ) as response:
                     if response.status_code != 200:
                         detail = (await response.aread()).decode()[:500]
+                        outcome = "error"
                         yield (f"event: error\ndata: {json.dumps({'detail': detail})}\n\n")
                         return
                     current_event = ""
@@ -255,9 +375,17 @@ async def send_message(request: Request, user: dict = Depends(current_user)):
                             except json.JSONDecodeError:
                                 pass
                         yield line + "\n"
+                        if cancelled.is_set():
+                            outcome = "cancelled"
+                            break
         except httpx.HTTPError as exc:
             logger.exception("kernel unreachable")
+            outcome = "error"
             yield f"event: error\ndata: {json.dumps({'detail': str(exc)})}\n\n"
+            return
+        finally:
+            chat_runs.finish_run(run_id, outcome)
+        if outcome == "cancelled":
             return
         if assistant_text:
             with get_connection() as conn:
@@ -282,6 +410,99 @@ async def send_message(request: Request, user: dict = Depends(current_user)):
                 )
             except Exception:  # noqa: BLE001 — memory must never break the chat
                 logger.exception("failed to enqueue memory extraction")
+
+    return StreamingResponse(
+        relay(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+async def _send_to_skills_agent(
+    user: dict, chat_id: str, template_id: str | None, message: str, attachments: list[dict]
+):
+    """Run de um agente por skills.
+
+    A leitura do kernel e a gravação da resposta acontecem numa tarefa de
+    fundo: se o navegador fechar no meio, a resposta é gravada do mesmo jeito.
+    O cliente recebe as linhas por uma fila; eventos desconhecidos passam
+    direto (o front ignora o que não conhece).
+    """
+    from app.harness_runtime import prepare_harness_run
+
+    if template_id is None:
+        raise HTTPException(status_code=409, detail="Escolha um agente para esta conversa")
+    target = target_for_kind("skills")
+    payload = prepare_harness_run(
+        tenant_id=user["tenant_id"],
+        template_id=template_id,
+        chat_id=chat_id,
+        message=message,
+        user=user,
+        attachments=attachments,
+        transcription=_transcription_spec(user["tenant_id"]) if attachments else None,
+    )
+    run_id = payload["run_id"]
+    headers = await kernel_headers(target)
+    queue: asyncio.Queue[str | None] = asyncio.Queue()
+
+    async def producer():
+        outcome = "error"
+        assistant_text = ""
+        try:
+            timeout = httpx.Timeout(
+                connect=10.0,
+                read=float(settings.harness_run_timeout_seconds),
+                write=30.0,
+                pool=10.0,
+            )
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                async with client.stream(
+                    "POST", target.runs_url, json=payload, headers=headers
+                ) as response:
+                    if response.status_code != 200:
+                        logger.warning("skills agent refused the run: %s", response.status_code)
+                        await queue.put(
+                            _sse("error", {"detail": "O agente não está disponível no momento"})
+                        )
+                        return
+                    current_event = ""
+                    async for line in response.aiter_lines():
+                        if line.startswith("event: "):
+                            current_event = line[7:].strip()
+                        elif line.startswith("data: "):
+                            if current_event == "done":
+                                try:
+                                    assistant_text = json.loads(line[6:]).get("text", "")
+                                    outcome = "done"
+                                except json.JSONDecodeError:
+                                    pass
+                            elif current_event == "error":
+                                outcome = "error"
+                        await queue.put(line + "\n")
+        except httpx.HTTPError:
+            logger.exception("skills agent unreachable")
+            await queue.put(_sse("error", {"detail": "O agente não está disponível no momento"}))
+        finally:
+            try:
+                if assistant_text and outcome == "done":
+                    chat_runs.save_assistant_message(run_id, chat_id, assistant_text)
+                chat_runs.finish_run(run_id, outcome)
+            except Exception:  # noqa: BLE001 — persistence failure must not hang the stream
+                logger.exception("failed to close run %s", run_id)
+            await queue.put(None)
+
+    task = asyncio.create_task(producer())
+    _BACKGROUND.add(task)
+    task.add_done_callback(_BACKGROUND.discard)
+
+    async def relay():
+        yield _sse("chat", {"chat_id": chat_id, "run_id": run_id})
+        while True:
+            item = await queue.get()
+            if item is None:
+                return
+            yield item
 
     return StreamingResponse(
         relay(),

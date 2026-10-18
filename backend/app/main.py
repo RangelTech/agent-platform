@@ -11,6 +11,7 @@ from app.db import get_connection
 from app.migrations import run_migrations
 from app.ragentes_guide import ensure_all_tenants
 from app.routes import ai_router as ai_router_routes
+from app.routes import approvals as approval_routes
 from app.routes import ai_services as ai_service_routes
 from app.routes import artifacts as artifact_routes
 from app.routes import auth as auth_routes
@@ -18,6 +19,7 @@ from app.routes import chats as chat_routes
 from app.routes import custom_tools as custom_tool_routes
 from app.routes import datasources as datasource_routes
 from app.routes import email_accounts as email_account_routes
+from app.routes import environment as environment_routes
 from app.routes import files as file_routes
 from app.routes import google_accounts as google_account_routes
 from app.routes import hermes_approvals as hermes_approval_routes
@@ -26,6 +28,7 @@ from app.routes import hermes_commands as hermes_command_routes
 from app.routes import hermes_devices as hermes_device_routes
 from app.routes import hermes_sessions as hermes_session_routes
 from app.routes import installation_secrets as installation_secret_routes
+from app.routes import internal as internal_routes
 from app.routes import integrations as integration_routes
 from app.routes import mcp_store as mcp_store_routes
 from app.routes import memories as memory_routes
@@ -35,9 +38,11 @@ from app.routes import payments as payment_routes
 from app.routes import profiles as profile_routes
 from app.routes import public_api as public_routes
 from app.routes import secrets as secret_routes
+from app.routes import skills as skill_routes
 from app.routes import templates as template_routes
 from app.routes import tenant_guide as tenant_guide_routes
 from app.routes import tenants as tenant_routes
+from app.routes import tools as tool_routes
 from app.routes import toolkits as toolkit_routes
 from app.routes import unofficial_connections as unofficial_connection_routes
 from app.routes import usage as usage_routes
@@ -196,6 +201,14 @@ app.include_router(hermes_session_routes.router)
 app.include_router(hermes_command_routes.router)
 app.include_router(hermes_approval_routes.router)
 app.include_router(hermes_audit_routes.router)
+app.include_router(tool_routes.router)
+app.include_router(skill_routes.router)
+app.include_router(approval_routes.router)
+app.include_router(environment_routes.router)
+# Rotas internas (só serviço): /internal/... e o mesmo conjunto sob /api para
+# proxies que só encaminham /api.
+app.include_router(internal_routes.router)
+app.include_router(internal_routes.router, prefix="/api", include_in_schema=False)
 
 
 def _mount_spa(application: FastAPI) -> None:

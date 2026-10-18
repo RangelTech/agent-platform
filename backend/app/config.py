@@ -36,6 +36,27 @@ class Settings(BaseSettings):
     # When set (Cloud Run), the backend sends an OIDC ID token with this
     # audience on every kernel call. Usually the kernel's own URL.
     kernel_audience: str = ""
+    # Agentes por skills (spec 04): segundo kernel, ao lado do kernel acima.
+    # Vazio = recurso indisponível (os templates `skills` respondem 503).
+    kernel_harness_url: str = ""
+    kernel_harness_audience: str = ""
+    kernel_harness_token: str = ""
+    # Token de serviço das rotas /internal/* (kernel -> backend). Vazio fecha
+    # essas rotas para o token de serviço; o run_token por run continua valendo.
+    harness_internal_token: str = ""
+    # Segredo que assina o run_token. Vazio deriva de ENCRYPTION_KEY.
+    run_token_secret: str = ""
+    run_token_ttl_seconds: int = 900
+    # Teto do cliente HTTP para uma run longa (acima do turno máximo de 540 s).
+    harness_run_timeout_seconds: int = 660
+    # Revisão das skills de sistema (pin enviado no payload da run).
+    harness_system_skills_rev: str = "latest"
+    # Gerenciador de execução (ambiente do cliente). Vazio = modo simulado,
+    # que mantém o estado só no Postgres.
+    runtime_manager_url: str = ""
+    runtime_manager_token: str = ""
+    # Domínio onde os apps publicados da empresa aparecem (<app>-<empresa>.<domínio>).
+    apps_base_domain: str = "apps.rangeltech.net"
     # Fernet master key for secrets at rest (Secret Manager in production).
     encryption_key: str = ""
     # URL pública do backend (https://...). Só é necessária para montar o

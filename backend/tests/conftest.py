@@ -168,3 +168,68 @@ def other_tenant_admin(client, master_token):
         "/api/auth/login", json={"email": email, "password": "senha-forte-123"}
     ).json()["token"]
     return {"user": r.json(), "token": token, "email": email, "tenant": tenant}
+
+
+class FakeHarness:
+    """Segundo kernel simulado: guarda o que recebeu e responde com SSE."""
+
+    def __init__(self, url: str, calls: dict):
+        self.url = url
+        self.calls = calls
+
+    def reset(self):
+        for value in self.calls.values():
+            value.clear()
+
+
+def _fake_harness_app(calls: dict) -> FastAPI:
+    app = FastAPI()
+
+    @app.post("/v1/runs")
+    async def runs(payload: dict):
+        calls["runs"].append(payload)
+
+        async def stream():
+            yield 'event: step\ndata: {"kind":"skill","label":"Consultando","status":"start"}\n\n'
+            yield 'event: token\ndata: {"text": "ola"}\n\n'
+            yield 'event: step\ndata: {"kind":"skill","label":"Consultando","status":"done"}\n\n'
+            yield 'event: evento_futuro\ndata: {"x": 1}\n\n'
+            yield 'event: done\ndata: {"text": "resposta do agente"}\n\n'
+
+        return StreamingResponse(stream(), media_type="text/event-stream")
+
+    @app.post("/v1/runs/{run_id}/cancel")
+    async def cancel(run_id: str):
+        calls["cancels"].append(run_id)
+        return {"status": "cancelling"}
+
+    @app.post("/v1/approvals/{approval_id}")
+    async def approval(approval_id: str, payload: dict):
+        calls["approvals"].append({"id": approval_id, **payload})
+        return {"ok": True}
+
+    return app
+
+
+@pytest.fixture(scope="session")
+def _fake_harness_server():
+    calls = {"runs": [], "cancels": [], "approvals": []}
+    config = uvicorn.Config(_fake_harness_app(calls), host="127.0.0.1", port=0, log_level="error")
+    server = uvicorn.Server(config)
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    while not server.started:
+        pass
+    port = server.servers[0].sockets[0].getsockname()[1]
+    yield FakeHarness(f"http://127.0.0.1:{port}", calls)
+    server.should_exit = True
+    thread.join(timeout=5)
+
+
+@pytest.fixture
+def fake_harness(_fake_harness_server, monkeypatch):
+    """Aponta o backend para o segundo kernel simulado."""
+    _fake_harness_server.reset()
+    monkeypatch.setattr(settings, "kernel_harness_url", _fake_harness_server.url)
+    monkeypatch.setattr(settings, "harness_internal_token", "token-interno-de-teste")
+    return _fake_harness_server
