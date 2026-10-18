@@ -48,6 +48,7 @@ def test_sweep_stale_closes_old_running_runs_only(client, tenant, tenant_admin):
             (rid, tid),
         )
     assert chat_runs.sweep_stale(25) >= 1
-    rows = _sql("SELECT run_id::text, status FROM chat_runs WHERE run_id::text IN (%s, %s)", (old, fresh))
+    q = "SELECT run_id::text, status FROM chat_runs WHERE run_id::text IN (%s, %s)"
+    rows = _sql(q, (old, fresh))
     st = dict(rows)
     assert st[old] == "error" and st[fresh] == "running"
