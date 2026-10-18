@@ -31,6 +31,7 @@ from app.routes import hermes_sessions as hermes_session_routes
 from app.routes import installation_secrets as installation_secret_routes
 from app.routes import integrations as integration_routes
 from app.routes import internal as internal_routes
+from app.routes import internal_kernel as internal_kernel_routes
 from app.routes import mcp_store as mcp_store_routes
 from app.routes import memories as memory_routes
 from app.routes import microsoft_accounts as microsoft_account_routes
@@ -218,7 +219,9 @@ app.include_router(environment_routes.router)
 # Rotas internas (só serviço): /internal/... e o mesmo conjunto sob /api para
 # proxies que só encaminham /api.
 app.include_router(internal_routes.router)
+app.include_router(internal_kernel_routes.router)
 app.include_router(internal_routes.router, prefix="/api", include_in_schema=False)
+app.include_router(internal_kernel_routes.router, prefix="/api", include_in_schema=False)
 
 
 def _mount_spa(application: FastAPI) -> None:
