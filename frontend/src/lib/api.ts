@@ -11,10 +11,13 @@ export function setToken(token: string | null) {
 
 export class ApiError extends Error {
   status: number
+  /** Corpo JSON completo do erro (ex.: lista de problemas de validação). */
+  body: unknown
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, body: unknown = null) {
     super(message)
     this.status = status
+    this.body = body
   }
 }
 
@@ -70,11 +73,9 @@ export async function api<T>(
   }
 
   if (!res.ok) {
-    const detail = await res
-      .json()
-      .then((b) => b.detail)
-      .catch(() => null)
-    throw new ApiError(res.status, apiErrorMessage(detail, `Erro ${res.status}`))
+    const body = await res.json().catch(() => null)
+    const detail = body && typeof body === 'object' ? (body as { detail?: unknown }).detail : null
+    throw new ApiError(res.status, apiErrorMessage(detail, `Erro ${res.status}`), body)
   }
 
   return res.status === 204 ? (undefined as T) : res.json()
@@ -96,6 +97,8 @@ export interface Me {
   tenant_id: string | null
   permissions: Record<string, string[]>
   branding: Branding
+  /** Empresa com agentes por skills habilitados (serializado pelo servidor). */
+  skills_agents_enabled?: boolean
 }
 
 export interface Tenant {

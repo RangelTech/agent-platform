@@ -9,7 +9,8 @@ import {
   Routes,
   useLocation,
 } from 'react-router-dom'
-import { Button } from './components/ui'
+import { RequirePermission } from './components/RequirePermission'
+import { Button, ToastProvider } from './components/ui'
 import { AuthProvider, useAuth } from './lib/auth'
 import { fadeIn, pageVariants } from './lib/motion'
 import AiServices from './pages/AiServices'
@@ -32,7 +33,11 @@ import Customize from './pages/Customize'
 import CustomTools from './pages/CustomTools'
 import Profiles from './pages/Profiles'
 import RatendeConnector from './pages/RatendeConnector'
-import TemplatesPage from './pages/Templates'
+import Environment from './pages/Environment'
+import Skills from './pages/Skills'
+import SkillsTemplateEditor from './pages/SkillsTemplateEditor'
+import StructuredEditor from './pages/templates/StructuredEditor'
+import TemplateList from './pages/templates/TemplateList'
 import Tenants from './pages/Tenants'
 import Usage from './pages/Usage'
 import Users from './pages/Users'
@@ -59,6 +64,8 @@ function Shell() {
   const isChat = location.pathname === '/chat'
   const isDashboard = location.pathname === '/dashboard'
 
+  const skillsEnabled = Boolean(user?.is_master || user?.skills_agents_enabled)
+
   const links = [
     // The master administers the platform and has no tenant to chat in.
     { to: '/dashboard', label: 'Início', show: true },
@@ -67,7 +74,9 @@ function Shell() {
     { to: '/usuarios', label: 'Usuários', show: can('users', 'view') },
     { to: '/perfis', label: 'Perfis', show: can('user_profiles', 'view') },
     { to: '/servicos-ia', label: 'Serviços de IA', show: can('ai_services', 'view') },
-    { to: '/templates', label: 'Templates', show: can('templates', 'view') },
+    { to: '/templates', label: 'Agentes de IA', show: can('templates', 'view') },
+    { to: '/skills', label: 'Skills', show: can('skills', 'view') && skillsEnabled },
+    { to: '/ambiente', label: 'Ambiente', show: can('environment', 'view') },
     { to: '/custom-tools', label: 'Custom Tools', show: !(user?.is_master ?? false) && can('templates', 'edit') },
     { to: '/fontes-de-dados', label: 'Fontes de dados', show: can('datasources', 'view') },
     { to: '/arquivos', label: 'Arquivos', show: can('files', 'view') },
@@ -238,7 +247,11 @@ function Shell() {
               <Route path="/usuarios" element={<Users />} />
               <Route path="/perfis" element={<Profiles />} />
               <Route path="/servicos-ia" element={<AiServices />} />
-              <Route path="/templates" element={<TemplatesPage />} />
+              <Route path="/templates" element={<RequirePermission resource="templates"><TemplateList /></RequirePermission>} />
+              <Route path="/templates/estruturado/:id" element={<RequirePermission resource="templates"><StructuredEditor /></RequirePermission>} />
+              <Route path="/templates/skills/:id" element={<RequirePermission resource="templates" skillsAgents><SkillsTemplateEditor /></RequirePermission>} />
+              <Route path="/skills" element={<RequirePermission resource="skills" skillsAgents><Skills /></RequirePermission>} />
+              <Route path="/ambiente" element={<RequirePermission resource="environment"><Environment /></RequirePermission>} />
               <Route path="/custom-tools" element={<CustomTools />} />
               <Route path="/fontes-de-dados" element={<Datasources />} />
               <Route path="/arquivos" element={<Files />} />
@@ -285,6 +298,7 @@ function Gate() {
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <ToastProvider>
       <AuthProvider>
         <Router>
           {/* Páginas legais (produto-01 da mega spec): públicas, sem login,
@@ -303,6 +317,7 @@ export default function App() {
           </Routes>
         </Router>
       </AuthProvider>
+      </ToastProvider>
     </QueryClientProvider>
   )
 }

@@ -74,7 +74,7 @@ test('admin creates a custom profile, edits a user, permissions apply', async ({
   await expect(page.getByTestId('current-user')).toHaveText('Viewer Renomeada')
   await expectSectionAvailable(page, 'Consumo')
   await expectSectionAvailable(page, 'Usuários', false)
-  await expectSectionAvailable(page, 'Templates', false)
+  await expectSectionAvailable(page, 'Agentes de IA', false)
 
   // Backend enforces it too, not just the nav.
   const viewerToken = (

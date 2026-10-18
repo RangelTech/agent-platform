@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
+    "check:vocab": "node scripts/check-vocab.mjs",
+    "test:mock": "playwright test -c playwright.mock.config.ts",
     "preview": "vite preview"
   },
   "dependencies": {

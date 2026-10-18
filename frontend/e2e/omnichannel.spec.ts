@@ -45,7 +45,7 @@ test('o dono da empresa enxerga as áreas administrativas', async ({ page, reque
   await page.getByRole('button', { name: 'Abrir navegação' }).click()
 
   const drawer = page.getByTestId('nav-drawer')
-  for (const secao of ['Templates', 'Fontes de dados', 'Integrações', 'Pagamentos', 'Atendimento']) {
+  for (const secao of ['Agentes de IA', 'Fontes de dados', 'Integrações', 'Pagamentos', 'Atendimento']) {
     await expect(drawer.getByRole('link', { name: secao })).toBeVisible()
   }
   await expect(page.getByTestId('nav-scope-note')).toHaveCount(0)
