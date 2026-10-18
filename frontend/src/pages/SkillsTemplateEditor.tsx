@@ -824,6 +824,27 @@ export default function SkillsTemplateEditor() {
                   }
                 />
               </div>
+              <label className="flex items-start gap-3 text-sm text-[var(--text)]">
+                <input
+                  type="checkbox"
+                  data-testid="manifest-confirm-actions"
+                  className="mt-1"
+                  disabled={readOnly}
+                  checked={Boolean(manifest.limits.confirm_actions)}
+                  onChange={(e) =>
+                    setManifest((m) => {
+                      const { confirm_actions: _drop, ...rest } = m.limits
+                      return { ...m, limits: e.target.checked ? { ...rest, confirm_actions: true } : rest }
+                    })
+                  }
+                />
+                <span>
+                  Pedir confirmação do usuário antes de ações sensíveis (cobrança Pix, e-mail, gravação de dados).
+                  <span className="block text-xs text-[var(--text-muted)]">
+                    Desligado: o agente age direto e confirma só na conversa.
+                  </span>
+                </span>
+              </label>
               <div className="grid gap-3 sm:grid-cols-2">
                 <Input
                   label="Tabelas que o agente pode alterar"

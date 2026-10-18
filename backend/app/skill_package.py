@@ -205,6 +205,8 @@ def normalize_manifest(raw: object) -> dict:
         out: dict = {}
         if isinstance(limits.get("max_turns"), int):
             out["max_turns"] = limits["max_turns"]
+        if limits.get("confirm_actions") is True:
+            out["confirm_actions"] = True  # liga o cartão (padrão: o agente age direto)
         tables = _clean_list(limits.get("write_tables"), TABLE_RE)
         if tables:
             out["write_tables"] = tables
@@ -279,6 +281,10 @@ def validate_manifest(raw: object, tool_ids: set[str]) -> list[Problem]:
                         Problem("manifest", "bad_manifest", f"Valor inválido em {label}s: {v!r}")
                     )
     if isinstance(limits, dict):
+        if "confirm_actions" in limits and not isinstance(limits["confirm_actions"], bool):
+            problems.append(
+                Problem("manifest", "bad_manifest", "confirm_actions deve ser verdadeiro ou falso")
+            )
         turns = limits.get("max_turns")
         if turns is not None and not (
             isinstance(turns, int) and not isinstance(turns, bool) and 1 <= turns <= 200
