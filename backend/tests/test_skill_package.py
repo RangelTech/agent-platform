@@ -5,7 +5,10 @@ from app.tool_catalog import tool_ids
 
 TOOLS = tool_ids()
 
-SKILL = "---\nname: cobranca\ndescription: Cobra clientes em atraso\n---\n# Cobrança\n\nPasso a passo.\n"
+SKILL = (
+    "---\nname: cobranca\ndescription: Cobra clientes em atraso\n---\n"
+    "# Cobrança\n\nPasso a passo.\n"
+)
 
 
 def _files(**extra):

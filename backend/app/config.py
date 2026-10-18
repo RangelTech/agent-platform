@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     kernel_harness_url: str = ""
     kernel_harness_audience: str = ""
     kernel_harness_token: str = ""
+    # Laço que dispara as rotinas agendadas (só roda se houver kernel de skills).
+    scheduler_enabled: bool = True
     # Token de serviço das rotas /internal/* (kernel -> backend). Vazio fecha
     # essas rotas para o token de serviço; o run_token por run continua valendo.
     harness_internal_token: str = ""

@@ -399,7 +399,8 @@ def validate_package(files: object, manifest: object, tool_ids: set[str]) -> lis
                 Problem(
                     path,
                     "secret_detected",
-                    f"Parece haver {label} escrito no texto. Remova e use as credenciais da empresa",
+                    f"Parece haver {label} escrito no texto. "
+                    "Remova e use as credenciais da empresa",
                     line=number,
                 )
             )

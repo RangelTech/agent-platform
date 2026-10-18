@@ -21,7 +21,9 @@ TOOLS: list[dict] = [
     {
         "id": "rt_sql_write",
         "label": "Alterar dados",
-        "description": "Altera registros nas tabelas liberadas. Pede confirmação antes de cada alteração.",
+        "description": (
+            "Altera registros nas tabelas liberadas. Pede confirmação antes de cada alteração."
+        ),
         "sensitive": True,
     },
     {
@@ -97,6 +99,14 @@ TOOLS: list[dict] = [
         "sensitive": False,
     },
     {
+        "id": "rt_executor_run",
+        "label": "Rodar código e gerar gráficos",
+        "description": (
+            "Executa cálculos e gera gráficos, planilhas e PDFs num ambiente isolado, sem internet."
+        ),
+        "sensitive": False,
+    },
+    {
         "id": "rt_image_generate",
         "label": "Gerar imagens",
         "description": "Cria imagens a partir de uma descrição.",
@@ -117,7 +127,9 @@ TOOLS: list[dict] = [
     {
         "id": "rt_env_manage",
         "label": "Operar o ambiente da empresa",
-        "description": "Inicia o ambiente, publica aplicativos e configura domínios. Pede confirmação.",
+        "description": (
+            "Inicia o ambiente, publica aplicativos e configura domínios. Pede confirmação."
+        ),
         "sensitive": True,
     },
     {

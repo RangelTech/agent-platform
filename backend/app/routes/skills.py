@@ -260,7 +260,8 @@ def discard_my_skill(skill_id: str, user: dict = Depends(current_user)):
     with get_connection() as conn:
         row = _own(conn, skill_id, user)
         updated = conn.execute(
-            "UPDATE user_skills SET status = 'discarded', updated_at = now() WHERE id = %s RETURNING *",
+            "UPDATE user_skills SET status = 'discarded', updated_at = now() "
+            "WHERE id = %s RETURNING *",
             (row["id"],),
         ).fetchone()
         audit(

@@ -130,6 +130,17 @@ def post_usage(run_id: str, payload: UsageIn, run: dict = Depends(_run_dep)):
     return {"ok": True}
 
 
+# ------------------------------------------------------------- schedules ---
+
+
+@router.post("/runs/{run_id}/schedules")
+def post_schedule(run_id: str, payload: dict, run: dict = Depends(_run_dep)):
+    """Rotinas pedidas pelo agente (rt_schedule_*): escopo = dono da run."""
+    from app import scheduler
+
+    return scheduler.handle_kernel_op(run, payload)
+
+
 # ------------------------------------------------------------- artifacts ---
 
 

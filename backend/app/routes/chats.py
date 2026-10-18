@@ -16,11 +16,12 @@ from fastapi.responses import StreamingResponse
 from psycopg.types.json import Json
 from pydantic import BaseModel, Field
 
+from app import chat_runs
+
 # Shared with app/routes/public_api.py (Chatwoot bridge path) so both callers
 # use the exact same storage/transcription logic instead of duplicating it.
 from app.attachments import store_uploads as _store_uploads
 from app.attachments import transcription_spec as _transcription_spec
-from app import chat_runs
 from app.auth import current_user
 from app.config import settings
 from app.db import get_connection

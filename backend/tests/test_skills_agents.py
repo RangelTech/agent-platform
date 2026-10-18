@@ -774,11 +774,13 @@ def test_authenticated_approval_flow(client, enabled, tenant_admin, fake_harness
 def test_approval_expiry_and_deny(client, enabled, tenant_admin, fake_harness):
     h = auth(tenant_admin["token"])
     run_id, t = _run_for(client, tenant_admin, fake_harness)
-    mk = lambda: client.post(
-        "/internal/approvals",
-        json={"run_id": run_id, "summary": "Enviar e-mail", "ttl_seconds": 60},
-        headers=SERVICE,
-    ).json()["approval_id"]  # noqa: E731
+    def mk():
+        return client.post(
+            "/internal/approvals",
+            json={"run_id": run_id, "summary": "Enviar e-mail", "ttl_seconds": 60},
+            headers=SERVICE,
+        ).json()["approval_id"]
+
     expired = mk()
     _sql(
         "UPDATE approvals SET expires_at = now() - interval '1 minute' WHERE approval_id::text=%s",
@@ -859,7 +861,8 @@ def test_internal_usage_artifacts_messages_audit_package(
         headers=SERVICE,
     ).json() == {"ok": True}
     row = _sql(
-        "SELECT prompt_tokens, completion_tokens, tenant_id::text FROM usage_records WHERE tenant_id::text=%s",
+        "SELECT prompt_tokens, completion_tokens, tenant_id::text FROM usage_records "
+        "WHERE tenant_id::text=%s",
         (tid,),
     )[0]
     assert row == (100, 40, tid)
