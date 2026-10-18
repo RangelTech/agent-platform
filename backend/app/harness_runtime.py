@@ -257,7 +257,7 @@ def prepare_harness_run(
         "message": message,
         "attachments": attachments or [],
         "model": {
-            "alias": model.get("alias") or DEFAULT_MODEL_ALIAS,
+            "alias": model.get("alias") or settings.harness_default_model or DEFAULT_MODEL_ALIAS,
             "reasoning_effort": "medium",
         },
         "skills": {
