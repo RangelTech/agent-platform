@@ -24,10 +24,11 @@ KERNEL_CALLS = [
 
 
 def _registered() -> set[tuple[str, str]]:
+    """Pares (método, caminho) publicados no esquema OpenAPI do app."""
     out = set()
-    for route in app.routes:
-        for method in getattr(route, "methods", None) or ():
-            out.add((method, route.path))
+    for path, ops in app.openapi()["paths"].items():
+        for method in ops:
+            out.add((method.upper(), path))
     return out
 
 
