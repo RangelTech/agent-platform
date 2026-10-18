@@ -10,10 +10,12 @@ import binascii
 import re
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from psycopg.types.json import Json
 from pydantic import BaseModel, Field
 
+from app.artifacts_io import load_bytes
+from app.config import settings
 from app.db import get_connection
 from app.routes.internal import _bearer, _is_service, get_run, run_auth
 from app.run_tokens import verify_run_token
@@ -283,3 +285,25 @@ def post_memory_proposal(run_id: str, payload: MemoryProposalIn, run: dict = Dep
             (run["tenant_id"], run["user_id"], str(run["chat_id"]), payload.text),
         ).fetchone()
     return {"id": str(row["id"]), "status": "pending_review"}
+
+
+# ------------------------------------------------------------- anexos (leitura) ---
+
+
+@router.get("/runs/{run_id}/files")
+def read_file(
+    run_id: str,
+    ref: str = Query(min_length=1, max_length=2000),
+    run: dict = Depends(run_auth),
+):
+    """Bytes de um arquivo da empresa da run (anexo da conversa). Caminho de outra empresa = 403."""
+    tenant = str(run["tenant_id"])
+    if ".." in ref or f"tenants/{tenant}/" not in ref.replace("\\", "/"):
+        raise HTTPException(status_code=403, detail="Arquivo fora do espaço da empresa")
+    try:
+        data = load_bytes(ref)
+    except Exception:  # noqa: BLE001
+        raise HTTPException(status_code=404, detail="Arquivo não encontrado") from None
+    if len(data) > settings.max_upload_bytes * 4:
+        raise HTTPException(status_code=413, detail="Arquivo grande demais")
+    return Response(content=data, media_type="application/octet-stream")
