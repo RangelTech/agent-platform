@@ -552,7 +552,7 @@ export default function SkillsTemplateEditor() {
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Notas da versão (opcional)"
-              className="w-full rounded-2xl border border-[var(--border)] bg-[var(--surface-solid)] px-3 py-2 text-sm text-[var(--text)] outline-none focus:border-[var(--brand)]"
+              className="w-full rounded-2xl border border-[var(--border)] bg-[var(--surface-solid)] px-3 py-2 text-sm text-[var(--text)] outline-none focus:border-[var(--brand)] focus:ring-2 focus:ring-[var(--brand-soft)]"
             />
           </label>
         )}
@@ -1053,7 +1053,7 @@ function TestBox({ templateId, hasActiveVersion }: { templateId: string; hasActi
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="Escreva uma mensagem para o agente"
-          className="w-full rounded-2xl border border-[var(--border)] bg-[var(--surface-solid)] px-3 py-2 text-sm text-[var(--text)] outline-none focus:border-[var(--brand)]"
+          className="w-full rounded-2xl border border-[var(--border)] bg-[var(--surface-solid)] px-3 py-2 text-sm text-[var(--text)] outline-none focus:border-[var(--brand)] focus:ring-2 focus:ring-[var(--brand-soft)]"
         />
       </label>
       <Button type="submit" disabled={!hasActiveVersion || busy || !text.trim()} data-testid="test-message-send">

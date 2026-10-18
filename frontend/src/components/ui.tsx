@@ -203,18 +203,24 @@ export function StatCard({ label, value, meta }: { label: string; value: string;
   )
 }
 
-export function Table({ headers, children }: { headers: string[]; children: ReactNode }) {
+/** Cabeçalho de tabela; `className` permite esconder colunas em telas pequenas. */
+export type TableHeader = string | { label: string; className?: string }
+
+export function Table({ headers, children }: { headers: TableHeader[]; children: ReactNode }) {
   return (
     <div className="overflow-hidden rounded-[24px] border border-[var(--border)] bg-[var(--surface-solid)]">
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
           <thead>
             <tr className="border-b border-[var(--border)] bg-[color-mix(in_srgb,var(--surface)_78%,transparent)] text-[11px] uppercase tracking-[0.18em] text-[var(--text-faint)]">
-              {headers.map((h) => (
-                <th key={h} className="px-4 py-3 font-semibold">
-                  {h}
-                </th>
-              ))}
+              {headers.map((h, i) => {
+                const header = typeof h === 'string' ? { label: h } : h
+                return (
+                  <th key={`${header.label}-${i}`} className={cx('px-4 py-3 font-semibold', header.className)}>
+                    {header.label}
+                  </th>
+                )
+              })}
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--border)]">{children}</tbody>

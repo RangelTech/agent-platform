@@ -147,7 +147,9 @@ export default function Chat() {
       setArtifacts([])
       return
     }
-    api<ChatMessage[]>(`/chats/${activeChat}/messages`).then(setMessages)
+    api<ChatMessage[]>(`/chats/${activeChat}/messages`)
+      .then(setMessages)
+      .catch((e) => setError(e instanceof Error ? e.message : 'Não foi possível carregar a conversa.'))
     api<ArtifactRef[]>(`/chats/${activeChat}/artifacts`).then(setArtifacts).catch(() => setArtifacts([]))
     listPendingApprovals()
       .then((list) =>

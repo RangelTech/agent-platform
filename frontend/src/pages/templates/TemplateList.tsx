@@ -243,7 +243,15 @@ export default function TemplateList() {
             <EmptyState title="Nenhum agente encontrado" description="Ajuste o filtro ou a busca." />
           )
         ) : (
-          <Table headers={['Nome', 'Tipo', 'Versão', 'Atualizado', '']}>
+          <Table
+            headers={[
+              'Nome',
+              'Tipo',
+              { label: 'Versão', className: 'hidden sm:table-cell' },
+              { label: 'Atualizado', className: 'hidden sm:table-cell' },
+              '',
+            ]}
+          >
             {visible.map((t) => {
               const kind = normalizeKind(t.agent_kind)
               return (
@@ -260,18 +268,18 @@ export default function TemplateList() {
                   <td className="px-3 py-2 text-[var(--text-muted)]" data-testid="template-kind">
                     {KIND_SHORT[kind]}
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="hidden px-3 py-2 sm:table-cell">
                     {t.active_version_number ? (
                       <Badge ok>v{t.active_version_number}</Badge>
                     ) : (
                       <Badge ok={false}>sem deploy</Badge>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-[var(--text-muted)]">
+                  <td className="hidden px-3 py-2 text-[var(--text-muted)] sm:table-cell">
                     {t.updated_at ? new Date(t.updated_at).toLocaleDateString('pt-BR') : '—'}
                   </td>
                   <td className="px-3 py-2 text-right">
-                    <div className="flex justify-end gap-2">
+                    <div className="flex flex-wrap justify-end gap-2">
                       {canEdit && (
                         <Button variant="ghost" data-testid="template-edit" onClick={() => navigate(editorPath(t))}>
                           Editar
