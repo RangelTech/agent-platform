@@ -360,8 +360,8 @@ Docs/evidencias:
 Health:
 
 ```powershell
-curl.exe -s -i https://teste-ia-backend-x27vtpiida-uc.a.run.app/health
-curl.exe -s -i https://teste-ia-backend-x27vtpiida-uc.a.run.app/health/ready
+curl.exe -s -i https://ia.rangeltech.net/health
+curl.exe -s -i https://ia.rangeltech.net/health/ready
 ```
 
 Kernel privado:

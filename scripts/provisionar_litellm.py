@@ -30,7 +30,7 @@ from app import litellm_client  # noqa: E402
 LITELLM_BASE_URL = os.environ.get("LITELLM_BASE_URL", "http://localhost:14000")
 LITELLM_MASTER_KEY = os.environ.get("LITELLM_MASTER_KEY", "")
 
-BACKEND = os.environ.get("HOMOLOG_BACKEND", "https://teste-ia-backend-x27vtpiida-uc.a.run.app")
+BACKEND = os.environ.get("HOMOLOG_BACKEND", "https://ia.rangeltech.net")
 MASTER_EMAIL = os.environ.get("HOMOLOG_MASTER_EMAIL", "master@example.com")
 MASTER_PASSWORD = os.environ.get("HOMOLOG_MASTER_PASSWORD", "admin123")
 

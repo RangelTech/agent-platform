@@ -30,7 +30,7 @@ capacidade/pool, segredos no banco e decisoes do dono.
 | Instância de IA | `https://ia-licita-enterprisse.rangeltech.net` (senha `123456`, veio do clone) |
 | Fonte de dados | `lake_mindlab` → BigQuery `mi-prd-lake.semantic_zone` |
 | Template | `Inteligência de Licitações` (`e79281d2-d6a5-41ee-97b4-45b1f4632863`), versão 5 |
-| Backend | `https://teste-ia-backend-x27vtpiida-uc.a.run.app` |
+| Backend | `https://ia.rangeltech.net` |
 | Kernel | `https://teste-ia-kernel-x27vtpiida-uc.a.run.app` (revisão `00032` / imagem `8a67ba3`) |
 | Chatwoot | `chatwoot-web` / `chatwoot-worker` / `chatwoot-bridge` (Cloud Run, us-central1) |
 

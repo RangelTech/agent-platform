@@ -35,7 +35,7 @@ import httpx
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-BACKEND = os.environ.get("REGRESSAO_BACKEND", "https://teste-ia-backend-x27vtpiida-uc.a.run.app")
+BACKEND = os.environ.get("REGRESSAO_BACKEND", "https://ia.rangeltech.net")
 EMAIL = os.environ.get("LICITA_EMAIL", "dono@licita.com")
 SENHA = os.environ.get("LICITA_SENHA", "licita-senha-forte-123")
 

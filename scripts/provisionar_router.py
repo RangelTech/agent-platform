@@ -39,7 +39,7 @@ IMAGEM = os.environ.get("ROUTER_IMAGE", "decolua/9router:latest")
 REDE = os.environ.get("ROUTER_NETWORK", "internal")
 REDE_PUBLICA = os.environ.get("ROUTER_PUBLIC_NETWORK", "public")
 
-BACKEND = os.environ.get("HOMOLOG_BACKEND", "https://teste-ia-backend-x27vtpiida-uc.a.run.app")
+BACKEND = os.environ.get("HOMOLOG_BACKEND", "https://ia.rangeltech.net")
 MASTER_EMAIL = os.environ.get("HOMOLOG_MASTER_EMAIL", "master@example.com")
 MASTER_PASSWORD = os.environ.get("HOMOLOG_MASTER_PASSWORD", "admin123")
 

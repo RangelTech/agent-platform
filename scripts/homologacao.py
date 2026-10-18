@@ -22,7 +22,7 @@ from typing import Any
 
 import httpx
 
-BACKEND = os.environ.get("HOMOLOG_BACKEND", "https://teste-ia-backend-x27vtpiida-uc.a.run.app")
+BACKEND = os.environ.get("HOMOLOG_BACKEND", "https://ia.rangeltech.net")
 MASTER_EMAIL = os.environ.get("HOMOLOG_MASTER_EMAIL", "master@example.com")
 MASTER_PASSWORD = os.environ.get("HOMOLOG_MASTER_PASSWORD", "admin123")
 TEST_USER_PASSWORD = os.environ.get("HOMOLOG_ADMIN_PASSWORD", "homolog-senha-forte-123")

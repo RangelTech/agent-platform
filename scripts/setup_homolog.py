@@ -14,7 +14,7 @@ from typing import Any
 
 import httpx
 
-BACKEND = os.environ.get("HOMOLOG_BACKEND", "https://teste-ia-backend-x27vtpiida-uc.a.run.app").strip()
+BACKEND = os.environ.get("HOMOLOG_BACKEND", "https://ia.rangeltech.net").strip()
 MASTER = (
     os.environ.get("HOMOLOG_MASTER_EMAIL", "master@example.com").strip(),
     os.environ.get("HOMOLOG_MASTER_PASSWORD", "admin123").strip(),

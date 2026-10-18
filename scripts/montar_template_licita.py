@@ -10,7 +10,7 @@ import sys
 
 import httpx
 
-B = "https://teste-ia-backend-x27vtpiida-uc.a.run.app"
+B = "https://ia.rangeltech.net"
 EMAIL = "dono@licita.com"
 SENHA = "licita-senha-forte-123"
 

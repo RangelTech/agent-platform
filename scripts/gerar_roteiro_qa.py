@@ -24,8 +24,8 @@ CINZA = RGBColor(0x55, 0x5F, 0x6D)
 VERMELHO = RGBColor(0xB4, 0x23, 0x18)
 VERDE = RGBColor(0x1B, 0x6E, 0x3C)
 
-BACKEND = "https://teste-ia-backend-x27vtpiida-uc.a.run.app"
-CHATWOOT = "https://chatwoot-web-x27vtpiida-uc.a.run.app"
+BACKEND = "https://ia.rangeltech.net"
+CHATWOOT = "https://chat.rangeltech.net"
 
 
 # --------------------------------------------------------------------------
