@@ -1115,26 +1115,60 @@ def test_environment_permissions_view_vs_manage(client, master_token, enabled):
     assert bad.status_code in (400, 422)
 
 
-def test_environment_proxies_to_manager_when_configured(client, enabled, tenant_admin, monkeypatch):
+def test_environment_talks_to_the_manager_with_signed_calls(
+    client, enabled, tenant_admin, monkeypatch
+):
+    from app.runtime_client import rm_tenant
+
     h = auth(tenant_admin["token"])
     calls = []
+    rmt = rm_tenant(enabled["id"])
+    state = {"created": False, "running": False}
 
     class Resp:
-        status_code = 200
+        def __init__(self, status, body):
+            self.status_code = status
+            self._b = body
 
         def json(self):
-            return {"state": "starting"}
+            return self._b
 
     def fake_request(method, url, **kw):
-        calls.append((method, url))
-        return Resp()
+        path = url.split("rm.test", 1)[1]
+        calls.append((method, path, kw["headers"]))
+        view = {
+            "plan": "standard",
+            "suspended": False,
+            "observed": {"workspace": {"state": "running" if state["running"] else "exited"}},
+            "exposures": [{"app": "metabase", "port": 3000}],
+            "usage": [{"cpu_pct": 12, "ram_mb": 300, "disk_gb": 1}],
+        }
+        if method == "GET" and path == f"/v1/tenants/{rmt}":
+            return Resp(200, view) if state["created"] else Resp(404, {"error": "unknown_tenant"})
+        if method == "POST" and path == f"/v1/tenants/{rmt}":
+            state["created"] = True
+            return Resp(200, {})
+        if path == f"/v1/tenants/{rmt}/workspace:start":
+            state["running"] = True
+            return Resp(200, {})
+        return Resp(404, {"error": "not_found"})
 
     monkeypatch.setattr(settings, "runtime_manager_url", "http://rm.test")
-    monkeypatch.setattr("app.routes.environment.httpx.request", fake_request)
-    assert client.post("/api/environment/start", headers=h).json() == {"state": "starting"}
-    assert calls[0][0] == "POST" and calls[0][1].endswith(
-        f"/v1/tenants/{enabled['id']}/environment/start"
-    )
+    monkeypatch.setattr(settings, "runtime_manager_secret", "segredo-de-teste-123456")
+    monkeypatch.setattr("app.runtime_client.httpx.request", fake_request)
+    assert client.post("/api/environment/start", headers=h).json() == {"state": "running"}
+    methods = [(m, p) for m, p, _ in calls]
+    assert ("POST", f"/v1/tenants/{rmt}") in methods  # criou no primeiro uso
+    assert ("POST", f"/v1/tenants/{rmt}/workspace:start") in methods
+    create = next(c for c in calls if c[0] == "POST" and c[1] == f"/v1/tenants/{rmt}")
+    start = next(c for c in calls if c[1].endswith("workspace:start"))
+    assert create[2]["X-RM-Scope"] == "*" and start[2]["X-RM-Scope"] == rmt
+    assert start[2]["X-RM-Signature"] and start[2]["X-RM-Service"] == "agent-platform-backend"
+    # a tela enxerga o app publicado pelo agente (espelhado do gerenciador)
+    snap = client.get("/api/environment", headers=h).json()
+    assert snap["state"] == "running"
+    assert [a["name"] for a in snap["apps"]] == ["metabase"]
+    assert snap["apps"][0]["url"] == f"https://metabase-{rmt}.apps.rangeltech.net"
 
 
 # ---------------------------------------------------------------- linguagem ---

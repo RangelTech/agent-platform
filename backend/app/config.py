@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     # que mantém o estado só no Postgres.
     runtime_manager_url: str = ""
     runtime_manager_token: str = ""
+    # Credencial HMAC deste servico no gerenciador de execucao (RM_SERVICE_KEYS).
+    runtime_manager_service: str = "agent-platform-backend"
+    runtime_manager_secret: str = ""
     # Domínio onde os apps publicados da empresa aparecem (<app>-<empresa>.<domínio>).
     apps_base_domain: str = "apps.rangeltech.net"
     # Fernet master key for secrets at rest (Secret Manager in production).
