@@ -218,3 +218,12 @@ def test_manifest_limits_validation_flags_bad_entries():
     assert "bad_manifest" in codes(problems)
     assert pkg.has_errors(problems)
     assert pkg.has_errors(pkg.validate_package(_files(), {"limits": 7}, TOOLS))
+
+
+def test_manifest_confirm_actions_is_kept_only_when_true_and_validated():
+    on = pkg.normalize_manifest({"limits": {"confirm_actions": True}})["limits"]
+    assert on == {"confirm_actions": True}
+    off = pkg.normalize_manifest({"limits": {"confirm_actions": False}})["limits"]
+    assert "confirm_actions" not in off
+    bad = pkg.validate_package(_files(), {"limits": {"confirm_actions": "sim"}}, TOOLS)
+    assert pkg.has_errors(bad)
