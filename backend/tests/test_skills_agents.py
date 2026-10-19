@@ -1,6 +1,7 @@
 """Agentes por skills: tipo de template, pacote, roteamento de kernel, skills,
 aprovações, rotas internas, ambiente e permissões."""
 
+import base64
 import json
 import uuid
 
@@ -1225,3 +1226,176 @@ def test_run_payload_without_credential_tools_grants_nothing(
     t = _setup_runtime(client, tenant_admin, tools=["rt_search_docs"])
     _sse(client.post("/api/chat/send", json={"message": "oi", "template_id": t["id"]}, headers=h))
     assert fake_harness.calls["runs"][-1]["manifest"]["credential_grants"] == []
+
+
+# ------------------------------------------------- arquivos do pacote (H-2) ---
+
+PDF_V1 = b"%PDF-1.7\n\xe2\xe3\xcf\xd3\n1 0 obj << /Cardapio /Pizza >> endobj\n%%EOF\n"
+PDF_V2 = b"%PDF-1.7\n\xe2\xe3\xcf\xd3\n1 0 obj << /Cardapio /Hamburguer >> endobj\n%%EOF\n"
+
+
+def _put_asset(client, token, template, name, data, status=200):
+    r = client.put(
+        f"/api/templates/{template['id']}/draft/files/arquivos/{name}",
+        json={"content_base64": base64.b64encode(data).decode()},
+        headers=auth(token),
+    )
+    assert r.status_code == status, r.text
+    return r.json()
+
+
+def test_asset_upload_replace_remove_in_draft(client, enabled, tenant_admin):
+    import hashlib
+
+    tok = tenant_admin["token"]
+    h = auth(tok)
+    t = _skills_template(client, tok)
+    a = _put_asset(client, tok, t, "cardapio.pdf", PDF_V1)
+    assert a["path"] == "arquivos/cardapio.pdf" and a["size_bytes"] == len(PDF_V1)
+    assert a["mime"] == "application/pdf" and a["sha256"] == hashlib.sha256(PDF_V1).hexdigest()
+
+    # multipart, sem informar a pasta: cai em arquivos/
+    r = client.post(
+        f"/api/templates/{t['id']}/draft/files",
+        files={"file": ("precos.xlsx", b"PK\x03\x04dados", "application/octet-stream")},
+        headers=h,
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["path"] == "arquivos/precos.xlsx"
+
+    draft = client.get(f"/api/templates/{t['id']}/draft", headers=h).json()
+    by = {f["path"]: f for f in draft["files"]}
+    assert set(by) == {"AGENTE.md", "arquivos/cardapio.pdf", "arquivos/precos.xlsx"}
+    pdf = by["arquivos/cardapio.pdf"]
+    assert pdf["is_binary"] and pdf["content"] is None
+
+    # Salvar o texto (inclusive devolvendo a listagem inteira) não mexe nos binários.
+    body = {"files": draft["files"], "manifest": draft["manifest"]}
+    saved = client.put(f"/api/templates/{t['id']}/draft", json=body, headers=h).json()
+    assert saved["ok"], saved
+    again = client.get(f"/api/templates/{t['id']}/draft", headers=h).json()
+    assert {f["path"] for f in again["files"]} == set(by)
+
+    # Substituir: mesmo caminho, conteúdo novo.
+    b = _put_asset(client, tok, t, "cardapio.pdf", PDF_V2)
+    assert b["sha256"] != a["sha256"]
+    raw = client.get(f"/api/templates/{t['id']}/draft/files/arquivos/cardapio.pdf", headers=h)
+    assert raw.content == PDF_V2 and raw.headers["content-type"] == "application/pdf"
+
+    url = f"/api/templates/{t['id']}/draft/files/arquivos/precos.xlsx"
+    assert client.delete(url, headers=h).status_code == 200
+    assert client.delete(url, headers=h).status_code == 404
+    left = client.get(f"/api/templates/{t['id']}/draft", headers=h).json()["files"]
+    assert {f["path"] for f in left} == {"AGENTE.md", "arquivos/cardapio.pdf"}
+
+
+def test_asset_upload_validation_errors(client, enabled, tenant_admin, monkeypatch):
+    from app import skill_package as pkg
+
+    tok = tenant_admin["token"]
+    t = _skills_template(client, tok)
+    for name, data, code in (
+        ("virus.exe", b"abc", "bad_extension"),
+        ("inocente.pdf", b"MZ\x90\x00\x03", "bad_extension"),
+        ("vazio.pdf", b"", "empty_file"),
+        ("chaves.csv", b"nome,valor\nsenha=Abc123def456ghi\n", "secret_detected"),
+    ):
+        r = _put_asset(client, tok, t, name, data, status=422)
+        assert r["problems"][0]["code"] == code, (name, r)
+        assert r["detail"] == r["problems"][0]["message"]
+    bad64 = client.put(
+        f"/api/templates/{t['id']}/draft/files/arquivos/x.pdf",
+        json={"content_base64": "isto nao e base64!"},
+        headers=auth(tok),
+    )
+    assert bad64.status_code == 422
+    # Limites (reduzidos para o teste): por arquivo e do pacote.
+    monkeypatch.setattr(pkg, "MAX_ASSET_BYTES", 100)
+    r = _put_asset(client, tok, t, "grande.pdf", b"%PDF" + b"0" * 200, status=422)
+    assert r["problems"][0]["code"] == "file_too_large"
+    monkeypatch.setattr(pkg, "MAX_ASSETS_TOTAL_BYTES", 150)
+    _put_asset(client, tok, t, "a.pdf", b"%PDF" + b"0" * 90)
+    r = _put_asset(client, tok, t, "b.pdf", b"%PDF" + b"0" * 90, status=422)
+    assert r["problems"][0]["code"] == "package_too_large"
+    _put_asset(client, tok, t, "a.pdf", b"%PDF" + b"1" * 90)  # substituir cabe: não soma 2x
+
+
+def test_asset_requires_edit_permission(client, master_token, enabled, tenant_admin):
+    t = _skills_template(client, tenant_admin["token"])
+    member = _new_user(client, master_token, enabled)
+    r = client.put(
+        f"/api/templates/{t['id']}/draft/files/arquivos/x.pdf",
+        json={"content_base64": base64.b64encode(PDF_V1).decode()},
+        headers=auth(member["token"]),
+    )
+    assert r.status_code in (403, 404)
+
+
+def test_published_version_freezes_assets_and_payload_carries_base64(
+    client, enabled, tenant_admin, fake_harness, fake_kernel, monkeypatch
+):
+    import hashlib
+
+    from app import harness_runtime
+
+    monkeypatch.setattr(settings, "kernel_url", fake_kernel)
+    tok = tenant_admin["token"]
+    h = auth(tok)
+    t = _skills_template(client, tok)
+    _put_asset(client, tok, t, "cardapio.pdf", PDF_V1)
+    v1 = _publish(client, tok, t, notes="com cardapio")
+    _put_asset(client, tok, t, "cardapio.pdf", PDF_V2)  # trocar na tela: o rascunho muda...
+
+    # ...mas a versão publicada continua com os bytes antigos (imutável).
+    listed = client.get(f"/api/templates/{t['id']}/versions/{v1['id']}/files", headers=h).json()
+    asset = next(f for f in listed if f["path"] == "arquivos/cardapio.pdf")
+    assert asset["is_binary"] and asset["sha256"] == hashlib.sha256(PDF_V1).hexdigest()
+    got = client.get(
+        f"/api/templates/{t['id']}/versions/{v1['id']}/files/arquivos/cardapio.pdf", headers=h
+    )
+    assert got.content == PDF_V1
+
+    def payload_files():
+        r = client.post("/api/chat/send", json={"message": "oi", "template_id": t["id"]}, headers=h)
+        assert r.status_code == 200
+        pk = fake_harness.calls["runs"][-1]["skills"]["tenant_package"]
+        return pk, {f["path"]: f for f in pk["files"] or []}
+
+    pk, files = payload_files()
+    f = files["arquivos/cardapio.pdf"]
+    assert f["encoding"] == "base64" and base64.b64decode(f["content"]) == PDF_V1
+    assert f["sha256"] == hashlib.sha256(PDF_V1).hexdigest()
+    assert "encoding" not in files["AGENTE.md"]  # texto continua como era
+    sha_v1 = pk["sha256"]
+
+    # Publicar a troca: a próxima resposta usa o PDF novo (sha do pacote muda).
+    v2 = _publish(client, tok, t, notes="troca")
+    pk, files = payload_files()
+    assert base64.b64decode(files["arquivos/cardapio.pdf"]["content"]) == PDF_V2
+    assert pk["sha256"] != sha_v1
+    assert v2["number"] == 2
+
+    # Pacote grande: sem inline, e a URL entrega o mesmo conteúdo em base64.
+    monkeypatch.setattr(harness_runtime, "INLINE_PACKAGE_LIMIT", 10)
+    pk, _ = payload_files()
+    assert pk["files"] is None and pk["url"]
+    run_id = fake_harness.calls["runs"][-1]["run_id"]
+    full = client.get(f"/internal/runs/{run_id}/package", headers=SERVICE).json()
+    item = next(x for x in full["files"] if x["path"] == "arquivos/cardapio.pdf")
+    assert item["encoding"] == "base64" and base64.b64decode(item["content"]) == PDF_V2
+    assert full["sha256"] == pk["sha256"]
+
+
+def test_publish_blocked_when_assets_exceed_total(client, enabled, tenant_admin, monkeypatch):
+    from app import skill_package as pkg
+
+    tok = tenant_admin["token"]
+    t = _skills_template(client, tok)
+    client.get(f"/api/templates/{t['id']}/draft", headers=auth(tok))  # cria o rascunho
+    _put_asset(client, tok, t, "a.pdf", PDF_V1)
+    monkeypatch.setattr(pkg, "MAX_ASSETS_TOTAL_BYTES", 10)
+    r = client.post(
+        f"/api/templates/{t['id']}/versions", json={"source": "draft"}, headers=auth(tok)
+    )
+    assert r.status_code == 422
+    assert "package_too_large" in {p["code"] for p in r.json()["problems"]}

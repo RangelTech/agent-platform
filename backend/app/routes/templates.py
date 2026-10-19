@@ -5,9 +5,21 @@ active_version_id at it (rollback = deploy an older version). The chat
 resolves the active version into the kernel's run payload.
 """
 
+import base64
+import binascii
+import posixpath
 import re
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import (
+    APIRouter,
+    Body,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Response,
+    UploadFile,
+)
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from psycopg.errors import UniqueViolation
@@ -76,7 +88,12 @@ class TemplateIn(BaseModel):
 
 class DraftFileIn(BaseModel):
     path: str = Field(max_length=500)
-    content: str
+    # Arquivos de arquivos/ chegam da listagem sem texto; são ignorados aqui (têm rota própria).
+    content: str | None = ""
+
+
+class AssetIn(BaseModel):
+    content_base64: str
 
 
 class DraftIn(BaseModel):
@@ -332,6 +349,44 @@ def create_guided_template(conn, *, tenant_id, created_by, plan: dict) -> dict:
     }
 
 
+def _asset_view(a: dict) -> dict:
+    return {
+        "path": a["path"],
+        "kind": "asset",
+        "is_binary": True,
+        "content": None,
+        "size_bytes": a["size_bytes"],
+        "mime": a["mime"],
+        "sha256": a["sha256"],
+        "updated_at": a["updated_at"].isoformat() if a.get("updated_at") else None,
+    }
+
+
+def _text_files(files: list[dict]) -> list[dict]:
+    """Só o texto do rascunho; arquivos/ vive em template_draft_assets."""
+    return [f for f in files if not pkg.is_asset_path(f.get("path"))]
+
+
+def _draft_assets(conn, template_id) -> list[dict]:
+    rows = conn.execute(
+        """SELECT path, mime, sha256, size_bytes, updated_at FROM template_draft_assets
+            WHERE template_id = %s ORDER BY path""",
+        (template_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def _package_for_validation(files: list[dict], assets: list[dict]) -> list[dict]:
+    return _text_files(files) + [{"path": a["path"], "size_bytes": a["size_bytes"]} for a in assets]
+
+
+def _problems_response(status: int, problems: list[pkg.Problem]) -> JSONResponse:
+    return JSONResponse(
+        status_code=status,
+        content={"detail": problems[0].message, "problems": [p.as_dict() for p in problems]},
+    )
+
+
 def _version_view(row: dict, active_id) -> dict:
     return {
         "id": str(row["id"]),
@@ -351,7 +406,10 @@ def _create_skills_version(conn, template: dict, user: dict, payload: SkillsVers
     ).fetchone()
     if draft is None:
         raise HTTPException(status_code=422, detail="Não há rascunho para publicar")
-    problems = pkg.validate_package(draft["files"], draft["manifest"], tool_ids())
+    assets = _draft_assets(conn, template["id"])
+    problems = pkg.validate_package(
+        _package_for_validation(draft["files"], assets), draft["manifest"], tool_ids()
+    )
     if pkg.has_errors(problems):
         return JSONResponse(
             status_code=422,
@@ -372,7 +430,7 @@ def _create_skills_version(conn, template: dict, user: dict, payload: SkillsVers
            VALUES (%s, %s, '', %s, %s, %s) RETURNING *""",
         (template["id"], number, user["id"], payload.notes, Json(manifest)),
     ).fetchone()
-    for f in draft["files"]:
+    for f in _text_files(draft["files"]):
         kind, _ = pkg.classify_path(f["path"])
         conn.execute(
             """INSERT INTO template_skill_files
@@ -387,6 +445,15 @@ def _create_skills_version(conn, template: dict, user: dict, payload: SkillsVers
                 pkg.size_bytes(f["content"]),
             ),
         )
+    # Versão imutável: copia os bytes do rascunho (o rascunho pode mudar depois).
+    conn.execute(
+        """INSERT INTO template_skill_files
+               (version_id, path, kind, content, sha256, size_bytes,
+                is_binary, content_bin, mime)
+           SELECT %s, path, 'asset', '', sha256, size_bytes, true, content, mime
+             FROM template_draft_assets WHERE template_id = %s""",
+        (version["id"], template["id"]),
+    )
     return JSONResponse(
         status_code=201, content=_version_view(version, template["active_version_id"])
     )
@@ -452,9 +519,10 @@ def list_versions(template_id: str, user: dict = Depends(require("templates", "v
 # ---------------------------------------------------------------- skills ---
 
 
-def _draft_response(row: dict) -> dict:
+def _draft_response(row: dict, assets: list[dict] | None = None) -> dict:
     return {
-        "files": [_file_view(f) for f in row["files"]],
+        "files": [_file_view(f) for f in _text_files(row["files"])]
+        + [_asset_view(a) for a in assets or []],
         "manifest": pkg.normalize_manifest(row["manifest"]),
         "updated_at": row["updated_at"].isoformat(),
         "updated_by": str(row["updated_by"]) if row["updated_by"] else None,
@@ -475,14 +543,15 @@ def get_draft(template_id: str, user: dict = Depends(require("templates", "view"
                    VALUES (%s, %s, %s, %s) RETURNING *""",
                 (template["id"], Json(files), Json(manifest), user["id"]),
             ).fetchone()
-    return _draft_response(row)
+        assets = _draft_assets(conn, template["id"])
+    return _draft_response(row, assets)
 
 
 @router.put("/{template_id}/draft")
 def put_draft(
     template_id: str, payload: DraftIn, user: dict = Depends(require("templates", "edit"))
 ):
-    files = [{"path": f.path, "content": f.content} for f in payload.files]
+    files = _text_files([{"path": f.path, "content": f.content} for f in payload.files])
     with get_connection() as conn:
         template = _skills_template(conn, template_id, user)
         conn.execute(
@@ -494,7 +563,10 @@ def put_draft(
             (template["id"], Json(files), Json(payload.manifest), user["id"]),
         )
         conn.execute("UPDATE templates SET updated_at = now() WHERE id = %s", (template["id"],))
-    problems = pkg.validate_package(files, payload.manifest, tool_ids())
+        assets = _draft_assets(conn, template["id"])
+    problems = pkg.validate_package(
+        _package_for_validation(files, assets), payload.manifest, tool_ids()
+    )
     return {"ok": not pkg.has_errors(problems), "problems": [p.as_dict() for p in problems]}
 
 
@@ -502,11 +574,133 @@ def put_draft(
 def validate_draft(
     template_id: str, payload: DraftIn, user: dict = Depends(require("templates", "edit"))
 ):
-    files = [{"path": f.path, "content": f.content} for f in payload.files]
+    files = _text_files([{"path": f.path, "content": f.content} for f in payload.files])
     with get_connection() as conn:
         _skills_template(conn, template_id, user)
-    problems = pkg.validate_package(files, payload.manifest, tool_ids())
+        assets = _draft_assets(conn, template_id)
+    problems = pkg.validate_package(
+        _package_for_validation(files, assets), payload.manifest, tool_ids()
+    )
     return {"ok": not pkg.has_errors(problems), "problems": [p.as_dict() for p in problems]}
+
+
+# ------------------------------------------- arquivos do pacote (arquivos/) ---
+
+
+def _asset_path(raw: str) -> str:
+    """Caminho dentro do pacote: sem pasta informada, cai em arquivos/."""
+    path = (raw or "").replace("\\", "/").strip()
+    if not path.startswith(pkg.ASSETS_DIR + "/"):
+        path = f"{pkg.ASSETS_DIR}/{posixpath.basename(path)}"
+    return path
+
+
+def _store_asset(template_id: str, user: dict, raw_path: str, data: bytes):
+    path = _asset_path(raw_path)
+    problems = pkg.validate_asset(path, data)
+    if pkg.has_errors(problems):
+        return _problems_response(422, problems)
+    with get_connection() as conn:
+        template = _skills_template(conn, template_id, user)
+        others = [a for a in _draft_assets(conn, template["id"]) if a["path"] != path]
+        total = sum(a["size_bytes"] for a in others) + len(data)
+        if len(others) + 1 > pkg.MAX_ASSETS:
+            msg = f"Máximo de {pkg.MAX_ASSETS} arquivos na pasta"
+            return _problems_response(422, [pkg.Problem(path, "too_many_files", msg)])
+        if total > pkg.MAX_ASSETS_TOTAL_BYTES:
+            msg = f"Os arquivos passam de {pkg.MAX_ASSETS_TOTAL_BYTES // 2**20} MB no total"
+            return _problems_response(422, [pkg.Problem(path, "package_too_large", msg)])
+        row = conn.execute(
+            """INSERT INTO template_draft_assets
+                   (template_id, path, content, mime, sha256, size_bytes, updated_by)
+               VALUES (%s, %s, %s, %s, %s, %s, %s)
+               ON CONFLICT (template_id, path) DO UPDATE
+                  SET content = EXCLUDED.content, mime = EXCLUDED.mime,
+                      sha256 = EXCLUDED.sha256, size_bytes = EXCLUDED.size_bytes,
+                      updated_by = EXCLUDED.updated_by, updated_at = now()
+            RETURNING path, mime, sha256, size_bytes, updated_at""",
+            (
+                template["id"],
+                path,
+                data,
+                pkg.guess_mime(path),
+                pkg.sha256_bytes(data),
+                len(data),
+                user["id"],
+            ),
+        ).fetchone()
+        conn.execute("UPDATE templates SET updated_at = now() WHERE id = %s", (template["id"],))
+    return _asset_view(dict(row))
+
+
+@router.put("/{template_id}/draft/files/{path:path}")
+def put_draft_file(
+    template_id: str,
+    path: str,
+    payload: AssetIn,
+    user: dict = Depends(require("templates", "edit")),
+):
+    """Envia ou substitui um arquivo do pacote (JSON com o conteúdo em base64)."""
+    if len(payload.content_base64) > (pkg.MAX_ASSET_BYTES * 4) // 3 + 16:
+        msg = f"O arquivo passa de {pkg.MAX_ASSET_BYTES // 2**20} MB"
+        return _problems_response(422, [pkg.Problem(path, "file_too_large", msg)])
+    try:
+        data = base64.b64decode(payload.content_base64, validate=True)
+    except (binascii.Error, ValueError):
+        msg = "Conteúdo do arquivo inválido"
+        return _problems_response(422, [pkg.Problem(path, "bad_encoding", msg)])
+    return _store_asset(template_id, user, path, data)
+
+
+@router.post("/{template_id}/draft/files", status_code=201)
+async def upload_draft_file(
+    template_id: str,
+    file: UploadFile = File(...),
+    path: str = Form(default=""),
+    user: dict = Depends(require("templates", "edit")),
+):
+    """Envia ou substitui um arquivo do pacote (multipart; `path` opcional)."""
+    data = await file.read(pkg.MAX_ASSET_BYTES + 1)
+    return _store_asset(template_id, user, path or file.filename or "", data)
+
+
+@router.get("/{template_id}/draft/files/{path:path}")
+def get_draft_file(template_id: str, path: str, user: dict = Depends(require("templates", "view"))):
+    with get_connection() as conn:
+        template = _skills_template(conn, template_id, user)
+        row = conn.execute(
+            "SELECT content, mime FROM template_draft_assets WHERE template_id = %s AND path = %s",
+            (template["id"], path),
+        ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Arquivo não encontrado")
+    return _download(path, bytes(row["content"]), row["mime"])
+
+
+def _download(path: str, data: bytes, mime: str | None) -> Response:
+    name = posixpath.basename(path).replace('"', "")
+    return Response(
+        content=data,
+        media_type=mime or "application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+    )
+
+
+@router.delete("/{template_id}/draft/files/{path:path}")
+def delete_draft_file(
+    template_id: str, path: str, user: dict = Depends(require("templates", "edit"))
+):
+    with get_connection() as conn:
+        template = _skills_template(conn, template_id, user)
+        deleted = conn.execute(
+            "DELETE FROM template_draft_assets WHERE template_id = %s AND path = %s RETURNING 1",
+            (template["id"], path),
+        ).fetchone()
+        if deleted:
+            conn.execute("UPDATE templates SET updated_at = now() WHERE id = %s", (template["id"],))
+    if deleted is None:
+        raise HTTPException(status_code=404, detail="Arquivo não encontrado")
+    return {"ok": True}
 
 
 def _skills_version(conn, template_id: str, version_id: str) -> dict:
@@ -527,7 +721,7 @@ def list_version_files(
         _skills_template(conn, template_id, user)
         version = _skills_version(conn, template_id, version_id)
         rows = conn.execute(
-            """SELECT path, size_bytes, sha256 FROM template_skill_files
+            """SELECT path, size_bytes, sha256, is_binary, mime FROM template_skill_files
                 WHERE version_id = %s ORDER BY path""",
             (version["id"],),
         ).fetchall()
@@ -545,11 +739,14 @@ def get_version_file(
         _skills_template(conn, template_id, user)
         version = _skills_version(conn, template_id, version_id)
         row = conn.execute(
-            "SELECT path, content FROM template_skill_files WHERE version_id = %s AND path = %s",
+            """SELECT path, content, content_bin, is_binary, mime FROM template_skill_files
+                WHERE version_id = %s AND path = %s""",
             (version["id"], path),
         ).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="Arquivo não encontrado")
+    if row["is_binary"]:
+        return _download(path, bytes(row["content_bin"] or b""), row["mime"])
     return {"path": row["path"], "content": row["content"]}
 
 
