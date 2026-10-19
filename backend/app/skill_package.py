@@ -205,6 +205,8 @@ def normalize_manifest(raw: object) -> dict:
         out: dict = {}
         if isinstance(limits.get("max_turns"), int):
             out["max_turns"] = limits["max_turns"]
+        if limits.get("luar") is True:
+            out["luar"] = True  # o agente pode operar o Luar como o usuário do chat (H-6)
         ca = limits.get("confirm_actions")
         if ca is True:
             out["confirm_actions"] = True  # liga o cartão (padrão: o agente age direto)
@@ -294,7 +296,10 @@ def validate_manifest(raw: object, tool_ids: set[str]) -> list[Problem]:
         ca = limits.get("confirm_actions")
         if "confirm_actions" in limits and not (
             isinstance(ca, bool)
-            or (isinstance(ca, list) and all(isinstance(k, str) and CONFIRM_KIND_RE.match(k) for k in ca))
+            or (
+                isinstance(ca, list)
+                and all(isinstance(k, str) and CONFIRM_KIND_RE.match(k) for k in ca)
+            )
         ):
             problems.append(
                 Problem("manifest", "bad_manifest",
