@@ -1,5 +1,9 @@
-"""Skills: as da empresa (somente leitura, vêm dos agentes por skills ativos) e
-as pessoais do usuário (camada 3: o agente propõe, a pessoa revisa).
+"""Skills em duas camadas.
+
+Da empresa: as do pacote dos agentes por skills ativos (somente leitura aqui, editam-se no
+agente) e as compartilhadas do tenant (`tenant_skills`), que quem gere a empresa cria, edita,
+liga e desliga para todos. Pessoais: as do usuário (o agente propõe, a pessoa revisa, ou a
+pessoa escreve a sua); nunca visíveis a outro usuário.
 
 Nenhuma rota daqui lista ou devolve as skills de sistema.
 """
@@ -14,7 +18,7 @@ from app import skill_package as pkg
 from app.auth import current_user, require
 from app.db import get_connection
 from app.kernel_router import tenant_skills_enabled
-from app.permissions import require_scope_for_chatwoot
+from app.permissions import has_permission, require_scope_for_chatwoot
 
 router = APIRouter(prefix="/api", tags=["skills"])
 
@@ -33,7 +37,46 @@ def company_skill_names(conn, tenant_id) -> set[str]:
               AND f.kind = 'skill'""",
         (tenant_id,),
     ).fetchall()
-    return {r["name"] for r in rows if r["name"]}
+    names = {r["name"] for r in rows if r["name"]}
+    names |= {
+        r["name"]
+        for r in conn.execute(
+            "SELECT name FROM tenant_skills WHERE tenant_id = %s", (tenant_id,)
+        ).fetchall()
+    }
+    return names
+
+
+def can_manage_company(user: dict) -> bool:
+    """Quem edita agentes ou gere as skills da empresa edita as da empresa para todos."""
+    return has_permission(user, "skills", "edit") or has_permission(user, "templates", "edit")
+
+
+def _require_manage_company(user: dict) -> None:
+    if user["tenant_id"] is None or not can_manage_company(user):
+        raise HTTPException(status_code=403, detail="Permissão negada")
+    if user.get("via") == "chatwoot" and not (
+        {"ai.skills.manage_company", "ai.agents.edit"} & set(user.get("scopes", ()))
+    ):
+        raise HTTPException(status_code=403, detail="Permissão negada")
+
+
+def _company_view(row: dict, with_content: bool = False) -> dict:
+    out = {
+        "id": str(row["id"]),
+        "scope": "company",
+        "editable": True,
+        "name": row["name"],
+        "description": row["description"],
+        "status": row["status"],
+        "revision": row["revision"],
+        "template_id": None,
+        "template_name": None,
+        "updated_at": row["updated_at"].isoformat(),
+    }
+    if with_content:
+        out["content"] = row["content"]
+    return out
 
 
 @router.get("/skills/company")
@@ -53,6 +96,9 @@ def list_company_skills(user: dict = Depends(require("skills", "view"))):
                 ORDER BY t.name, f.path""",
             (user["tenant_id"],),
         ).fetchall()
+        shared = conn.execute(
+            "SELECT * FROM tenant_skills WHERE tenant_id = %s ORDER BY name", (user["tenant_id"],)
+        ).fetchall()
     out = []
     for r in rows:
         data, _body, err = pkg.split_frontmatter(r["content"])
@@ -65,9 +111,159 @@ def list_company_skills(user: dict = Depends(require("skills", "view"))):
                 "name": str(data.get("name") or ""),
                 "description": str(data.get("description") or ""),
                 "updated_at": r["created_at"].isoformat(),
+                "scope": "template",
+                "editable": False,
+                "status": "active",
             }
         )
+    manager = can_manage_company(user)
+    out.extend(_company_view(r) for r in shared if manager or r["status"] == "active")
     return out
+
+
+def _company_row(conn, skill_id: str, user: dict) -> dict:
+    row = None
+    if user["tenant_id"] is not None:
+        row = conn.execute(
+            "SELECT * FROM tenant_skills WHERE id::text = %s AND tenant_id = %s",
+            (skill_id, user["tenant_id"]),
+        ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Skill não encontrada")
+    return row
+
+
+def check_company_skill(conn, tenant_id, content: str, expected_name: str | None):
+    problems, data = pkg.validate_company_skill(content, expected_name)
+    name = data.get("name") if data else None
+    if isinstance(name, str) and not expected_name and name in company_skill_names(conn, tenant_id):
+        problems.append(
+            pkg.Problem(
+                "SKILL.md", "duplicate_name", "Já existe uma skill da empresa com esse nome", line=1
+            )
+        )
+    return problems, data
+
+
+class CompanySkillIn(BaseModel):
+    content: str = Field(min_length=1, max_length=200_000)
+
+
+@router.get("/skills/company/{skill_id}")
+def get_company_skill(skill_id: str, user: dict = Depends(require("skills", "view"))):
+    with get_connection() as conn:
+        row = _company_row(conn, skill_id, user)
+        if row["status"] != "active" and not can_manage_company(user):
+            raise HTTPException(status_code=404, detail="Skill não encontrada")
+        return _company_view(row, with_content=True)
+
+
+@router.post("/skills/company", status_code=201)
+def create_company_skill(payload: CompanySkillIn, user: dict = Depends(current_user)):
+    _require_manage_company(user)
+    with get_connection() as conn:
+        if not tenant_skills_enabled(conn, user["tenant_id"]):
+            raise HTTPException(status_code=403, detail="Agentes por skills não estão ativos")
+        problems, data = check_company_skill(conn, user["tenant_id"], payload.content, None)
+        if pkg.has_errors(problems):
+            return _problems_response(problems)
+        row = conn.execute(
+            """INSERT INTO tenant_skills (tenant_id, name, description, content, created_by,
+                                          updated_by)
+               VALUES (%s, %s, %s, %s, %s, %s) RETURNING *""",
+            (
+                user["tenant_id"],
+                data["name"],
+                str(data["description"]),
+                payload.content,
+                user["id"],
+                user["id"],
+            ),
+        ).fetchone()
+        audit(
+            conn,
+            tenant_id=user["tenant_id"],
+            user_id=user["id"],
+            actor="user",
+            action="company_create",
+            skill_ref=row["name"],
+        )
+    return _company_view(row, with_content=True)
+
+
+@router.put("/skills/company/{skill_id}")
+def update_company_skill(
+    skill_id: str, payload: CompanySkillIn, user: dict = Depends(current_user)
+):
+    _require_manage_company(user)
+    with get_connection() as conn:
+        row = _company_row(conn, skill_id, user)
+        problems, data = check_company_skill(conn, user["tenant_id"], payload.content, row["name"])
+        if pkg.has_errors(problems):
+            return _problems_response(problems)
+        updated = conn.execute(
+            """UPDATE tenant_skills
+                  SET content = %s, description = %s, revision = revision + 1,
+                      updated_by = %s, updated_at = now()
+                WHERE id = %s RETURNING *""",
+            (payload.content, str(data["description"]), user["id"], row["id"]),
+        ).fetchone()
+        audit(
+            conn,
+            tenant_id=user["tenant_id"],
+            user_id=user["id"],
+            actor="user",
+            action="company_edit",
+            skill_ref=row["name"],
+        )
+    return _company_view(updated, with_content=True)
+
+
+@router.delete("/skills/company/{skill_id}")
+def delete_company_skill(skill_id: str, user: dict = Depends(current_user)):
+    _require_manage_company(user)
+    with get_connection() as conn:
+        row = _company_row(conn, skill_id, user)
+        conn.execute("DELETE FROM tenant_skills WHERE id = %s", (row["id"],))
+        audit(
+            conn,
+            tenant_id=user["tenant_id"],
+            user_id=user["id"],
+            actor="user",
+            action="company_delete",
+            skill_ref=row["name"],
+        )
+    return {"status": "ok"}
+
+
+def _company_toggle(skill_id: str, user: dict, status: str, action: str):
+    _require_manage_company(user)
+    with get_connection() as conn:
+        row = _company_row(conn, skill_id, user)
+        updated = conn.execute(
+            """UPDATE tenant_skills SET status = %s, updated_by = %s, updated_at = now()
+                WHERE id = %s RETURNING *""",
+            (status, user["id"], row["id"]),
+        ).fetchone()
+        audit(
+            conn,
+            tenant_id=user["tenant_id"],
+            user_id=user["id"],
+            actor="user",
+            action=action,
+            skill_ref=row["name"],
+        )
+    return _company_view(updated)
+
+
+@router.post("/skills/company/{skill_id}/enable")
+def enable_company_skill(skill_id: str, user: dict = Depends(current_user)):
+    return _company_toggle(skill_id, user, "active", "company_enable")
+
+
+@router.post("/skills/company/{skill_id}/disable")
+def disable_company_skill(skill_id: str, user: dict = Depends(current_user)):
+    return _company_toggle(skill_id, user, "disabled", "company_disable")
 
 
 # ------------------------------------------------------------- do usuário ---
@@ -152,6 +348,55 @@ def list_my_skills(status: str | None = Query(default=None), user: dict = Depend
             (user["tenant_id"], user["id"], status, status),
         ).fetchall()
     return [_view(r) for r in rows]
+
+
+class SkillCreate(BaseModel):
+    content: str = Field(min_length=1, max_length=200_000)
+
+
+@router.post("/me/skills", status_code=201)
+def create_my_skill(payload: SkillCreate, user: dict = Depends(current_user)):
+    """A pessoa escreve a própria skill: nasce ativa (quem escreve já revisou)."""
+    require_scope_for_chatwoot(user, "ai.skills.manage_own")
+    if user["tenant_id"] is None:
+        raise HTTPException(status_code=404, detail="Skill não encontrada")
+    with get_connection() as conn:
+        problems, data = check_user_skill(conn, user["tenant_id"], payload.content, None)
+        if pkg.has_errors(problems):
+            return _problems_response(problems)
+        if _active_count(conn, user) >= pkg.MAX_USER_SKILLS_ACTIVE:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Limite de {pkg.MAX_USER_SKILLS_ACTIVE} skills ativas atingido",
+            )
+        dup = conn.execute(
+            """SELECT 1 FROM user_skills WHERE tenant_id = %s AND user_id = %s AND name = %s
+                  AND template_id IS NULL""",
+            (user["tenant_id"], user["id"], data["name"]),
+        ).fetchone()
+        if dup:
+            raise HTTPException(status_code=409, detail="Você já tem uma skill com esse nome")
+        row = conn.execute(
+            """INSERT INTO user_skills (tenant_id, user_id, name, description, content, source,
+                                        status)
+               VALUES (%s, %s, %s, %s, %s, 'user', 'active') RETURNING *""",
+            (
+                user["tenant_id"],
+                user["id"],
+                data["name"],
+                str(data["description"]),
+                payload.content,
+            ),
+        ).fetchone()
+        audit(
+            conn,
+            tenant_id=user["tenant_id"],
+            user_id=user["id"],
+            actor="user",
+            action="create",
+            skill_ref=row["name"],
+        )
+    return _view(row, with_content=True)
 
 
 @router.get("/me/skills/{skill_id}")
