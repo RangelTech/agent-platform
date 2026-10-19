@@ -58,11 +58,15 @@ def _rm(method: str, path: str, tenant_id, body: dict | None = None) -> None:
         rt.call(method, f"/v1/tenants/{rmt}{path}", scope="*", body=body, timeout=60.0)
     except rt.RMError as exc:
         if exc.status != 404:
-            raise HTTPException(status_code=502, detail="O ambiente não aceitou a operação") from exc
+            raise HTTPException(
+                status_code=502, detail="O ambiente não aceitou a operação"
+            ) from exc
 
 
 @router.post("/provision")
-def provision(payload: ProvisionIn, background: BackgroundTasks, actor: dict = Depends(install_actor)):
+def provision(
+    payload: ProvisionIn, background: BackgroundTasks, actor: dict = Depends(install_actor)
+):
     _need(actor, "lifecycle")
     from app.ragentes_guide import ensure_for_tenant
 
@@ -76,17 +80,24 @@ def provision(payload: ProvisionIn, background: BackgroundTasks, actor: dict = D
                 (_slug(payload.name, payload.account_id), payload.name, payload.account_id),
             ).fetchone()
             created = True
-            for name, permissions in (("Administrador", ADMIN_PERMISSIONS), ("Usuário", MEMBER_PERMISSIONS)):
+            for name, permissions in (
+                ("Administrador", ADMIN_PERMISSIONS),
+                ("Usuário", MEMBER_PERMISSIONS),
+            ):
                 conn.execute(
                     "INSERT INTO user_profiles (tenant_id, name, permissions) VALUES (%s, %s, %s)",
                     (tenant["id"], name, Json(permissions)),
                 )
         else:
-            conn.execute("UPDATE tenants SET provisioned_at = COALESCE(provisioned_at, now()) WHERE id = %s",
-                         (tenant["id"],))
+            conn.execute(
+                "UPDATE tenants SET provisioned_at = COALESCE(provisioned_at, now()) WHERE id = %s",
+                (tenant["id"],),
+            )
         ensure_for_tenant(conn, tenant["id"])
     if created:
-        background.add_task(_provisionar_router_em_background, str(tenant["id"]), tenant["tenant_key"])
+        background.add_task(
+            _provisionar_router_em_background, str(tenant["id"]), tenant["tenant_key"]
+        )
     return {"status": "ok", "engine_tenant_id": str(tenant["id"]), "created": created}
 
 
@@ -106,7 +117,12 @@ def _set_active(account_id: int, active: bool, by_chatwoot: bool):
 def suspend(payload: AccountRef, actor: dict = Depends(install_actor)):
     _need(actor, "lifecycle")
     tenant = _set_active(payload.account_id, False, True)
-    _rm("POST", ":suspend", tenant["id"], {"reason": "Account suspensa no Chatwoot", "severity": "high"})
+    _rm(
+        "POST",
+        ":suspend",
+        tenant["id"],
+        {"reason": "Account suspensa no Chatwoot", "severity": "high"},
+    )
     return {"status": "ok", "engine_tenant_id": str(tenant["id"])}
 
 
@@ -123,7 +139,12 @@ def deprovision(payload: AccountRef, actor: dict = Depends(install_actor)):
     """Desliga a empresa. **Nunca apaga dados** (decisão do dono): fica inativa e preservada."""
     _need(actor, "lifecycle")
     tenant = _set_active(payload.account_id, False, True)
-    _rm("POST", ":suspend", tenant["id"], {"reason": "Account excluída no Chatwoot", "severity": "high"})
+    _rm(
+        "POST",
+        ":suspend",
+        tenant["id"],
+        {"reason": "Account excluída no Chatwoot", "severity": "high"},
+    )
     return {"status": "ok", "engine_tenant_id": str(tenant["id"]), "data_retained": True}
 
 
