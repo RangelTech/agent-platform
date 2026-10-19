@@ -205,8 +205,13 @@ def normalize_manifest(raw: object) -> dict:
         out: dict = {}
         if isinstance(limits.get("max_turns"), int):
             out["max_turns"] = limits["max_turns"]
-        if limits.get("confirm_actions") is True:
+        ca = limits.get("confirm_actions")
+        if ca is True:
             out["confirm_actions"] = True  # liga o cartão (padrão: o agente age direto)
+        elif isinstance(ca, list):
+            kinds = [k for k in ca if isinstance(k, str) and CONFIRM_KIND_RE.match(k)]
+            if kinds:
+                out["confirm_actions"] = kinds  # cartão só para estes tipos de ação
         scopes = _clean_list(limits.get("allowed_scopes"), SCOPE_RE_AI, lower=True)
         if scopes:
             out["allowed_scopes"] = scopes  # quem pode usar este agente (any-of)
@@ -220,6 +225,7 @@ def normalize_manifest(raw: object) -> dict:
     return base
 
 
+CONFIRM_KIND_RE = re.compile(r"^[a-z][a-z0-9_:]{0,59}$")
 TABLE_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,62}(\.[A-Za-z_][A-Za-z0-9_]{0,62})?$")
 HOST_RE = re.compile(r"^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$")
 MAX_LIST = 50
@@ -285,9 +291,14 @@ def validate_manifest(raw: object, tool_ids: set[str]) -> list[Problem]:
                         Problem("manifest", "bad_manifest", f"Valor inválido em {label}s: {v!r}")
                     )
     if isinstance(limits, dict):
-        if "confirm_actions" in limits and not isinstance(limits["confirm_actions"], bool):
+        ca = limits.get("confirm_actions")
+        if "confirm_actions" in limits and not (
+            isinstance(ca, bool)
+            or (isinstance(ca, list) and all(isinstance(k, str) and CONFIRM_KIND_RE.match(k) for k in ca))
+        ):
             problems.append(
-                Problem("manifest", "bad_manifest", "confirm_actions deve ser verdadeiro ou falso")
+                Problem("manifest", "bad_manifest",
+                        "confirm_actions deve ser verdadeiro/falso ou uma lista de tipos de ação")
             )
         turns = limits.get("max_turns")
         if turns is not None and not (
