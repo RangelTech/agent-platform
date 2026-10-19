@@ -1,0 +1,90 @@
+import time
+import uuid
+
+import pytest
+from app.config import settings
+from app.db import get_connection
+from app.ui_context import sign_context
+
+
+def _ctx(aud="install", scopes=("lifecycle",), **extra):
+    now = int(time.time())
+    claims = {"aud": aud, "scopes": list(scopes), "nonce": uuid.uuid4().hex, "iat": now, "exp": now + 30}
+    claims.update(extra)
+    return {"X-UI-Context": sign_context(claims)}
+
+
+@pytest.fixture
+def ui(client):
+    settings.router_auto_provision_enabled = False
+    with get_connection() as conn:
+        conn.execute("TRUNCATE ui_nonces")
+    return client
+
+
+def test_provision_is_idempotent_and_creates_factory(ui):
+    body = {"account_id": 4242, "name": "Padaria Água Viva"}
+    first = ui.post("/internal/ui/provision", json=body, headers=_ctx())
+    assert first.status_code == 200 and first.json()["created"] is True
+    second = ui.post("/internal/ui/provision", json=body, headers=_ctx())
+    assert second.json()["created"] is False
+    assert second.json()["engine_tenant_id"] == first.json()["engine_tenant_id"]
+    with get_connection() as conn:
+        n = conn.execute(
+            "SELECT count(*) AS n FROM templates WHERE tenant_id=%s AND system_key IS NOT NULL",
+            (first.json()["engine_tenant_id"],),
+        ).fetchone()["n"]
+    assert n == 1
+
+
+def test_context_rejects_replay_wrong_audience_and_tamper(ui):
+    headers = _ctx()
+    body = {"account_id": 7, "name": "Loja"}
+    assert ui.post("/internal/ui/provision", json=body, headers=headers).status_code == 200
+    assert ui.post("/internal/ui/provision", json=body, headers=headers).status_code == 401  # replay
+    assert ui.post("/internal/ui/provision", json=body, headers=_ctx(aud="ui")).status_code == 401
+    bad = _ctx()
+    bad["X-UI-Context"] = bad["X-UI-Context"][:-3] + "AAA"
+    assert ui.post("/internal/ui/provision", json=body, headers=bad).status_code == 401
+    assert ui.post("/internal/ui/provision", json=body).status_code == 401
+
+
+def test_context_requires_lifecycle_scope_and_short_ttl(ui):
+    body = {"account_id": 8, "name": "X"}
+    assert ui.post("/internal/ui/provision", json=body, headers=_ctx(scopes=())).status_code == 403
+    now = int(time.time())
+    long_lived = sign_context({"aud": "install", "scopes": ["lifecycle"], "nonce": "n1", "iat": now, "exp": now + 3600})
+    assert ui.post("/internal/ui/provision", json=body, headers={"X-UI-Context": long_lived}).status_code == 401
+
+
+def test_suspend_resume_deprovision_never_delete(ui):
+    tid = ui.post("/internal/ui/provision", json={"account_id": 9, "name": "Y"}, headers=_ctx()).json()["engine_tenant_id"]
+    assert ui.post("/internal/ui/suspend", json={"account_id": 9}, headers=_ctx()).status_code == 200
+    with get_connection() as conn:
+        assert conn.execute("SELECT is_active FROM tenants WHERE id=%s", (tid,)).fetchone()["is_active"] is False
+    assert ui.post("/internal/ui/resume", json={"account_id": 9}, headers=_ctx()).status_code == 200
+    out = ui.post("/internal/ui/deprovision", json={"account_id": 9}, headers=_ctx()).json()
+    assert out["data_retained"] is True
+    with get_connection() as conn:
+        assert conn.execute("SELECT count(*) AS n FROM tenants WHERE id=%s", (tid,)).fetchone()["n"] == 1
+
+
+def test_me_projects_chatwoot_user_per_tenant_and_blocks_suspended(ui):
+    tid = ui.post("/internal/ui/provision", json={"account_id": 11, "name": "Z"}, headers=_ctx()).json()["engine_tenant_id"]
+    ctx = dict(aud="ui", scopes=("ai.chat.run",), engine_tenant_id=tid, chatwoot_user_id=55, account_id=11,
+               email="ana@exemplo.com", name="Ana", flags={"chat_enabled": True})
+    me = ui.get("/internal/ui/me", headers=_ctx(**ctx))
+    assert me.status_code == 200 and me.json()["scopes"] == ["ai.chat.run"]
+    again = ui.get("/internal/ui/me", headers=_ctx(**ctx)).json()
+    assert again["user_id"] == me.json()["user_id"]
+    ui.post("/internal/ui/suspend", json={"account_id": 11}, headers=_ctx())
+    assert ui.get("/internal/ui/me", headers=_ctx(**ctx)).status_code == 403
+
+
+def test_same_person_in_two_companies_gets_two_isolated_users(ui):
+    a = ui.post("/internal/ui/provision", json={"account_id": 21, "name": "A"}, headers=_ctx()).json()["engine_tenant_id"]
+    b = ui.post("/internal/ui/provision", json={"account_id": 22, "name": "B"}, headers=_ctx()).json()["engine_tenant_id"]
+    common = dict(aud="ui", scopes=("ai.chat.run",), chatwoot_user_id=7, email="x@y.com", name="X")
+    ua = ui.get("/internal/ui/me", headers=_ctx(engine_tenant_id=a, account_id=21, **common)).json()
+    ub = ui.get("/internal/ui/me", headers=_ctx(engine_tenant_id=b, account_id=22, **common)).json()
+    assert ua["user_id"] != ub["user_id"] and ua["tenant_id"] != ub["tenant_id"]

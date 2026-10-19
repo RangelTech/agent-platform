@@ -21,6 +21,7 @@ from app.routes import custom_tools as custom_tool_routes
 from app.routes import datasources as datasource_routes
 from app.routes import email_accounts as email_account_routes
 from app.routes import environment as environment_routes
+from app.routes import ui_internal as ui_internal_routes
 from app.routes import files as file_routes
 from app.routes import google_accounts as google_account_routes
 from app.routes import hermes_approvals as hermes_approval_routes
@@ -216,6 +217,7 @@ app.include_router(skill_routes.router)
 app.include_router(schedule_routes.router)
 app.include_router(approval_routes.router)
 app.include_router(environment_routes.router)
+app.include_router(ui_internal_routes.router)
 # Rotas internas (só serviço): /internal/... e o mesmo conjunto sob /api para
 # proxies que só encaminham /api.
 app.include_router(internal_routes.router)

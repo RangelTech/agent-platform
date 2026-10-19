@@ -50,6 +50,7 @@ class Settings(BaseSettings):
     harness_internal_token: str = ""
     # Segredo que assina o run_token. Vazio deriva de ENCRYPTION_KEY.
     run_token_secret: str = ""
+    ui_context_secret: str = ""
     run_token_ttl_seconds: int = 900
     # Teto do cliente HTTP para uma run longa (acima do turno máximo de 540 s).
     harness_run_timeout_seconds: int = 660
