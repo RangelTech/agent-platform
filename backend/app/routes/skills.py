@@ -14,6 +14,7 @@ from app import skill_package as pkg
 from app.auth import current_user, require
 from app.db import get_connection
 from app.kernel_router import tenant_skills_enabled
+from app.permissions import require_scope_for_chatwoot
 
 router = APIRouter(prefix="/api", tags=["skills"])
 
@@ -137,6 +138,7 @@ def check_user_skill(conn, tenant_id, content: str, expected_name: str | None):
 
 @router.get("/me/skills")
 def list_my_skills(status: str | None = Query(default=None), user: dict = Depends(current_user)):
+    require_scope_for_chatwoot(user, "ai.skills.view")
     if status is not None and status not in _STATUSES:
         raise HTTPException(status_code=400, detail="Situação inválida")
     if user["tenant_id"] is None:
@@ -154,6 +156,7 @@ def list_my_skills(status: str | None = Query(default=None), user: dict = Depend
 
 @router.get("/me/skills/{skill_id}")
 def get_my_skill(skill_id: str, user: dict = Depends(current_user)):
+    require_scope_for_chatwoot(user, "ai.skills.view")
     with get_connection() as conn:
         return _view(_own(conn, skill_id, user), with_content=True)
 
@@ -165,6 +168,7 @@ class SkillUpdate(BaseModel):
 
 @router.put("/me/skills/{skill_id}")
 def update_my_skill(skill_id: str, payload: SkillUpdate, user: dict = Depends(current_user)):
+    require_scope_for_chatwoot(user, "ai.skills.manage_own")
     with get_connection() as conn:
         row = _own(conn, skill_id, user)
         content = payload.content
@@ -196,6 +200,7 @@ def update_my_skill(skill_id: str, payload: SkillUpdate, user: dict = Depends(cu
 
 @router.delete("/me/skills/{skill_id}")
 def delete_my_skill(skill_id: str, user: dict = Depends(current_user)):
+    require_scope_for_chatwoot(user, "ai.skills.manage_own")
     with get_connection() as conn:
         row = _own(conn, skill_id, user)
         conn.execute("DELETE FROM user_skills WHERE id = %s", (row["id"],))
@@ -252,11 +257,13 @@ def _transition(skill_id: str, user: dict, action: str, new_status: str, allowed
 
 @router.post("/me/skills/{skill_id}/approve")
 def approve_my_skill(skill_id: str, user: dict = Depends(current_user)):
+    require_scope_for_chatwoot(user, "ai.skills.manage_own")
     return _transition(skill_id, user, "approve", "active", ("pending_review", "disabled"))
 
 
 @router.post("/me/skills/{skill_id}/discard")
 def discard_my_skill(skill_id: str, user: dict = Depends(current_user)):
+    require_scope_for_chatwoot(user, "ai.skills.manage_own")
     with get_connection() as conn:
         row = _own(conn, skill_id, user)
         updated = conn.execute(
@@ -277,9 +284,11 @@ def discard_my_skill(skill_id: str, user: dict = Depends(current_user)):
 
 @router.post("/me/skills/{skill_id}/disable")
 def disable_my_skill(skill_id: str, user: dict = Depends(current_user)):
+    require_scope_for_chatwoot(user, "ai.skills.manage_own")
     return _transition(skill_id, user, "disable", "disabled", ("active", "pending_review"))
 
 
 @router.post("/me/skills/{skill_id}/enable")
 def enable_my_skill(skill_id: str, user: dict = Depends(current_user)):
+    require_scope_for_chatwoot(user, "ai.skills.manage_own")
     return _transition(skill_id, user, "enable", "active", ("disabled",))

@@ -136,8 +136,28 @@ def _bearer_token(request: Request) -> str:
     return token
 
 
+def _user_from_ui_context(request: Request) -> dict:
+    """Usuario vindo do Chatwoot (spec 10): contexto assinado em vez de login do motor."""
+    from app.permissions import scopes_to_permissions
+    from app.ui_context import service_actor
+
+    actor = service_actor(request.headers.get("x-ui-context"))
+    with get_connection() as conn:
+        row = conn.execute(_USER_QUERY + " WHERE u.id = %s", (actor["user_id"],)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=401, detail="Usuário inválido")
+    user = dict(row)
+    user["permissions"] = scopes_to_permissions(actor["scopes"])
+    user["scopes"] = actor["scopes"]
+    user["flags"] = actor["flags"]
+    user["via"] = "chatwoot"
+    return user
+
+
 def current_user(request: Request) -> dict:
     """FastAPI dependency: the authenticated user, or 401."""
+    if request.headers.get("x-ui-context"):
+        return _user_from_ui_context(request)
     user = resolve_session(_bearer_token(request))
     if user is None:
         raise HTTPException(status_code=401, detail="Sessão inválida ou expirada")

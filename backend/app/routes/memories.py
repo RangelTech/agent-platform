@@ -5,12 +5,14 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.auth import current_user
 from app.db import get_connection
+from app.permissions import require_scope_for_chatwoot
 
 router = APIRouter(prefix="/api/memories", tags=["memories"])
 
 
 @router.get("")
 def list_memories(user: dict = Depends(current_user)):
+    require_scope_for_chatwoot(user, "ai.knowledge.view")
     with get_connection() as conn:
         rows = conn.execute(
             """SELECT id, content, created_at FROM memories
@@ -30,6 +32,7 @@ def list_memories(user: dict = Depends(current_user)):
 
 @router.delete("/{memory_id}")
 def delete_memory(memory_id: str, user: dict = Depends(current_user)):
+    require_scope_for_chatwoot(user, "ai.knowledge.manage")
     with get_connection() as conn:
         row = conn.execute(
             """DELETE FROM memories
@@ -45,6 +48,7 @@ def delete_memory(memory_id: str, user: dict = Depends(current_user)):
 
 @router.get("/proposals")
 def list_proposals(user: dict = Depends(current_user)):
+    require_scope_for_chatwoot(user, "ai.memories.review")
     with get_connection() as conn:
         rows = conn.execute(
             """SELECT id, content, status, created_at FROM memory_proposals
@@ -77,9 +81,11 @@ def _decide(proposal_id: str, user: dict, status: str) -> dict:
 
 @router.post("/proposals/{proposal_id}/approve")
 def approve_proposal(proposal_id: str, user: dict = Depends(current_user)):
+    require_scope_for_chatwoot(user, "ai.memories.review")
     return _decide(proposal_id, user, "approved")
 
 
 @router.post("/proposals/{proposal_id}/discard")
 def discard_proposal(proposal_id: str, user: dict = Depends(current_user)):
+    require_scope_for_chatwoot(user, "ai.memories.review")
     return _decide(proposal_id, user, "discarded")

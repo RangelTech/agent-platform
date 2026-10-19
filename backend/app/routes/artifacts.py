@@ -9,6 +9,7 @@ from fastapi.responses import RedirectResponse, Response
 from app.artifacts_io import load_bytes, signed_download_url
 from app.auth import current_user
 from app.db import get_connection
+from app.permissions import require_scope_for_chatwoot
 
 router = APIRouter(prefix="/api", tags=["artifacts"])
 
@@ -33,6 +34,7 @@ def _scoped(artifact_id: str, user: dict) -> dict:
 
 @router.get("/artifacts/{artifact_id}")
 def get_artifact(artifact_id: str, user: dict = Depends(current_user)):
+    require_scope_for_chatwoot(user, "ai.chat.view")
     row = _scoped(artifact_id, user)
     return {
         "id": str(row["id"]),
@@ -49,6 +51,7 @@ def get_artifact(artifact_id: str, user: dict = Depends(current_user)):
 @router.get("/artifacts/{artifact_id}/payload")
 def get_payload(artifact_id: str, user: dict = Depends(current_user)):
     """JSON payload for renderable artifacts (charts, datasets)."""
+    require_scope_for_chatwoot(user, "ai.chat.view")
     row = _scoped(artifact_id, user)
     if row["content_type"] != "application/json":
         raise HTTPException(status_code=400, detail="Artifact não é JSON — use /download")
@@ -60,6 +63,7 @@ def get_payload(artifact_id: str, user: dict = Depends(current_user)):
 
 @router.get("/artifacts/{artifact_id}/download")
 def download(artifact_id: str, user: dict = Depends(current_user)):
+    require_scope_for_chatwoot(user, "ai.chat.view")
     row = _scoped(artifact_id, user)
     try:
         url = signed_download_url(row["storage_path"], expires_seconds=3600)
@@ -79,6 +83,7 @@ def download(artifact_id: str, user: dict = Depends(current_user)):
 @router.get("/chats/{chat_id}/artifacts")
 def list_chat_artifacts(chat_id: str, user: dict = Depends(current_user)):
     """Artifacts produced in a conversation, for re-rendering after reload."""
+    require_scope_for_chatwoot(user, "ai.chat.view")
     with get_connection() as conn:
         chat = conn.execute(
             "SELECT id FROM chats WHERE id = %s AND user_id = %s",

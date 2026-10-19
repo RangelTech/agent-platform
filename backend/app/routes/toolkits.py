@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.auth import current_user, require
 from app.config import settings
 from app.db import get_connection
+from app.permissions import require_scope_for_chatwoot
 
 router = APIRouter(prefix="/api", tags=["toolkits"])
 
@@ -36,6 +37,7 @@ async def list_toolkits(user: dict = Depends(require("templates", "view"))):
 
 @router.get("/chats/{chat_id}/tool-calls")
 def list_tool_calls(chat_id: str, user: dict = Depends(current_user)):
+    require_scope_for_chatwoot(user, "ai.runs.view")
     with get_connection() as conn:
         chat = conn.execute(
             "SELECT id FROM chats WHERE id = %s AND user_id = %s",
