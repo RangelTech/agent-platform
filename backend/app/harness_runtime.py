@@ -72,7 +72,7 @@ def _luar_access(conn, manifest: dict, tenant_id, user_id, run_id: str) -> dict 
         }
     )
     return {
-        "url": settings.public_base_url.rstrip("/"),
+        "url": settings.public_base_url.rstrip("/") + "/rt_luar",
         "token": token,
         "account_id": row["account_id"],
     }
