@@ -8,6 +8,7 @@ fluxo estruturado; o valor só vive na memória da run do outro lado.
 from __future__ import annotations
 
 import hashlib
+import time
 import uuid
 
 from fastapi import HTTPException
@@ -42,6 +43,39 @@ def version_package(conn, version_id) -> list[dict]:
         (version_id,),
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+LUAR_CTX_TTL_S = 900
+
+
+def _luar_access(conn, manifest: dict, tenant_id, user_id, run_id: str) -> dict | None:
+    """Contexto assinado (aud=luar): o terminal do ambiente chama a API do Luar como o usuário."""
+    if not user_id or (manifest.get("limits") or {}).get("luar") is not True:
+        return None
+    row = conn.execute(
+        """SELECT t.chatwoot_account_id AS account_id, u.chatwoot_user_id AS cw_user
+             FROM tenants t JOIN users u ON u.tenant_id = t.id
+            WHERE t.id = %s AND u.id = %s""",
+        (tenant_id, user_id),
+    ).fetchone()
+    if not row or not row["account_id"] or not row["cw_user"] or not settings.public_base_url:
+        return None
+    from app.ui_context import sign_context
+
+    token = sign_context(
+        {
+            "aud": "luar",
+            "account_id": row["account_id"],
+            "user_id": row["cw_user"],
+            "run_id": run_id,
+            "exp": time.time() + LUAR_CTX_TTL_S,
+        }
+    )
+    return {
+        "url": settings.public_base_url.rstrip("/") + "/rt_luar",
+        "token": token,
+        "account_id": row["account_id"],
+    }
 
 
 def _credentials(conn, tenant_id) -> dict:
@@ -215,6 +249,9 @@ def prepare_harness_run(
             if not any(g["kind"] == kind for g in grants):
                 grants.append({"kind": kind, "id": None})
         credentials = _credentials(conn, tenant_id)
+        luar = _luar_access(conn, manifest, tenant_id, user_id, run_id)
+        if luar:
+            credentials["luar"] = luar  # o agente opera o Luar como o usuário do chat (spec 10 H-6)
         catalog = _catalog(credentials)
         if attachments:
             credentials["transcription"] = transcription or {}
