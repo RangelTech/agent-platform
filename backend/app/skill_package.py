@@ -12,6 +12,7 @@ Mensagens são para o cliente final: nada de nomes internos de componentes.
 from __future__ import annotations
 
 import hashlib
+import mimetypes
 import posixpath
 import re
 from dataclasses import dataclass
@@ -26,12 +27,42 @@ MAX_USER_SKILL_BYTES = 32 * 1024
 MAX_USER_SKILLS_ACTIVE = 50
 MAX_DESCRIPTION = 1024
 
+# Pasta reservada para arquivos de qualquer tipo (PDF de cardápio, planilha, imagem...).
+# Fica fora das regras de skills: é dado para o agente ler, nunca instrução nem código.
+ASSETS_DIR = "arquivos"
+MAX_ASSET_BYTES = 10 * 1024 * 1024
+MAX_ASSETS_TOTAL_BYTES = 50 * 1024 * 1024
+MAX_ASSETS = 100
+# Executáveis e scripts não entram em arquivos/: código de verdade vai em
+# skills/<nome>/scripts/, que tem revisão (extensão, segredos, tamanho). Aqui o
+# agente só LÊ; barrar o que o sistema operacional executaria evita que a pasta
+# vire um jeito de contrabandear programa sem passar pela revisão.
+DENIED_ASSET_EXTENSIONS = frozenset(
+    {
+        ".exe", ".dll", ".sys", ".msi", ".com", ".scr", ".bat", ".cmd", ".ps1", ".psm1",
+        ".vbs", ".vbe", ".wsf", ".jar", ".apk", ".app", ".dmg", ".pkg", ".deb", ".rpm",
+        ".so", ".dylib", ".bin", ".elf", ".sh", ".bash", ".zsh", ".py", ".pyc", ".js",
+        ".mjs", ".php", ".pl", ".rb", ".lnk", ".reg", ".hta",
+    }
+)  # fmt: skip
+_EXECUTABLE_MAGIC = (
+    (b"MZ", "programa do Windows"),
+    (b"\x7fELF", "programa do Linux"),
+    (b"\xca\xfe\xba\xbe", "programa executável"),
+    (b"\xcf\xfa\xed\xfe", "programa do macOS"),
+    (b"\xce\xfa\xed\xfe", "programa do macOS"),
+    (b"#!", "script executável"),
+)
+MAX_ASSET_SECRET_SCAN_BYTES = 1024 * 1024
+
 SKILL_NAME = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 USER_SKILL_NAME = re.compile(r"^u-[a-z0-9][a-z0-9._-]*$")
 MAX_NAME = 64
 
 SCRIPT_EXTENSIONS = (".py", ".sh", ".js")
 TEMPLATE_EXTENSIONS = (".md", ".txt", ".html", ".htm", ".json", ".csv", ".yaml", ".yml", ".j2")
+
+_ASSET_TEXT_EXTENSIONS = frozenset(TEMPLATE_EXTENSIONS) | {".xml", ".tsv", ".log"}
 
 _SKILL_PATH = re.compile(r"^skills/([^/]+)/SKILL\.md$")
 _SKILL_SUBPATH = re.compile(r"^skills/([^/]+)/(references|scripts|templates)/(.+)$")
@@ -87,6 +118,18 @@ class Problem:
 
 def sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def sha256_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def is_asset_path(path: object) -> bool:
+    return isinstance(path, str) and path.startswith(ASSETS_DIR + "/")
+
+
+def guess_mime(path: str) -> str:
+    return mimetypes.guess_type(path)[0] or "application/octet-stream"
 
 
 def size_bytes(text: str) -> int:
@@ -160,6 +203,8 @@ def classify_path(path: str) -> tuple[str | None, str | None]:
         return None, "Caminho longo demais"
     if path == "AGENTE.md":
         return "agent", None
+    if path.startswith(ASSETS_DIR + "/"):
+        return _classify_asset(path)
     if _SKILL_PATH.match(path):
         return "skill", None
     sub = _SKILL_SUBPATH.match(path)
@@ -179,6 +224,60 @@ def classify_path(path: str) -> tuple[str | None, str | None]:
     if path.endswith("/SKILL.md") or path.startswith("skills/"):
         return None, "Caminho fora da estrutura skills/<nome>/SKILL.md"
     return None, "Caminho fora da estrutura permitida (AGENTE.md e skills/<nome>/...)"
+
+
+def _classify_asset(path: str) -> tuple[str | None, str | None]:
+    if any(ord(c) < 32 or ord(c) == 127 for c in path):
+        return None, "Nome com caracteres inválidos"
+    ext = posixpath.splitext(path)[1].lower()
+    if ext in DENIED_ASSET_EXTENSIONS:
+        return None, (
+            f"Arquivos {ext} não são aceitos em arquivos/. "
+            "Código vai em skills/<nome>/scripts/, onde é revisado"
+        )
+    return "asset", None
+
+
+def validate_asset(path: str, data: bytes) -> list[Problem]:
+    """Valida UM arquivo de arquivos/ já com os bytes (no envio pela tela)."""
+    kind, err = classify_path(path)
+    if err or kind != "asset":
+        code = "bad_extension" if err and "não são aceitos" in err else "bad_path"
+        return [Problem(path, code, err or "Caminho fora da pasta arquivos/")]
+    problems: list[Problem] = []
+    if not data:
+        problems.append(Problem(path, "empty_file", "O arquivo está vazio"))
+    if len(data) > MAX_ASSET_BYTES:
+        problems.append(
+            Problem(path, "file_too_large", f"O arquivo passa de {MAX_ASSET_BYTES // 2**20} MB")
+        )
+    for magic, label in _EXECUTABLE_MAGIC:
+        if data.startswith(magic):
+            problems.append(
+                Problem(
+                    path,
+                    "bad_extension",
+                    f"O conteúdo parece ser um {label}; só dados são aceitos em arquivos/",
+                )
+            )
+            break
+    ext = posixpath.splitext(path)[1].lower()
+    if ext in _ASSET_TEXT_EXTENSIONS and len(data) <= MAX_ASSET_SECRET_SCAN_BYTES:
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            text = ""
+        for number, label in find_secrets(text):
+            problems.append(
+                Problem(
+                    path,
+                    "secret_detected",
+                    f"Parece haver {label} escrito no texto. "
+                    "Remova e use as credenciais da empresa",
+                    line=number,
+                )
+            )
+    return problems
 
 
 # ------------------------------------------------------------------- pacote
@@ -322,10 +421,36 @@ def validate_package(files: object, manifest: object, tool_ids: set[str]) -> lis
         return [Problem("", "bad_path", "A lista de arquivos é inválida")]
 
     entries: dict[str, str] = {}
+    assets: dict[str, int] = {}
     total = 0
     for item in files:
         path = item.get("path") if isinstance(item, dict) else None
         content = item.get("content") if isinstance(item, dict) else None
+        if is_asset_path(path):
+            # Arquivo de arquivos/: só o descritor {path, size_bytes} entra aqui; os bytes
+            # já foram validados no envio (validate_asset).
+            _kind, err = classify_path(path)
+            raw_size = item.get("size_bytes")
+            if isinstance(content, str):
+                raw_size = size_bytes(content)
+            if err:
+                code = "bad_extension" if "não são aceitos" in err else "bad_path"
+                problems.append(Problem(path, code, err))
+            elif path in assets:
+                problems.append(Problem(path, "bad_path", "Arquivo repetido no pacote"))
+            elif not isinstance(raw_size, int) or isinstance(raw_size, bool) or raw_size < 0:
+                problems.append(Problem(path, "bad_encoding", "Conteúdo inválido"))
+            else:
+                assets[path] = raw_size
+                if raw_size > MAX_ASSET_BYTES:
+                    problems.append(
+                        Problem(
+                            path,
+                            "file_too_large",
+                            f"O arquivo passa de {MAX_ASSET_BYTES // 2**20} MB",
+                        )
+                    )
+            continue
         if not isinstance(content, str):
             problems.append(Problem(str(path or ""), "bad_encoding", "Conteúdo inválido"))
             continue
@@ -353,8 +478,19 @@ def validate_package(files: object, manifest: object, tool_ids: set[str]) -> lis
         elif kind == "skill" and len(content) > MAX_SKILL_MD_CHARS:
             problems.append(Problem(path, "file_too_large", "A skill passa de 100.000 caracteres"))
 
-    if len(files) > MAX_FILES:
+    if len(files) - len(assets) > MAX_FILES:
         problems.append(Problem("", "too_many_files", f"O pacote tem mais de {MAX_FILES} arquivos"))
+    if len(assets) > MAX_ASSETS:
+        problems.append(
+            Problem("", "too_many_files", f"A pasta arquivos/ tem mais de {MAX_ASSETS} arquivos")
+        )
+    if sum(assets.values()) > MAX_ASSETS_TOTAL_BYTES:
+        problems.append(
+            Problem(
+                "", "package_too_large",
+                f"Os arquivos passam de {MAX_ASSETS_TOTAL_BYTES // 2**20} MB no total",
+            )
+        )
     if total > MAX_PACKAGE_BYTES:
         problems.append(Problem("", "package_too_large", "O pacote passa de 2 MiB"))
 
@@ -450,11 +586,11 @@ def validate_package(files: object, manifest: object, tool_ids: set[str]) -> lis
                 if not target:
                     continue
                 resolved = posixpath.normpath(posixpath.join(base, target))
-                if not re.match(r"^(skills/[^/]+/)?(references|scripts|templates)/", resolved) and (
-                    resolved != "AGENTE.md"
-                ):
+                if not re.match(
+                    rf"^(skills/[^/]+/)?(references|scripts|templates)/|^{ASSETS_DIR}/", resolved
+                ) and (resolved != "AGENTE.md"):
                     continue
-                if resolved not in entries:
+                if resolved not in entries and resolved not in assets:
                     problems.append(
                         Problem(
                             path,

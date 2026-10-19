@@ -7,6 +7,7 @@ fluxo estruturado; o valor só vive na memória da run do outro lado.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import time
 import uuid
@@ -36,13 +37,44 @@ def package_sha(files: list[dict]) -> str:
     return digest.hexdigest()
 
 
-def version_package(conn, version_id) -> list[dict]:
+def version_package(conn, version_id, *, include_content: bool = True) -> list[dict]:
+    """Arquivos da versão. `include_content=False` só lê metadados (dimensionar sem carregar bytes).
+
+    Texto vem em `content` (UTF-8). Binário (arquivos/) vem em `content` como base64 e
+    `encoding = "base64"`; `size_bytes` é sempre o tamanho real do arquivo.
+    """
     rows = conn.execute(
-        """SELECT path, kind, content, sha256, size_bytes
+        """SELECT path, kind, sha256, size_bytes, is_binary, mime,
+                  CASE WHEN %s THEN content ELSE NULL END AS content,
+                  CASE WHEN %s AND is_binary THEN content_bin ELSE NULL END AS content_bin
              FROM template_skill_files WHERE version_id = %s ORDER BY path""",
-        (version_id,),
+        (include_content, include_content, version_id),
     ).fetchall()
-    return [dict(r) for r in rows]
+    out = []
+    for r in rows:
+        f = dict(r)
+        raw = f.pop("content_bin", None)
+        if f["is_binary"]:
+            f["encoding"] = "base64"
+            f["content"] = base64.b64encode(bytes(raw)).decode("ascii") if raw is not None else None
+        else:
+            f["encoding"] = "utf-8"
+        out.append(f)
+    return out
+
+
+def wire_size(f: dict) -> int:
+    """Bytes que o arquivo ocupa no JSON (base64 incha 4/3)."""
+    return -(-f["size_bytes"] * 4 // 3) if f.get("is_binary") else f["size_bytes"]
+
+
+def wire_file(f: dict) -> dict:
+    """Formato do contrato v1: `encoding` só aparece quando o conteúdo é base64."""
+    out = {"path": f["path"], "sha256": f["sha256"], "content": f["content"]}
+    if f.get("is_binary"):
+        out["encoding"] = "base64"
+        out["mime"] = f.get("mime") or "application/octet-stream"
+    return out
 
 
 LUAR_CTX_TTL_S = 900
@@ -224,17 +256,15 @@ def prepare_harness_run(
         manifest = normalize_manifest(version["manifest"] or default_manifest())
         if user:
             ensure_can_run(manifest, user)  # quem pode usar este agente (spec 10, A-7)
-        files = version_package(conn, version["id"])
+        files = version_package(conn, version["id"], include_content=False)
         sha = package_sha(files)
-        inline = sum(f["size_bytes"] for f in files) <= INLINE_PACKAGE_LIMIT
+        inline = sum(wire_size(f) for f in files) <= INLINE_PACKAGE_LIMIT
+        if inline:
+            files = version_package(conn, version["id"])
         base = settings.public_base_url.rstrip("/")
         package = {
             "sha256": sha,
-            "files": [
-                {"path": f["path"], "sha256": f["sha256"], "content": f["content"]} for f in files
-            ]
-            if inline
-            else None,
+            "files": [wire_file(f) for f in files] if inline else None,
             "url": None if inline else f"{base}/internal/runs/{run_id}/package",
         }
         grants = [

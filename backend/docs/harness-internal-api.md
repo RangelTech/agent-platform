@@ -33,6 +33,10 @@ Diferenças e decisões da implementação:
 - `run_id` e `idempotency_key` são gerados pelo backend; a run é registrada em `chat_runs` antes do POST.
 - `skills.tenant_package`: `{sha256, files:[{path,sha256,content}]|null, url|null}`. Até 700 KiB de pacote vão inline;
   acima disso `files = null` e `url = {PUBLIC_BASE_URL}/internal/runs/{run_id}/package` (use o `run_token`).
+  Arquivos da pasta reservada `arquivos/` (qualquer tipo: PDF, XLSX, imagem, CSV) chegam como
+  `{path, sha256, content, encoding: "base64", mime}`; `sha256` é dos BYTES. Texto não traz `encoding`.
+  Limites: 10 MB por arquivo, 50 MB de arquivos por pacote, até 100 arquivos; executáveis e scripts
+  (`.exe .sh .py .js ...`, ou conteúdo MZ/ELF/`#!`) são recusados no envio (código vai em `scripts/`).
 - `skills.user_skills`: skills ativas do usuário (`template_id` nulo ou deste template). Até 256 KiB inline;
   o excedente vem com `content: null` (buscar com `GET /internal/skills/user/...`).
 - `skills.system_rev`: `HARNESS_SYSTEM_SKILLS_REV` (default `latest`).
@@ -85,7 +89,8 @@ externo → `saved:false`.
 `{"tool": "rt_sql_read", "credential_kind": "datasource|null", "ok": true}` → `tool_audit` (sem valores de credencial).
 
 ### `GET /internal/runs/{run_id}/package`
-`{sha256, files:[{path,sha256,content}]}` da versão da run (para o `url` do payload).
+`{sha256, files:[{path,sha256,content,encoding?,mime?}]}` da versão da run (para o `url` do payload).
+Binários vão em base64 (`encoding: "base64"`).
 
 ### `POST /internal/runs/{run_id}/skills` (201)
 Proposta de skill pessoal pelo agente.

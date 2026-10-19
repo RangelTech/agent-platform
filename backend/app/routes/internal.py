@@ -257,18 +257,13 @@ def post_tool_audit(run_id: str, payload: ToolAuditIn, run: dict = Depends(_run_
 
 @router.get("/runs/{run_id}/package")
 def get_package(run_id: str, run: dict = Depends(_run_dep)):
-    from app.harness_runtime import package_sha, version_package
+    from app.harness_runtime import package_sha, version_package, wire_file
 
     if not run["version_id"]:
         raise HTTPException(status_code=404, detail="Pacote não encontrado")
     with get_connection() as conn:
         files = version_package(conn, run["version_id"])
-    return {
-        "sha256": package_sha(files),
-        "files": [
-            {"path": f["path"], "sha256": f["sha256"], "content": f["content"]} for f in files
-        ],
-    }
+    return {"sha256": package_sha(files), "files": [wire_file(f) for f in files]}
 
 
 # ------------------------------------------------------------ user skills ---

@@ -227,3 +227,61 @@ def test_manifest_confirm_actions_is_kept_only_when_true_and_validated():
     assert "confirm_actions" not in off
     bad = pkg.validate_package(_files(), {"limits": {"confirm_actions": "sim"}}, TOOLS)
     assert pkg.has_errors(bad)
+
+
+# ----------------------------------------------------- arquivos/ (H-2) ---
+
+
+def test_assets_dir_accepts_any_data_extension():
+    for name in ("cardapio.pdf", "precos.xlsx", "foto.JPG", "dados.csv", "x.zip", "sem-extensao"):
+        assert pkg.classify_path(f"arquivos/{name}") == ("asset", None), name
+    assert pkg.classify_path("arquivos/sub/pasta/tabela.parquet") == ("asset", None)
+
+
+def test_assets_dir_denies_executables_and_scripts():
+    for name in ("a.exe", "a.dll", "a.BAT", "a.sh", "a.py", "a.js", "a.ps1", "a.jar", "a.so"):
+        kind, err = pkg.classify_path(f"arquivos/{name}")
+        assert kind is None and "scripts/" in err, name
+
+
+def test_assets_path_rules_still_apply():
+    bads = ("arquivos/../x.pdf", "arquivos/.oculto.pdf", "/arquivos/x.pdf", "arquivos/a\nb.pdf")
+    for bad in bads:
+        assert pkg.classify_path(bad)[0] is None, bad
+
+
+def test_validate_asset_checks_size_magic_and_secrets():
+    ok = pkg.validate_asset("arquivos/c.pdf", b"%PDF-1.7\n\xe2\xe3\xcf\xd3\n")
+    assert not pkg.has_errors(ok)  # binário que não é UTF-8 é permitido
+    assert "empty_file" in codes(pkg.validate_asset("arquivos/c.pdf", b""))
+    big = b"0" * (pkg.MAX_ASSET_BYTES + 1)
+    assert "file_too_large" in codes(pkg.validate_asset("arquivos/c.pdf", big))
+    for blob in (b"MZ\x90\x00", b"\x7fELF\x02", b"#!/bin/sh\nrm -rf /"):
+        assert "bad_extension" in codes(pkg.validate_asset("arquivos/inocente.pdf", blob)), blob
+    assert "bad_extension" in codes(pkg.validate_asset("arquivos/x.exe", b"abc"))
+    leaked = b"chave,valor\nsenha=Abc123def456ghi\n"
+    assert "secret_detected" in codes(pkg.validate_asset("arquivos/tabela.csv", leaked))
+    # Fora de arquivos/ não é asset.
+    assert pkg.has_errors(pkg.validate_asset("skills/x/SKILL.md", b"abc"))
+
+
+def test_package_counts_assets_apart_from_text_limits():
+    files = _files() + [{"path": "arquivos/c.pdf", "size_bytes": 9 * 1024 * 1024}]
+    assert not pkg.has_errors(pkg.validate_package(files, {}, TOOLS))  # > 2 MiB de texto, ok
+    too_big = _files() + [{"path": "arquivos/c.pdf", "size_bytes": pkg.MAX_ASSET_BYTES + 1}]
+    assert "file_too_large" in codes(pkg.validate_package(too_big, {}, TOOLS))
+    many = _files() + [
+        {"path": f"arquivos/f{i}.bin2", "size_bytes": 9 * 1024 * 1024} for i in range(6)
+    ]
+    assert "package_too_large" in codes(pkg.validate_package(many, {}, TOOLS))
+    dup = _files() + [{"path": "arquivos/a.pdf", "size_bytes": 1}] * 2
+    assert pkg.has_errors(pkg.validate_package(dup, {}, TOOLS))
+
+
+def test_reference_to_asset_is_checked_against_the_folder():
+    md = "# Agente\n\nVeja o [cardápio](arquivos/cardapio.pdf).\n"
+    files = [f for f in _files() if f["path"] != "AGENTE.md"]
+    files.append({"path": "AGENTE.md", "content": md})
+    assert "broken_reference" in codes(pkg.validate_package(files, {}, TOOLS))
+    files.append({"path": "arquivos/cardapio.pdf", "size_bytes": 10})
+    assert not pkg.has_errors(pkg.validate_package(files, {}, TOOLS))
