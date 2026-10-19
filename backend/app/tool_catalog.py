@@ -81,6 +81,12 @@ TOOLS: list[dict] = [
         "sensitive": True,
     },
     {
+        "id": "rt_confirm",
+        "label": "Pedir confirmação ao usuário",
+        "description": "Abre um cartão de confirmação antes de uma ação, quando o agente manda.",
+        "sensitive": False,
+    },
+    {
         "id": "rt_search_docs",
         "label": "Buscar nos arquivos da empresa",
         "description": "Procura trechos nos arquivos enviados à empresa.",
@@ -163,7 +169,7 @@ _CREDENTIAL_KIND = {
     "rt_email_list": "email",
     "rt_email_send": "email",
     "rt_http": "secrets",
-    # terminal do ambiente da empresa: os segredos do tenant chegam como variaveis de ambiente (spec 10 H-5)
+    # terminal do ambiente: segredos do tenant viram variáveis de ambiente (spec 10 H-5)
     "rt_env_manage": "secrets",
 }
 
