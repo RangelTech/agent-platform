@@ -207,6 +207,9 @@ def normalize_manifest(raw: object) -> dict:
             out["max_turns"] = limits["max_turns"]
         if limits.get("confirm_actions") is True:
             out["confirm_actions"] = True  # liga o cartão (padrão: o agente age direto)
+        scopes = _clean_list(limits.get("allowed_scopes"), SCOPE_RE_AI, lower=True)
+        if scopes:
+            out["allowed_scopes"] = scopes  # quem pode usar este agente (any-of)
         tables = _clean_list(limits.get("write_tables"), TABLE_RE)
         if tables:
             out["write_tables"] = tables
@@ -220,6 +223,7 @@ def normalize_manifest(raw: object) -> dict:
 TABLE_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,62}(\.[A-Za-z_][A-Za-z0-9_]{0,62})?$")
 HOST_RE = re.compile(r"^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$")
 MAX_LIST = 50
+SCOPE_RE_AI = re.compile(r"^ai\.[a-z_]+\.[a-z_]+$")
 
 
 def _clean_list(value: object, pattern: re.Pattern, lower: bool = False) -> list[str]:
