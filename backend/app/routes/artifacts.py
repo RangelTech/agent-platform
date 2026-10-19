@@ -29,6 +29,14 @@ def _scoped(artifact_id: str, user: dict) -> dict:
         and str(row["tenant_id"]) != str(user["tenant_id"])
     ):
         raise HTTPException(status_code=404, detail="Artifact não encontrado")
+    if not user["is_master"] and row["chat_id"]:
+        # o artefato é do dono do chat: outro usuário do mesmo tenant não o enxerga
+        with get_connection() as conn:
+            chat = conn.execute(
+                "SELECT user_id FROM chats WHERE id::text = %s", (str(row["chat_id"]),)
+            ).fetchone()
+        if chat is not None and str(chat["user_id"]) != str(user["id"]):
+            raise HTTPException(status_code=404, detail="Artifact não encontrado")
     return row
 
 
