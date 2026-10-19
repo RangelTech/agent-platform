@@ -2,10 +2,10 @@
 
 O manifesto de um agente por skills pode declarar `limits.allowed_scopes`: permissões `ai.*`
 (qualquer uma basta). Vazio = todos que podem conversar. O agente administrador de ambiente,
-por exemplo, declara `ai.environment.manage`. Quem edita agentes (`ai.agents.edit`) sempre o vê e o testa.
+por exemplo, declara `ai.environment.manage`. Quem edita agentes (`ai.agents.edit`) sempre o testa.
 
-Duas fontes de permissão chegam aqui: o contexto assinado do Chatwoot (já traz `ai.*`) e, enquanto a
-interface antiga existir, o perfil legado do usuário (traduzido por `legacy_scopes`).
+Duas fontes de permissão chegam aqui: o contexto assinado do Chatwoot (já traz `ai.*`) e,
+enquanto a interface antiga existir, o perfil legado do usuário (via `legacy_scopes`).
 """
 
 from __future__ import annotations
