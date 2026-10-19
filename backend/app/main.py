@@ -21,7 +21,6 @@ from app.routes import custom_tools as custom_tool_routes
 from app.routes import datasources as datasource_routes
 from app.routes import email_accounts as email_account_routes
 from app.routes import environment as environment_routes
-from app.routes import ui_internal as ui_internal_routes
 from app.routes import files as file_routes
 from app.routes import google_accounts as google_account_routes
 from app.routes import hermes_approvals as hermes_approval_routes
@@ -48,6 +47,7 @@ from app.routes import tenant_guide as tenant_guide_routes
 from app.routes import tenants as tenant_routes
 from app.routes import toolkits as toolkit_routes
 from app.routes import tools as tool_routes
+from app.routes import ui_internal as ui_internal_routes
 from app.routes import unofficial_connections as unofficial_connection_routes
 from app.routes import usage as usage_routes
 from app.routes import users as user_routes

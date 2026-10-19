@@ -107,7 +107,8 @@ def _set_active(account_id: int, active: bool, by_chatwoot: bool):
         if tenant is None:
             raise HTTPException(status_code=404, detail="Empresa não provisionada")
         conn.execute(
-            "UPDATE tenants SET is_active = %s, suspended_by_chatwoot = %s, updated_at = now() WHERE id = %s",
+            "UPDATE tenants SET is_active = %s, suspended_by_chatwoot = %s, "
+            "updated_at = now() WHERE id = %s",
             (active, by_chatwoot, tenant["id"]),
         )
     return tenant
