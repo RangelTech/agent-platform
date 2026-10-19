@@ -16,6 +16,7 @@ from pydantic import BaseModel
 
 from app.auth import current_user
 from app.db import get_connection
+from app.permissions import require_scope_for_chatwoot
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,7 @@ def view(row: dict) -> dict:
 
 @router.get("/pending")
 def pending(user: dict = Depends(current_user)):
+    require_scope_for_chatwoot(user, "ai.chat.view")
     if user["tenant_id"] is None:
         return []
     with get_connection() as conn:
@@ -82,6 +84,7 @@ async def _forward(approval: dict, decision: str) -> None:
 
 @router.post("/{approval_id}")
 async def decide(approval_id: str, payload: DecisionIn, user: dict = Depends(current_user)):
+    require_scope_for_chatwoot(user, "ai.approvals.decide")
     if user["tenant_id"] is None:
         raise HTTPException(status_code=404, detail="Aprovação não encontrada")
     with get_connection() as conn:

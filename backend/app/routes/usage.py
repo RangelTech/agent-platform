@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 from app.auth import current_user, require
 from app.db import get_connection
+from app.permissions import require_scope_for_chatwoot
 
 router = APIRouter(prefix="/api", tags=["usage"])
 
@@ -82,6 +83,7 @@ class FeedbackIn(BaseModel):
 
 @router.post("/chats/{chat_id}/feedback", status_code=201)
 def give_feedback(chat_id: str, payload: FeedbackIn, user: dict = Depends(current_user)):
+    require_scope_for_chatwoot(user, "ai.chat.run")
     if payload.rating not in (-1, 1):
         raise HTTPException(status_code=400, detail="rating deve ser -1 ou 1")
     with get_connection() as conn:

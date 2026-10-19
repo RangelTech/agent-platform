@@ -36,6 +36,7 @@ from app.kernel_router import (
     target_for_kind,
     template_row,
 )
+from app.permissions import require_scope_for_chatwoot
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +101,7 @@ def _need_uuid(value: str) -> None:
 
 @router.get("/chats")
 def list_chats(user: dict = Depends(current_user)):
+    require_scope_for_chatwoot(user, "ai.chat.view")
     with get_connection() as conn:
         rows = conn.execute(
             """SELECT c.*, t.agent_kind FROM chats c
@@ -115,6 +117,7 @@ def list_chats(user: dict = Depends(current_user)):
 
 @router.get("/chats/{chat_id}")
 def get_chat(chat_id: str, user: dict = Depends(current_user)):
+    require_scope_for_chatwoot(user, "ai.chat.view")
     _need_uuid(chat_id)
     with get_connection() as conn:
         row = conn.execute(
@@ -132,6 +135,7 @@ def get_chat(chat_id: str, user: dict = Depends(current_user)):
 @router.post("/chats/ragentes-guide")
 def open_ragentes_guide(user: dict = Depends(current_user)):
     """Open one private chat pinned to the tenant's system onboarding guide."""
+    require_scope_for_chatwoot(user, "ai.chat.run")
     if user["tenant_id"] is None:
         raise HTTPException(status_code=400, detail="Usuário master não participa de conversas")
     from app.ragentes_guide import ensure_for_tenant
@@ -165,6 +169,7 @@ def open_ragentes_guide(user: dict = Depends(current_user)):
 
 @router.get("/chats/{chat_id}/messages")
 def list_messages(chat_id: str, user: dict = Depends(current_user)):
+    require_scope_for_chatwoot(user, "ai.chat.view")
     _need_uuid(chat_id)
     with get_connection() as conn:
         # Conversas de canal externo (WhatsApp) não têm dono na plataforma:
@@ -198,6 +203,7 @@ def list_messages(chat_id: str, user: dict = Depends(current_user)):
 
 @router.put("/chats/{chat_id}/hide")
 def hide_chat(chat_id: str, user: dict = Depends(current_user)):
+    require_scope_for_chatwoot(user, "ai.chat.run")
     with get_connection() as conn:
         row = conn.execute(
             "UPDATE chats SET is_hidden = TRUE WHERE id = %s AND user_id = %s RETURNING id",
@@ -290,6 +296,7 @@ _BACKGROUND: set[asyncio.Task] = set()
 
 @router.post("/chat/runs/{run_id}/cancel")
 async def cancel_run(run_id: str, user: dict = Depends(current_user)):
+    require_scope_for_chatwoot(user, "ai.chat.run")
     with get_connection() as conn:
         run = conn.execute(
             """SELECT * FROM chat_runs
@@ -321,6 +328,7 @@ async def cancel_run(run_id: str, user: dict = Depends(current_user)):
 
 @router.post("/chat/send")
 async def send_message(request: Request, user: dict = Depends(current_user)):
+    require_scope_for_chatwoot(user, "ai.chat.run")
     # JSON for text-only sends; multipart when attachments ride along.
     content_type = request.headers.get("content-type", "")
     if content_type.startswith("multipart/"):
