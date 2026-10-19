@@ -17,6 +17,7 @@ from app.crypto import decrypt
 from app.db import get_connection
 from app.run_tokens import issue_run_token
 from app.skill_package import default_manifest, normalize_manifest
+from app.template_access import ensure_can_run
 from app.tool_catalog import credential_kinds
 
 CONTRACT_VERSION = 1
@@ -187,6 +188,8 @@ def prepare_harness_run(
                 status_code=409, detail="Este agente ainda não tem uma versão publicada"
             )
         manifest = normalize_manifest(version["manifest"] or default_manifest())
+        if user:
+            ensure_can_run(manifest, user)  # quem pode usar este agente (spec 10, A-7)
         files = version_package(conn, version["id"])
         sha = package_sha(files)
         inline = sum(f["size_bytes"] for f in files) <= INLINE_PACKAGE_LIMIT
