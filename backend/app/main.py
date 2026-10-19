@@ -47,6 +47,7 @@ from app.routes import tenant_guide as tenant_guide_routes
 from app.routes import tenants as tenant_routes
 from app.routes import toolkits as toolkit_routes
 from app.routes import tools as tool_routes
+from app.routes import ui_internal as ui_internal_routes
 from app.routes import unofficial_connections as unofficial_connection_routes
 from app.routes import usage as usage_routes
 from app.routes import users as user_routes
@@ -216,6 +217,7 @@ app.include_router(skill_routes.router)
 app.include_router(schedule_routes.router)
 app.include_router(approval_routes.router)
 app.include_router(environment_routes.router)
+app.include_router(ui_internal_routes.router)
 # Rotas internas (só serviço): /internal/... e o mesmo conjunto sob /api para
 # proxies que só encaminham /api.
 app.include_router(internal_routes.router)
