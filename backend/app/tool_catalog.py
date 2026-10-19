@@ -163,6 +163,8 @@ _CREDENTIAL_KIND = {
     "rt_email_list": "email",
     "rt_email_send": "email",
     "rt_http": "secrets",
+    # terminal do ambiente da empresa: os segredos do tenant chegam como variaveis de ambiente (spec 10 H-5)
+    "rt_env_manage": "secrets",
 }
 
 
