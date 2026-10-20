@@ -190,6 +190,7 @@ def test_draft_lifecycle_and_validation(client, enabled, tenant_admin):
         "environment": {"enabled": False},
         "model": None,
         "limits": {},
+        "output": {"format": "markdown"},
     }
 
     # Rascunho inválido é gravado, com os problemas devolvidos.
@@ -1221,6 +1222,46 @@ def test_run_payload_grants_follow_manifest_tools(client, enabled, tenant_admin,
     sent = fake_harness.calls["runs"][-1]
     kinds = {g["kind"] for g in sent["manifest"]["credential_grants"]}
     assert kinds == {"mercado_pago", "datasource"}  # nada de e-mail nem segredos sem a ferramenta
+
+
+def test_run_payload_carries_output_format_and_chat_exposes_it(
+    client, enabled, tenant_admin, fake_harness
+):
+    h = auth(tenant_admin["token"])
+    padrao = _setup_runtime(client, tenant_admin)
+    _sse(
+        client.post(
+            "/api/chat/send", json={"message": "oi", "template_id": padrao["id"]}, headers=h
+        )
+    )
+    assert fake_harness.calls["runs"][-1]["manifest"]["output_format"] == "markdown"
+
+    t = _skills_template(client, tenant_admin["token"])
+    _publish(
+        client,
+        tenant_admin["token"],
+        t,
+        manifest={"tools": [], "output": {"format": "whatsapp"}},
+    )
+    events = _sse(
+        client.post("/api/chat/send", json={"message": "oi", "template_id": t["id"]}, headers=h)
+    )
+    assert fake_harness.calls["runs"][-1]["manifest"]["output_format"] == "whatsapp"
+    assert events[0][0] == "chat" and events[0][1]["output_format"] == "whatsapp"
+    chat_id = events[0][1]["chat_id"]
+    assert client.get(f"/api/chats/{chat_id}", headers=h).json()["output_format"] == "whatsapp"
+
+
+def test_invalid_output_format_is_rejected_on_validate(client, enabled, tenant_admin):
+    h = auth(tenant_admin["token"])
+    t = _skills_template(client, tenant_admin["token"])
+    draft = client.get(f"/api/templates/{t['id']}/draft", headers=h).json()
+    body = {
+        "files": [{"path": f["path"], "content": f["content"]} for f in draft["files"]],
+        "manifest": {"tools": [], "output": {"format": "html"}},
+    }
+    checked = client.post(f"/api/templates/{t['id']}/validate", json=body, headers=h).json()
+    assert checked["ok"] is False
 
 
 def test_run_payload_without_credential_tools_grants_nothing(

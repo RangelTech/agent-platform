@@ -121,6 +121,9 @@ class CaixaIaIn(BaseModel):
     template_id: str | None = None
     autopilot: bool = True
     handoff_team_id: int | None = None
+    # Canal externo não tem stream: com True a ponte manda UMA mensagem curta de progresso antes
+    # da resposta; com False (padrão) entrega só a resposta final. None = não mexe no que já está.
+    show_progress: bool | None = None
     tenant_id: str | None = None  # master only
 
 
@@ -162,6 +165,7 @@ async def list_inboxes(user: dict = Depends(require("omnichannel", "view"))):
                 "template_id": str(local["template_id"]) if local["template_id"] else None,
                 "autopilot": local["autopilot"],
                 "handoff_team_id": local["handoff_team_id"],
+                "show_progress": bool(local["show_progress"]),
                 "degraded": not local["bridge_synced"],
                 "degraded_reason": local["bridge_error"],
             }
@@ -205,16 +209,28 @@ async def set_inbox_ai(
             raise HTTPException(status_code=404, detail="Template não é desta empresa")
 
     with get_connection() as conn:
-        conn.execute(
+        saved = conn.execute(
             """INSERT INTO inbox_ai_links (tenant_id, chatwoot_inbox_id, template_id, autopilot,
-                                           handoff_team_id, bridge_synced, bridge_error)
-               VALUES (%s, %s, %s, %s, %s, FALSE, NULL)
+                                           handoff_team_id, show_progress, bridge_synced,
+                                           bridge_error)
+               VALUES (%s, %s, %s, %s, %s, COALESCE(%s, FALSE), FALSE, NULL)
                ON CONFLICT (tenant_id, chatwoot_inbox_id) DO UPDATE
                    SET template_id = EXCLUDED.template_id, autopilot = EXCLUDED.autopilot,
-                       handoff_team_id = EXCLUDED.handoff_team_id, bridge_synced = FALSE,
-                       bridge_error = NULL, updated_at = now()""",
-            (tenant_id, inbox_id, payload.template_id, payload.autopilot, payload.handoff_team_id),
-        )
+                       handoff_team_id = EXCLUDED.handoff_team_id,
+                       show_progress = COALESCE(%s, inbox_ai_links.show_progress),
+                       bridge_synced = FALSE, bridge_error = NULL, updated_at = now()
+               RETURNING show_progress""",
+            (
+                tenant_id,
+                inbox_id,
+                payload.template_id,
+                payload.autopilot,
+                payload.handoff_team_id,
+                payload.show_progress,
+                payload.show_progress,
+            ),
+        ).fetchone()
+        show_progress = bool(saved["show_progress"])
 
     sync_error = None
     bridge_out: dict = {}
@@ -228,6 +244,7 @@ async def set_inbox_ai(
                 "template_id": payload.template_id,
                 "autopilot": payload.autopilot,
                 "handoff_team_id": payload.handoff_team_id,
+                "show_progress": show_progress,
             },
         )
     except HTTPException as exc:
@@ -252,6 +269,7 @@ async def set_inbox_ai(
             "chatwoot_inbox_id": inbox_id,
             "template_id": payload.template_id,
             "autopilot": payload.autopilot,
+            "show_progress": show_progress,
             "detail": "Vínculo salvo, mas o atendimento automático ainda não foi atualizado "
             "nesta caixa. Salve de novo em instantes.",
         }
@@ -262,4 +280,5 @@ async def set_inbox_ai(
         "chatwoot_inbox_id": inbox_id,
         "template_id": payload.template_id,
         "autopilot": payload.autopilot,
+        "show_progress": show_progress,
     }
