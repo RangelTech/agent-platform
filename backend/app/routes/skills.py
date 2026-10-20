@@ -79,6 +79,14 @@ def _company_view(row: dict, with_content: bool = False) -> dict:
     return out
 
 
+def _first_line(text: str) -> str:
+    for line in text.splitlines():
+        line = line.strip().lstrip("#").strip()
+        if line:
+            return line[:200]
+    return ""
+
+
 @router.get("/skills/company")
 def list_company_skills(user: dict = Depends(require("skills", "view"))):
     if user["is_master"]:
@@ -88,12 +96,13 @@ def list_company_skills(user: dict = Depends(require("skills", "view"))):
             return []
         rows = conn.execute(
             """SELECT t.id AS template_id, t.name AS template_name, f.content,
-                      v.created_at
+                      f.kind AS file_kind, v.created_at
                  FROM templates t
                  JOIN template_versions v ON v.id = t.active_version_id
-                 JOIN template_skill_files f ON f.version_id = v.id AND f.kind = 'skill'
+                 JOIN template_skill_files f ON f.version_id = v.id
+                      AND f.kind IN ('agent', 'skill')
                 WHERE t.tenant_id = %s AND t.agent_kind = 'skills' AND NOT t.is_deleted
-                ORDER BY t.name, f.path""",
+                ORDER BY t.name, (f.kind <> 'agent'), f.path""",
             (user["tenant_id"],),
         ).fetchall()
         shared = conn.execute(
@@ -101,15 +110,22 @@ def list_company_skills(user: dict = Depends(require("skills", "view"))):
         ).fetchall()
     out = []
     for r in rows:
-        data, _body, err = pkg.split_frontmatter(r["content"])
-        if err or not data:
-            continue
+        data, body, err = pkg.split_frontmatter(r["content"])
+        if r["file_kind"] == "agent":
+            # AGENTE.md: aparece sempre, mesmo sem frontmatter, para o agente nunca sumir da tela.
+            data = data or {}
+            name, description = "AGENTE.md", str(data.get("description") or _first_line(body))
+        else:
+            if err or not data:
+                continue
+            name, description = str(data.get("name") or ""), str(data.get("description") or "")
         out.append(
             {
                 "template_id": str(r["template_id"]),
                 "template_name": r["template_name"],
-                "name": str(data.get("name") or ""),
-                "description": str(data.get("description") or ""),
+                "kind": "agent" if r["file_kind"] == "agent" else "skill",
+                "name": name,
+                "description": description,
                 "updated_at": r["created_at"].isoformat(),
                 "scope": "template",
                 "editable": False,

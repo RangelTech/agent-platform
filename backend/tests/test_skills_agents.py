@@ -319,7 +319,11 @@ def test_company_skills_come_from_active_versions(
             {"path": "skills/cobranca/SKILL.md", "content": SKILL_MD},
         ],
     )
-    rows = client.get("/api/skills/company", headers=h).json()
+    all_rows = client.get("/api/skills/company", headers=h).json()
+    # O AGENTE.md vem junto (kind=agent) para o agente aparecer mesmo sem skills.
+    assert [r["kind"] for r in all_rows] == ["agent", "skill"]
+    assert all_rows[0]["name"] == "AGENTE.md" and all_rows[0]["description"] == "Agente"
+    rows = [r for r in all_rows if r["kind"] == "skill"]
     assert len(rows) == 1
     assert rows[0]["template_id"] == t["id"] and rows[0]["template_name"] == "Financeiro"
     assert rows[0]["name"] == "cobranca" and rows[0]["description"] == "Cobra clientes em atraso"
