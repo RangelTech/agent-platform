@@ -23,6 +23,28 @@ logger = logging.getLogger(__name__)
 
 ATTACHMENT_KINDS = {"image": "image", "audio": "audio"}
 
+MAX_ATTACHMENT_NAME = 120
+
+
+def safe_filename(name: str | None) -> str:
+    """Nome de anexo seguro para chave de storage e para o prompt: sem caminho (../ e barra
+    invertida), sem caracteres de controle/bidi, no maximo 120 caracteres (preserva a extensao)."""
+    raw = (name or "").replace("\\", "/").split("/")[-1]
+    cleaned = "".join(
+        ch for ch in raw
+        if ch.isprintable() and ch not in "<>:\"|?*" and not 0x202A <= ord(ch) <= 0x202E
+        and not 0x2066 <= ord(ch) <= 0x2069
+    ).strip(" .")
+    if not cleaned:
+        return "anexo"
+    if len(cleaned) > MAX_ATTACHMENT_NAME:
+        stem, dot, ext = cleaned.rpartition(".")
+        if dot and 0 < len(ext) <= 10:
+            cleaned = stem[: MAX_ATTACHMENT_NAME - len(ext) - 1] + "." + ext
+        else:
+            cleaned = cleaned[:MAX_ATTACHMENT_NAME]
+    return cleaned
+
 
 def kind_for_content_type(content_type: str) -> str:
     return ATTACHMENT_KINDS.get((content_type or "").split("/", 1)[0], "file")
@@ -42,7 +64,7 @@ async def store_uploads(user: dict, uploads: list) -> list[dict]:
             raise HTTPException(status_code=413, detail="Anexo grande demais")
         content_type = upload.content_type or "application/octet-stream"
         kind = kind_for_content_type(content_type)
-        name = upload.filename or "anexo"
+        name = safe_filename(upload.filename)
         path = save_bytes(
             f"tenants/{user['tenant_id']}/chats/attachments/{_uuid.uuid4()}/{name}",
             data,
@@ -68,7 +90,7 @@ def store_bytes(
         raise HTTPException(status_code=413, detail="Anexo grande demais")
     content_type = content_type or "application/octet-stream"
     resolved_kind = kind or kind_for_content_type(content_type)
-    name = name or "anexo"
+    name = safe_filename(name)
     path = _save_bytes(
         f"tenants/{tenant_id}/integrations/attachments/{_uuid.uuid4()}/{name}",
         data,
