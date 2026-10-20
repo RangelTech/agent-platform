@@ -37,6 +37,7 @@ from app.kernel_router import (
     template_row,
 )
 from app.permissions import require_scope_for_chatwoot
+from app.skill_package import output_format_of
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +87,7 @@ def _serialize_chat(row: dict) -> dict:
         "agent_kind": _agent_kind(row),
         "template_id": str(row["template_id"]) if row.get("template_id") else None,
         "channel": row.get("channel") or "web",
+        "output_format": output_format_of(row.get("template_manifest")),
         "external_contact": row.get("external_contact"),
         "created_at": row["created_at"].isoformat(),
         "updated_at": row["updated_at"].isoformat(),
@@ -104,8 +106,9 @@ def list_chats(user: dict = Depends(current_user)):
     require_scope_for_chatwoot(user, "ai.chat.view")
     with get_connection() as conn:
         rows = conn.execute(
-            """SELECT c.*, t.agent_kind FROM chats c
+            """SELECT c.*, t.agent_kind, v.manifest AS template_manifest FROM chats c
                  LEFT JOIN templates t ON t.id = c.template_id
+                 LEFT JOIN template_versions v ON v.id = t.active_version_id
                 WHERE NOT c.is_hidden
                   AND (c.user_id = %s
                        OR (c.channel <> 'web' AND c.tenant_id = %s))
@@ -121,8 +124,9 @@ def get_chat(chat_id: str, user: dict = Depends(current_user)):
     _need_uuid(chat_id)
     with get_connection() as conn:
         row = conn.execute(
-            """SELECT c.*, t.agent_kind FROM chats c
+            """SELECT c.*, t.agent_kind, v.manifest AS template_manifest FROM chats c
                  LEFT JOIN templates t ON t.id = c.template_id
+                 LEFT JOIN template_versions v ON v.id = t.active_version_id
                 WHERE c.id::text = %s
                   AND (c.user_id = %s OR (c.channel <> 'web' AND c.tenant_id = %s))""",
             (chat_id, user["id"], user["tenant_id"]),
@@ -545,7 +549,14 @@ async def _send_to_skills_agent(
     task.add_done_callback(_BACKGROUND.discard)
 
     async def relay():
-        yield _sse("chat", {"chat_id": chat_id, "run_id": run_id})
+        yield _sse(
+            "chat",
+            {
+                "chat_id": chat_id,
+                "run_id": run_id,
+                "output_format": (payload.get("manifest") or {}).get("output_format"),
+            },
+        )
         while True:
             item = await queue.get()
             if item is None:

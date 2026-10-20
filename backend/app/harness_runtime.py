@@ -19,7 +19,7 @@ from app.credential_env import derive as derive_env
 from app.crypto import decrypt
 from app.db import get_connection
 from app.run_tokens import issue_run_token
-from app.skill_package import default_manifest, normalize_manifest
+from app.skill_package import default_manifest, normalize_manifest, output_format_of
 from app.template_access import ensure_can_run
 from app.tool_catalog import credential_kinds
 
@@ -395,6 +395,7 @@ def prepare_harness_run(
             "credential_grants": grants,
             "environment": manifest["environment"],
             "limits": limits,
+            "output_format": output_format_of(manifest),
         },
         "credentials": credentials,
         "credentials_catalog": catalog,

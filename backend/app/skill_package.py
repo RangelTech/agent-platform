@@ -284,7 +284,25 @@ def validate_asset(path: str, data: bytes) -> list[Problem]:
 
 
 def default_manifest() -> dict:
-    return {"tools": [], "environment": {"enabled": False}, "model": None, "limits": {}}
+    return {
+        "tools": [],
+        "environment": {"enabled": False},
+        "model": None,
+        "limits": {},
+        "output": {"format": DEFAULT_OUTPUT_FORMAT},
+    }
+
+
+# Formato em que o agente escreve a resposta (por canal): markdown (web), whatsapp, text.
+OUTPUT_FORMATS = ("markdown", "whatsapp", "text")
+DEFAULT_OUTPUT_FORMAT = "markdown"
+
+
+def output_format_of(manifest: object) -> str:
+    """Formato de saída do manifesto, já normalizado (desconhecido cai em markdown)."""
+    out = manifest.get("output") if isinstance(manifest, dict) else None
+    fmt = out.get("format") if isinstance(out, dict) else None
+    return fmt if fmt in OUTPUT_FORMATS else DEFAULT_OUTPUT_FORMAT
 
 
 def normalize_manifest(raw: object) -> dict:
@@ -299,6 +317,7 @@ def normalize_manifest(raw: object) -> dict:
     model = raw.get("model")
     if isinstance(model, dict) and isinstance(model.get("alias"), str) and model["alias"].strip():
         base["model"] = {"alias": model["alias"].strip()}
+    base["output"] = {"format": output_format_of(raw)}
     limits = raw.get("limits")
     if isinstance(limits, dict):
         out: dict = {}
@@ -371,6 +390,17 @@ def validate_manifest(raw: object, tool_ids: set[str]) -> list[Problem]:
         isinstance(model, dict) and isinstance(model.get("alias", ""), str)
     ):
         problems.append(Problem("manifest", "bad_manifest", "Configuração de modelo inválida"))
+    output = raw.get("output")
+    if output is not None:
+        fmt = output.get("format") if isinstance(output, dict) else None
+        if not isinstance(output, dict) or (fmt is not None and fmt not in OUTPUT_FORMATS):
+            problems.append(
+                Problem(
+                    "manifest",
+                    "bad_manifest",
+                    "O formato de saída deve ser markdown, whatsapp ou text",
+                )
+            )
     limits = raw.get("limits")
     if limits is not None and not isinstance(limits, dict):
         problems.append(Problem("manifest", "bad_manifest", "Os limites são inválidos"))

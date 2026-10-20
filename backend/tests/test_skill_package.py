@@ -285,3 +285,27 @@ def test_reference_to_asset_is_checked_against_the_folder():
     assert "broken_reference" in codes(pkg.validate_package(files, {}, TOOLS))
     files.append({"path": "arquivos/cardapio.pdf", "size_bytes": 10})
     assert not pkg.has_errors(pkg.validate_package(files, {}, TOOLS))
+
+
+# ------------------------------------------------------------ formato de saída
+
+
+def test_output_format_default_is_markdown():
+    assert pkg.normalize_manifest({})["output"] == {"format": "markdown"}
+    assert pkg.normalize_manifest(None)["output"] == {"format": "markdown"}
+    assert pkg.default_manifest()["output"]["format"] == "markdown"
+
+
+def test_output_format_roundtrip_and_unknown_falls_back():
+    for fmt in ("markdown", "whatsapp", "text"):
+        assert pkg.normalize_manifest({"output": {"format": fmt}})["output"]["format"] == fmt
+    assert pkg.normalize_manifest({"output": {"format": "html"}})["output"]["format"] == "markdown"
+    assert pkg.output_format_of({"output": "x"}) == "markdown"
+
+
+def test_output_format_validation():
+    ok = pkg.validate_manifest({"output": {"format": "whatsapp"}}, TOOLS)
+    assert not ok
+    assert codes(pkg.validate_manifest({"output": {"format": "html"}}, TOOLS)) == {"bad_manifest"}
+    assert codes(pkg.validate_manifest({"output": "markdown"}, TOOLS)) == {"bad_manifest"}
+    assert not pkg.validate_manifest({"output": {}}, TOOLS)
