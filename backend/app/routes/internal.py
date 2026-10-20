@@ -23,6 +23,7 @@ from app import skill_package as pkg
 from app.config import settings
 from app.db import get_connection
 from app.run_tokens import verify_run_token
+from app.ui_context import install_actor
 
 router = APIRouter(prefix="/internal", tags=["internal"])
 
@@ -49,6 +50,39 @@ def _is_service(token: str) -> bool:
 def service_only(request: Request) -> None:
     if not _is_service(_bearer(request)):
         raise HTTPException(status_code=401, detail="Não autorizado")
+
+
+# ------------------------------------------------------- roteamento Luar ---
+
+
+@router.get("/templates/{template_id}/status")
+def template_status(template_id: str, actor: dict = Depends(install_actor)):
+    """Estado mínimo de um agente para a fila de atendimento.
+
+    A ponte recebe este dado por meio do Luar. O contexto assinado traz a
+    empresa do Luar; portanto um template de outra empresa responde como se
+    não existisse, inclusive quando o UUID foi adivinhado.
+    """
+    if "routing" not in actor["scopes"]:
+        raise HTTPException(status_code=403, detail="Permissão negada")
+    tenant_id = str(actor["claims"].get("engine_tenant_id") or "")
+    if not tenant_id:
+        raise HTTPException(status_code=401, detail="Contexto incompleto")
+    with get_connection() as conn:
+        row = conn.execute(
+            """SELECT t.tenant_id, t.active_version_id, t.is_deleted, tn.is_active
+                 FROM templates t
+                 JOIN tenants tn ON tn.id = t.tenant_id
+                WHERE t.id::text = %s""",
+            (template_id,),
+        ).fetchone()
+    if row is None or str(row["tenant_id"]) != tenant_id:
+        raise HTTPException(status_code=404, detail="Agente não encontrado")
+    return {
+        "tenant_id": tenant_id,
+        "template_id": template_id,
+        "published": bool(row["active_version_id"]) and not row["is_deleted"] and row["is_active"],
+    }
 
 
 def _load_run(run_id: str) -> dict:
