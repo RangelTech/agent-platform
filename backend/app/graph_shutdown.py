@@ -118,8 +118,18 @@ def _json_default(value):
 def fazer_backup(conn, tenant: dict, destino: Path) -> dict:
     """Grava o backup em `destino/<tenant_key>-<carimbo>/` e devolve o manifesto."""
     carimbo = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    pasta = destino / f"{tenant['tenant_key']}-{carimbo}"
-    pasta.mkdir(parents=True, exist_ok=False)
+    base = destino / f"{tenant['tenant_key']}-{carimbo}"
+    pasta = base
+    # A simulação e a execução real podem acontecer no mesmo segundo. Nunca
+    # reutilizamos nem sobrescrevemos um backup: reservamos um diretório novo.
+    tentativa = 0
+    while True:
+        try:
+            pasta.mkdir(parents=True, exist_ok=False)
+            break
+        except FileExistsError:
+            tentativa += 1
+            pasta = destino / f"{base.name}-{tentativa}"
 
     t = tenant["id"]
     templates = [
