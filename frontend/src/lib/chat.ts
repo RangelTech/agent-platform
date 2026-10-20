@@ -69,9 +69,6 @@ export interface StreamCallbacks {
   onAbort?: () => void
 }
 
-export const CONFLICT_MESSAGE =
-  'Este chat usa outro tipo de agente. Abra uma nova conversa para usar este agente.'
-
 /** POST /api/chat/runs/{run_id}/cancel */
 export const cancelRun = (runId: string) =>
   api<{ status: string }>(`/chat/runs/${runId}/cancel`, { method: 'POST' })
@@ -119,9 +116,7 @@ export async function sendMessage(
     const text =
       typeof detail === 'string' && detail
         ? detail
-        : res.status === 409
-          ? CONFLICT_MESSAGE
-          : statusMessage(res.status)
+        : statusMessage(res.status)
     callbacks.onError?.(text, res.status)
     return
   }

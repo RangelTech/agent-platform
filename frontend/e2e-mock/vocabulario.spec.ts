@@ -8,7 +8,6 @@ const PROIBIDO = /harness|kernel|hermes/i
 const ROTAS = [
   '/chat',
   '/templates',
-  '/templates/estruturado/t-est',
   '/templates/skills/t-sk',
   '/skills',
   '/ambiente',

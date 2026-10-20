@@ -29,6 +29,7 @@ from app.db import get_connection
 from app.kernel_router import (
     SWITCH_CONFLICT,
     chat_kernel_of,
+    ensure_graph_enabled,
     ensure_skills_enabled,
     kernel_headers,
     kind_of,
@@ -253,6 +254,8 @@ def _ensure_chat(user: dict, payload: SendRequest, attachments: list[dict] | Non
             if kind == "skills":
                 ensure_skills_enabled(conn, user["tenant_id"])
                 target_for_kind("skills")
+            else:
+                ensure_graph_enabled(conn, user["tenant_id"])
             if payload.template_id and str(chat["template_id"] or "") != payload.template_id:
                 chat = conn.execute(
                     "UPDATE chats SET template_id = %s WHERE id = %s RETURNING *",
@@ -268,6 +271,8 @@ def _ensure_chat(user: dict, payload: SendRequest, attachments: list[dict] | Non
             if kind == "skills":
                 ensure_skills_enabled(conn, user["tenant_id"])
                 target_for_kind("skills")
+            else:
+                ensure_graph_enabled(conn, user["tenant_id"])
             title = payload.message[:60] + ("…" if len(payload.message) > 60 else "")
             chat = conn.execute(
                 """INSERT INTO chats (tenant_id, user_id, title, template_id, kernel)
@@ -446,22 +451,22 @@ async def send_message(request: Request, user: dict = Depends(current_user)):
                        VALUES (%s, 'assistant', %s)""",
                     (chat_id, assistant_text),
                 )
-            # Fire post-conversation fact extraction (cheap model, async).
+            # Extração de fatos pós-conversa, no motor (não bloqueia o stream).
             try:
-                from app.tasks import enqueue_kernel_task
+                from app.memory_extraction import extract_memories
 
-                enqueue_kernel_task(
-                    "/v1/extract-memories",
-                    {
-                        "thread_id": chat_id,
-                        "tenant_id": str(user["tenant_id"]),
-                        "user_id": str(user["id"]),
-                        "model": run["supervisor"]["model"],
-                        "embedding": run.get("embedding", {}),
-                    },
+                task = asyncio.create_task(
+                    extract_memories(
+                        chat_id=chat_id,
+                        tenant_id=user["tenant_id"],
+                        user_id=user["id"],
+                        embedding=run.get("embedding", {}),
+                    )
                 )
+                _BACKGROUND.add(task)
+                task.add_done_callback(_BACKGROUND.discard)
             except Exception:  # noqa: BLE001 — memory must never break the chat
-                logger.exception("failed to enqueue memory extraction")
+                logger.exception("failed to schedule memory extraction")
 
     return StreamingResponse(
         relay(),

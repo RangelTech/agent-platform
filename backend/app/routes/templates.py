@@ -29,7 +29,14 @@ from pydantic import BaseModel, Field, ValidationError
 from app import skill_package as pkg
 from app.auth import require
 from app.db import get_connection
-from app.kernel_router import NOT_ENABLED, ensure_skills_enabled, tenant_skills_enabled
+from app.kernel_router import (
+    GRAPH_OFF,
+    NOT_ENABLED,
+    ensure_graph_enabled,
+    ensure_skills_enabled,
+    tenant_graph_enabled,
+    tenant_skills_enabled,
+)
 from app.tenancy import resolve_target_tenant
 from app.tool_catalog import tool_ids
 
@@ -163,6 +170,7 @@ def list_templates(user: dict = Depends(require("templates", "view"))):
             ""
             if user["is_master"]
             else " AND t.tenant_id = %s AND (t.agent_kind <> 'skills' OR tn.harness_enabled)"
+            " AND (t.agent_kind <> 'structured' OR tn.graph_enabled)"
         )
         params = () if user["is_master"] else (user["tenant_id"],)
         rows = conn.execute(
@@ -183,6 +191,8 @@ def create_template(payload: TemplateIn, user: dict = Depends(require("templates
     with get_connection() as conn:
         if payload.agent_kind == "skills":
             ensure_skills_enabled(conn, tenant_id)
+        else:
+            ensure_graph_enabled(conn, tenant_id)
         try:
             row = conn.execute(
                 """INSERT INTO templates (tenant_id, name, description, agent_kind)
@@ -309,6 +319,7 @@ def _persist_version(conn, *, template_id, payload: VersionIn, created_by, versi
 
 def create_guided_template(conn, *, tenant_id, created_by, plan: dict) -> dict:
     """Create an approved guide plan through ordinary template validation."""
+    ensure_graph_enabled(conn, tenant_id)
     template_input = TemplateIn(name=plan["name"], description=plan["description"])
     version_input = VersionIn(
         supervisor_prompt=plan["supervisor_prompt"],
@@ -482,6 +493,8 @@ def create_version(
             except ValidationError as exc:
                 raise _validation_error(exc) from exc
             return _create_skills_version(conn, template, user, skills_payload)
+        if not tenant_graph_enabled(conn, template["tenant_id"]):
+            raise HTTPException(status_code=403, detail=GRAPH_OFF)
         try:
             payload = VersionIn.model_validate(body)
         except ValidationError as exc:

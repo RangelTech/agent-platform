@@ -19,6 +19,7 @@ def test_upload_creates_pending_file(client, tenant_admin):
     r = _upload(client, tenant_admin["token"])
     assert r.status_code == 201, r.text
     body = r.json()
+    # a resposta é a linha recém-criada; a ingestão roda depois, no motor
     assert body["status"] == "pending"
     assert body["size_bytes"] > 0
 

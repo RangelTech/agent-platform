@@ -59,8 +59,6 @@ export interface ToolInfo {
   description: string
 }
 
-export const listToolkits = () => api<ToolInfo[]>('/toolkits')
-
 export interface VersionDetail {
   id: string
   version_number: number

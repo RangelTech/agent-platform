@@ -1,14 +1,12 @@
 """Business file uploads and their ingestion lifecycle.
 
-Upload → storage + files row (pending) → ingestion task (Cloud Tasks in
-production, inline background call in dev) → kernel chunks/embeds → ready.
+Upload → storage + files row (pending) → tarefa de fundo do motor
+(`app.ingestion`) fatia e gera os embeddings → ready.
 """
 
-import json
 import logging
 import uuid
 
-import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 
 from app.auth import require
@@ -45,48 +43,11 @@ def embedding_spec_for_tenant(tenant_id) -> dict:
         return _embedding_spec(conn, tenant_id)
 
 
-async def _kernel_headers() -> dict:
-    if settings.kernel_audience:
-        from app.gcp_auth import id_token_for
-
-        return {"Authorization": f"Bearer {await id_token_for(settings.kernel_audience)}"}
-    if settings.kernel_internal_token:
-        return {"Authorization": f"Bearer {settings.kernel_internal_token}"}
-    return {}
-
-
-async def _ingest_inline(file_id: str, embedding: dict) -> None:
-    try:
-        async with httpx.AsyncClient(timeout=600.0) as client:
-            await client.post(
-                f"{settings.kernel_url}/v1/ingest-file",
-                json={"file_id": file_id, "embedding": embedding},
-                headers=await _kernel_headers(),
-            )
-    except httpx.HTTPError:
-        logger.exception("inline ingestion call failed for %s", file_id)
-
-
 def _enqueue_ingestion(background: BackgroundTasks, file_id: str, embedding: dict) -> None:
-    if settings.cloud_tasks_queue:
-        from google.cloud import tasks_v2
+    """A ingestão roda no próprio motor, depois da resposta (sem kernel-llm)."""
+    from app.ingestion import ingest_file
 
-        client = tasks_v2.CloudTasksClient()
-        task = {
-            "http_request": {
-                "http_method": tasks_v2.HttpMethod.POST,
-                "url": f"{settings.kernel_url}/v1/ingest-file",
-                "headers": {"Content-Type": "application/json"},
-                "body": json.dumps({"file_id": file_id, "embedding": embedding}).encode(),
-                "oidc_token": {
-                    "service_account_email": settings.tasks_service_account,
-                    "audience": settings.kernel_audience or settings.kernel_url,
-                },
-            }
-        }
-        client.create_task(parent=settings.cloud_tasks_queue, task=task)
-    else:
-        background.add_task(_ingest_inline, file_id, embedding)
+    background.add_task(ingest_file, file_id, embedding)
 
 
 @router.get("")

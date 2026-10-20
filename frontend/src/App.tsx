@@ -36,7 +36,6 @@ import RatendeConnector from './pages/RatendeConnector'
 import Environment from './pages/Environment'
 import Skills from './pages/Skills'
 import SkillsTemplateEditor from './pages/SkillsTemplateEditor'
-import StructuredEditor from './pages/templates/StructuredEditor'
 import TemplateList from './pages/templates/TemplateList'
 import Tenants from './pages/Tenants'
 import Usage from './pages/Usage'
@@ -248,7 +247,7 @@ function Shell() {
               <Route path="/perfis" element={<Profiles />} />
               <Route path="/servicos-ia" element={<AiServices />} />
               <Route path="/templates" element={<RequirePermission resource="templates"><TemplateList /></RequirePermission>} />
-              <Route path="/templates/estruturado/:id" element={<RequirePermission resource="templates"><StructuredEditor /></RequirePermission>} />
+              <Route path="/templates/estruturado/:id" element={<Navigate to="/templates" replace />} />
               <Route path="/templates/skills/:id" element={<RequirePermission resource="templates" skillsAgents><SkillsTemplateEditor /></RequirePermission>} />
               <Route path="/skills" element={<RequirePermission resource="skills" skillsAgents><Skills /></RequirePermission>} />
               <Route path="/ambiente" element={<RequirePermission resource="environment"><Environment /></RequirePermission>} />
