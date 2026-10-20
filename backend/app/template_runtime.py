@@ -253,7 +253,8 @@ def build_run_payload(tenant_id, template_id: str | None, chat_id: str | None = 
         # Active named secrets, decrypted only here — they cross the internal
         # OIDC link and are substituted inside tools, never shown to the model.
         secret_rows = conn.execute(
-            "SELECT name, value_encrypted FROM secrets WHERE tenant_id = %s AND is_active",
+            """SELECT name, value_encrypted FROM secrets
+                WHERE tenant_id = %s AND is_active AND NOT is_deleted""",
             (tenant_id,),
         ).fetchall()
         secrets = {r["name"]: decrypt(r["value_encrypted"]) for r in secret_rows}

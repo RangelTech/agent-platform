@@ -22,6 +22,7 @@ from pydantic import BaseModel
 from app import oauth_engine
 from app.auth import require
 from app.config import settings
+from app.credential_env import oauth_var
 from app.crypto import decrypt, encrypt
 from app.db import get_connection
 from app.tenancy import resolve_target_tenant
@@ -38,6 +39,7 @@ def _serialize(row: dict) -> dict:
         "label": row["label"],
         "email_address": row["email_address"],
         "connected": True,
+        "env_vars": [oauth_var("MICROSOFT", row["label"], row["email_address"])],
         "updated_at": row["updated_at"].isoformat(),
     }
 

@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from app.auth import require
 from app.config import settings
+from app.credential_env import database_var
 from app.crypto import decrypt, encrypt
 from app.db import get_connection
 from app.tenancy import resolve_target_tenant
@@ -51,6 +52,8 @@ def _serialize(row: dict) -> dict:
         "kind": row["kind"],
         "config": row["config"],
         "has_secret": bool(row["secret_encrypted"]),
+        "env_vars": [database_var(row["name"])],
+        "created_at": row["created_at"].isoformat(),
         "is_active": row["is_active"],
         "last_test_at": row["last_test_at"].isoformat() if row["last_test_at"] else None,
         "last_test_ok": row["last_test_ok"],
@@ -190,7 +193,9 @@ def archive_datasource(
     with get_connection() as conn:
         _scoped(conn, datasource_id, user)
         conn.execute(
-            "UPDATE datasources SET is_deleted = TRUE, updated_at = now() WHERE id = %s",
+            # o nome é liberado para poder cadastrar de novo (UNIQUE tenant+nome)
+            "UPDATE datasources SET is_deleted = TRUE, is_active = FALSE,"
+            " name = name || '~del~' || left(id::text, 8), updated_at = now() WHERE id = %s",
             (datasource_id,),
         )
     return {"status": "ok"}

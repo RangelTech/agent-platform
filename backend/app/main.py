@@ -35,6 +35,7 @@ from app.routes import internal_kernel as internal_kernel_routes
 from app.routes import mcp_store as mcp_store_routes
 from app.routes import memories as memory_routes
 from app.routes import microsoft_accounts as microsoft_account_routes
+from app.routes import oauth_connect as oauth_connect_routes
 from app.routes import omnichannel as omnichannel_routes
 from app.routes import payments as payment_routes
 from app.routes import profiles as profile_routes
@@ -202,6 +203,7 @@ app.include_router(payment_routes.router)
 app.include_router(email_account_routes.router)
 app.include_router(google_account_routes.router)
 app.include_router(microsoft_account_routes.router)
+app.include_router(oauth_connect_routes.router)
 app.include_router(unofficial_connection_routes.router)
 app.include_router(mcp_store_routes.router)
 app.include_router(omnichannel_routes.router)
