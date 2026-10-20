@@ -40,6 +40,7 @@ from app.routes import omnichannel as omnichannel_routes
 from app.routes import payments as payment_routes
 from app.routes import profiles as profile_routes
 from app.routes import public_api as public_routes
+from app.routes import runs as run_routes
 from app.routes import schedules as schedule_routes
 from app.routes import secrets as secret_routes
 from app.routes import skills as skill_routes
@@ -196,6 +197,7 @@ app.include_router(artifact_routes.router)
 app.include_router(file_routes.router)
 app.include_router(memory_routes.router)
 app.include_router(usage_routes.router)
+app.include_router(run_routes.router)
 app.include_router(integration_routes.router)
 app.include_router(public_routes.router)
 app.include_router(toolkit_routes.router)
