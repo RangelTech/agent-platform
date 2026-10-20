@@ -142,6 +142,19 @@ def _fake_litellm():
         }
         return {"key": key, "key_alias": corpo.get("key_alias")}
 
+    @app.get("/key/list")
+    async def key_list(request: Request, team_id: str):
+        _auth(request)
+        return {"keys": [{"token": k, "key_alias": v["alias"], "models": v["models"] or []}
+                         for k, v in estado["keys"].items() if v["team_id"] == team_id]}
+
+    @app.post("/key/update")
+    async def key_update(request: Request):
+        _auth(request)
+        corpo = await request.json()
+        estado["keys"][corpo["key"]]["models"] = corpo["models"]
+        return {"key": corpo["key"]}
+
     @app.post("/key/delete")
     async def key_delete(request: Request):
         _auth(request)
@@ -337,3 +350,17 @@ async def test_health(litellm):
     base_url, _ = litellm
     assert await health(base_url) is True
     assert await health("http://127.0.0.1:1") is False
+
+
+@pytest.mark.asyncio
+async def test_add_model_to_team_fixa_models_explicito_nas_chaves(litellm):
+    """Hardening: chave de team nunca fica com models vazio depois de ganhar modelo."""
+    base_url, estado = litellm
+    team = await create_team(base_url, MASTER_KEY, team_alias="tenant-x")
+    team_id = team["team_id"]
+    k1 = await generate_key(base_url, MASTER_KEY, team_id=team_id, key_alias="bridge")
+    k2 = await generate_key(base_url, MASTER_KEY, team_id=team_id, key_alias="ai-assist")
+    await add_model_to_team(base_url, MASTER_KEY, team_id=team_id, model_name="tenant_x_combo_a")
+    await add_model_to_team(base_url, MASTER_KEY, team_id=team_id, model_name="tenant_x_combo_b")
+    for k in (k1, k2):
+        assert estado["keys"][k]["models"] == ["tenant_x_combo_a", "tenant_x_combo_b"]

@@ -94,14 +94,51 @@ async def add_model_to_team(
     team = await _request(base_url, master_key, "GET", "/team/info", params={"team_id": team_id})
     existentes = (team.get("team_info") or team).get("models") or []
     if model_name in existentes:
-        return team
-    return await _request(
+        modelos = existentes
+        resultado = team
+    else:
+        modelos = [*existentes, model_name]
+        resultado = await _request(
+            base_url,
+            master_key,
+            "POST",
+            "/team/update",
+            json_body={"team_id": team_id, "models": modelos},
+        )
+    await sync_team_keys_models(base_url, master_key, team_id=team_id, models=modelos)
+    return resultado
+
+
+_CURINGAS = {"all-proxy-models", "all-team-models", "*"}
+
+
+async def sync_team_keys_models(
+    base_url: str, master_key: str, *, team_id: str, models: list[str]
+) -> None:
+    """Fixa `models` explicito em cada chave do team (hardening de isolamento).
+
+    O guard do litellm-router rejeita chave de team com `models` vazio ou
+    curinga (a chave que herda o team deixou `fallbacks` do corpo alcancar o
+    modelo de outro tenant). Idempotente: so atualiza chave cujo conjunto difere."""
+    alvo = sorted(m for m in models if m not in _CURINGAS and "*" not in m)
+    listado = await _request(
         base_url,
         master_key,
-        "POST",
-        "/team/update",
-        json_body={"team_id": team_id, "models": [*existentes, model_name]},
+        "GET",
+        "/key/list",
+        params={"team_id": team_id, "return_full_object": "true", "size": 100},
     )
+    for chave in listado.get("keys") or []:
+        if not isinstance(chave, dict) or not chave.get("token"):
+            continue
+        if sorted(chave.get("models") or []) != alvo:
+            await _request(
+                base_url,
+                master_key,
+                "POST",
+                "/key/update",
+                json_body={"key": chave["token"], "models": alvo},
+            )
 
 
 async def delete_team(base_url: str, master_key: str, *, team_id: str) -> None:
