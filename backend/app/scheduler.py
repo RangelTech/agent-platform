@@ -67,6 +67,8 @@ def _row_out(r: dict) -> dict:
         "last_status": r.get("last_status"),
         "run_count": r.get("run_count", 0),
         "template_id": str(r["template_id"]),
+        "template_name": r.get("template_name"),
+        "last_chat_id": str(r["last_chat_id"]) if r.get("last_chat_id") else None,
     }
 
 
@@ -93,8 +95,9 @@ def op_create(run: dict, name: str, cron: str, tz: str, instruction: str) -> dic
 def op_list(tenant_id, user_id) -> dict:
     with get_connection() as conn:
         rows = conn.execute(
-            """SELECT * FROM scheduled_jobs WHERE tenant_id = %s AND user_id = %s
-                ORDER BY created_at""",
+            """SELECT j.*, t.name AS template_name FROM scheduled_jobs j
+                 LEFT JOIN templates t ON t.id = j.template_id
+                WHERE j.tenant_id = %s AND j.user_id = %s ORDER BY j.created_at""",
             (tenant_id, user_id),
         ).fetchall()
     return {"schedules": [_row_out(r) for r in rows]}
@@ -127,6 +130,164 @@ def op_delete(tenant_id, user_id, sid: str) -> dict:
     if row is None:
         raise HTTPException(status_code=404, detail="Rotina não encontrada")
     return {"deleted": str(row["id"])}
+
+
+def cron_from_frequency(freq: dict) -> str:
+    """Frequência amigável (a tela) -> cron.
+
+    `kind`: hourly (minute) | daily (time) | weekly (time, weekdays 0=domingo..6) |
+    monthly (time, day 1..28).
+    """
+    if not isinstance(freq, dict):
+        raise HTTPException(status_code=400, detail="Frequência inválida")
+    kind = freq.get("kind")
+
+    def _time() -> tuple[int, int]:
+        raw = str(freq.get("time") or "")
+        try:
+            hh, mm = raw.split(":")
+            hour, minute = int(hh), int(mm)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Horário inválido") from None
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            raise HTTPException(status_code=400, detail="Horário inválido")
+        return hour, minute
+
+    if kind == "hourly":
+        minute = freq.get("minute", 0)
+        if not isinstance(minute, int) or not 0 <= minute <= 59:
+            raise HTTPException(status_code=400, detail="Minuto inválido")
+        return f"{minute} * * * *"
+    if kind not in ("daily", "weekly", "monthly"):
+        raise HTTPException(status_code=400, detail="Frequência inválida")
+    hour, minute = _time()
+    if kind == "daily":
+        return f"{minute} {hour} * * *"
+    if kind == "weekly":
+        days = freq.get("weekdays")
+        if (
+            not isinstance(days, list)
+            or not days
+            or not all(isinstance(d, int) and 0 <= d <= 6 for d in days)
+        ):
+            raise HTTPException(status_code=400, detail="Escolha pelo menos um dia da semana")
+        return f"{minute} {hour} * * {','.join(str(d) for d in sorted(set(days)))}"
+    day = freq.get("day")
+    if not isinstance(day, int) or not 1 <= day <= 28:
+        raise HTTPException(status_code=400, detail="Dia do mês deve ficar entre 1 e 28")
+    return f"{minute} {hour} {day} * *"
+
+
+def _with_template_name(row: dict) -> dict:
+    """`row` pode ser a linha do banco ou a saída de `_row_out`."""
+    out = row if isinstance(row.get("id"), str) else _row_out(row)
+    with get_connection() as conn:
+        t = conn.execute(
+            "SELECT name FROM templates WHERE id::text = %s", (str(out["template_id"]),)
+        ).fetchone()
+    out["template_name"] = t["name"] if t else None
+    return out
+
+
+def _template_ok(conn, tenant_id, template_id) -> None:
+    row = conn.execute(
+        """SELECT 1 FROM templates
+            WHERE id::text = %s AND tenant_id = %s AND agent_kind = 'skills' AND NOT is_deleted
+              AND active_version_id IS NOT NULL""",
+        (str(template_id), tenant_id),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Agente não encontrado ou sem versão publicada")
+
+
+def op_create_from_ui(tenant_id, user_id, body: dict) -> dict:
+    """Rotina criada pela tela (o agente cria pela ferramenta rt_schedule)."""
+    name = str(body.get("name") or "").strip()
+    instruction = str(body.get("instruction") or "").strip()
+    if not name or not instruction:
+        raise HTTPException(status_code=400, detail="Informe o nome e a instrução da rotina")
+    cron = str(body.get("cron") or "").strip()
+    if not cron:
+        cron = cron_from_frequency(body.get("frequency") or {})
+    tz = str(body.get("timezone") or "America/Sao_Paulo")
+    template_id = body.get("template_id")
+    if not template_id:
+        raise HTTPException(status_code=400, detail="Escolha o agente da rotina")
+    with get_connection() as conn:
+        _template_ok(conn, tenant_id, template_id)
+    row = op_create(
+        {"tenant_id": tenant_id, "user_id": user_id, "template_id": template_id},
+        name,
+        cron,
+        tz,
+        instruction,
+    )
+    if body.get("active") is False:
+        row = op_set_status(tenant_id, user_id, row["id"], "paused")
+    return _with_template_name(row)
+
+
+def op_update(tenant_id, user_id, sid: str, body: dict) -> dict:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM scheduled_jobs WHERE id::text = %s AND tenant_id = %s AND user_id = %s",
+            (sid, tenant_id, user_id),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Rotina não encontrada")
+        name = str(body.get("name", row["name"]) or "").strip()
+        instruction = str(body.get("instruction", row["instruction"]) or "").strip()
+        if not name or not instruction:
+            raise HTTPException(status_code=400, detail="Informe o nome e a instrução da rotina")
+        cron = str(body.get("cron") or "").strip()
+        if not cron and body.get("frequency"):
+            cron = cron_from_frequency(body["frequency"])
+        cron = cron or row["cron"]
+        tz = str(body.get("timezone") or row["timezone"])
+        template_id = body.get("template_id") or row["template_id"]
+        if str(template_id) != str(row["template_id"]):
+            _template_ok(conn, tenant_id, template_id)
+        status = row["status"]
+        if body.get("active") is True:
+            status = "active"
+        elif body.get("active") is False:
+            status = "paused"
+        nxt = next_run(cron, tz) if status == "active" else None
+        row = conn.execute(
+            """UPDATE scheduled_jobs
+                  SET name = %s, instruction = %s, cron = %s, timezone = %s, template_id = %s,
+                      status = %s, next_run_at = %s, updated_at = now()
+                WHERE id = %s RETURNING *""",
+            (name[:80], instruction[:4000], cron, tz, template_id, status, nxt, row["id"]),
+        ).fetchone()
+    return _with_template_name(row)
+
+
+def op_runs(tenant_id, user_id, sid: str, limit: int = 20) -> dict:
+    with get_connection() as conn:
+        job = conn.execute(
+            "SELECT id FROM scheduled_jobs WHERE id::text = %s AND tenant_id = %s AND user_id = %s",
+            (sid, tenant_id, user_id),
+        ).fetchone()
+        if job is None:
+            raise HTTPException(status_code=404, detail="Rotina não encontrada")
+        rows = conn.execute(
+            """SELECT * FROM scheduled_job_runs WHERE job_id = %s
+                ORDER BY started_at DESC LIMIT %s""",
+            (job["id"], limit),
+        ).fetchall()
+    return {
+        "runs": [
+            {
+                "id": str(r["id"]),
+                "started_at": r["started_at"].isoformat(),
+                "finished_at": r["finished_at"].isoformat() if r["finished_at"] else None,
+                "status": r["status"],
+                "chat_id": str(r["chat_id"]) if r["chat_id"] else None,
+            }
+            for r in rows
+        ]
+    }
 
 
 def handle_kernel_op(run: dict, payload: dict) -> dict:
@@ -176,7 +337,11 @@ def _claim_due(limit: int = 20) -> list[dict]:
                     WHERE id = %s""",
                 (nxt, r["id"]),
             )
-            claimed.append(r)
+            started = conn.execute(
+                "INSERT INTO scheduled_job_runs (job_id, tenant_id) VALUES (%s, %s) RETURNING id",
+                (r["id"], r["tenant_id"]),
+            ).fetchone()
+            claimed.append({**r, "history_id": started["id"]})
     return claimed
 
 
@@ -235,6 +400,8 @@ async def run_job(job: dict) -> None:
         with get_connection() as conn:
             conn.execute("UPDATE scheduled_jobs SET last_chat_id = %s WHERE id = %s",
                          (chat_id, job["id"]))
+            conn.execute("UPDATE scheduled_job_runs SET chat_id = %s WHERE id = %s",
+                         (chat_id, job.get("history_id")))
     except Exception:  # noqa: BLE001
         logger.exception("rotina %s falhou", job.get("id"))
     finally:
@@ -247,6 +414,10 @@ async def run_job(job: dict) -> None:
             conn.execute(
                 "UPDATE scheduled_jobs SET last_status = %s, updated_at = now() WHERE id = %s",
                 ("ok" if outcome == "done" else "error", job["id"]),
+            )
+            conn.execute(
+                "UPDATE scheduled_job_runs SET status = %s, finished_at = now() WHERE id = %s",
+                ("ok" if outcome == "done" else "error", job.get("history_id")),
             )
 
 

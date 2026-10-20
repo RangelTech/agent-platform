@@ -63,6 +63,48 @@ def version_package(conn, version_id, *, include_content: bool = True) -> list[d
     return out
 
 
+def company_skill_files(conn, tenant_id, taken: set[str], *, include_content: bool) -> list[dict]:
+    """Skills compartilhadas da empresa, no formato dos arquivos do pacote do agente.
+
+    Entram em todo agente por skills do tenant; se o pacote já traz uma skill com o mesmo
+    caminho, a do pacote vence.
+    """
+    rows = conn.execute(
+        """SELECT name, content FROM tenant_skills
+            WHERE tenant_id = %s AND status = 'active' ORDER BY name""",
+        (tenant_id,),
+    ).fetchall()
+    out = []
+    for r in rows:
+        path = f"skills/{r['name']}/SKILL.md"
+        if path in taken:
+            continue
+        data = r["content"].encode("utf-8")
+        out.append(
+            {
+                "path": path,
+                "kind": "skill",
+                "sha256": hashlib.sha256(data).hexdigest(),
+                "size_bytes": len(data),
+                "is_binary": False,
+                "mime": "text/markdown",
+                "content": r["content"] if include_content else None,
+                "encoding": "utf-8",
+            }
+        )
+    return out
+
+
+def package_files(conn, version_id, tenant_id, *, include_content: bool = True) -> list[dict]:
+    """Arquivos do pacote da versão mais as skills compartilhadas da empresa."""
+    files = version_package(conn, version_id, include_content=include_content)
+    taken = {f["path"] for f in files}
+    return sorted(
+        files + company_skill_files(conn, tenant_id, taken, include_content=include_content),
+        key=lambda f: f["path"],
+    )
+
+
 def wire_size(f: dict) -> int:
     """Bytes que o arquivo ocupa no JSON (base64 incha 4/3)."""
     return -(-f["size_bytes"] * 4 // 3) if f.get("is_binary") else f["size_bytes"]
@@ -256,11 +298,11 @@ def prepare_harness_run(
         manifest = normalize_manifest(version["manifest"] or default_manifest())
         if user:
             ensure_can_run(manifest, user)  # quem pode usar este agente (spec 10, A-7)
-        files = version_package(conn, version["id"], include_content=False)
+        files = package_files(conn, version["id"], tenant_id, include_content=False)
         sha = package_sha(files)
         inline = sum(wire_size(f) for f in files) <= INLINE_PACKAGE_LIMIT
         if inline:
-            files = version_package(conn, version["id"])
+            files = package_files(conn, version["id"], tenant_id)
         base = settings.public_base_url.rstrip("/")
         package = {
             "sha256": sha,

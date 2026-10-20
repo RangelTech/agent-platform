@@ -6,6 +6,7 @@ nunca guarda token de Platform API nem cria conta lá diretamente.
 """
 
 import logging
+import uuid
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
@@ -145,9 +146,28 @@ async def list_inboxes(user: dict = Depends(require("omnichannel", "view"))):
                 (tenant_id,),
             ).fetchall()
         }
+        locais = {
+            r["chatwoot_inbox_id"]: r
+            for r in conn.execute(
+                "SELECT * FROM inbox_ai_links WHERE tenant_id = %s", (tenant_id,)
+            ).fetchall()
+        }
     for caixa in dados.get("inboxes", []):
-        ia = caixa.get("ai") or {}
-        ia["template_name"] = nomes.get(ia.get("template_id") or "", "")
+        local = locais.get(caixa.get("chatwoot_inbox_id"))
+        ia = caixa.get("ai")
+        if local is not None:
+            # O que foi salvo aqui vale sobre o que a ponte guarda.
+            ia = {
+                **(ia or {}),
+                "template_id": str(local["template_id"]) if local["template_id"] else None,
+                "autopilot": local["autopilot"],
+                "handoff_team_id": local["handoff_team_id"],
+                "degraded": not local["bridge_synced"],
+                "degraded_reason": local["bridge_error"],
+            }
+            caixa["ai"] = ia
+        if ia:
+            ia["template_name"] = nomes.get(ia.get("template_id") or "", "")
     return dados
 
 
@@ -157,13 +177,24 @@ async def set_inbox_ai(
     payload: CaixaIaIn,
     user: dict = Depends(require("omnichannel", "edit")),
 ):
-    """Liga (ou desliga) um template nesta caixa."""
+    """Liga (ou desliga) um template nesta caixa.
+
+    O vínculo é gravado aqui, no motor, e é isso que a tela mostra. A ponte ainda roteia as
+    mensagens pela configuração dela, então o motor a avisa depois de gravar. Falha da
+    ponte não derruba o salvamento (antes virava 502 mesmo com `template_id` nulo): o
+    vínculo fica salvo e a resposta marca `status: "degraded"` com o motivo, para a tela
+    avisar e para uma nova tentativa refazer só o aviso.
+    """
     tenant_id = resolve_target_tenant(user, payload.tenant_id)
 
     # O template precisa ser do próprio tenant. Sem esta checagem, um id de
     # outra empresa colado no request faria a IA de um cliente atender no canal
     # de outro — o pior vazamento possível nesta camada.
     if payload.template_id:
+        try:
+            uuid.UUID(str(payload.template_id))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Template inválido") from None
         with get_connection() as conn:
             existe = conn.execute(
                 """SELECT 1 FROM templates
@@ -173,14 +204,62 @@ async def set_inbox_ai(
         if existe is None:
             raise HTTPException(status_code=404, detail="Template não é desta empresa")
 
-    return await _bridge(
-        "POST",
-        "/admin/ai-config",
-        json={
-            "tenant_id": str(tenant_id),
+    with get_connection() as conn:
+        conn.execute(
+            """INSERT INTO inbox_ai_links (tenant_id, chatwoot_inbox_id, template_id, autopilot,
+                                           handoff_team_id, bridge_synced, bridge_error)
+               VALUES (%s, %s, %s, %s, %s, FALSE, NULL)
+               ON CONFLICT (tenant_id, chatwoot_inbox_id) DO UPDATE
+                   SET template_id = EXCLUDED.template_id, autopilot = EXCLUDED.autopilot,
+                       handoff_team_id = EXCLUDED.handoff_team_id, bridge_synced = FALSE,
+                       bridge_error = NULL, updated_at = now()""",
+            (tenant_id, inbox_id, payload.template_id, payload.autopilot, payload.handoff_team_id),
+        )
+
+    sync_error = None
+    bridge_out: dict = {}
+    try:
+        bridge_out = await _bridge(
+            "POST",
+            "/admin/ai-config",
+            json={
+                "tenant_id": str(tenant_id),
+                "chatwoot_inbox_id": inbox_id,
+                "template_id": payload.template_id,
+                "autopilot": payload.autopilot,
+                "handoff_team_id": payload.handoff_team_id,
+            },
+        )
+    except HTTPException as exc:
+        sync_error = str(exc.detail)[:300]
+    except Exception as exc:  # noqa: BLE001 - resposta fora do formato, ponte caindo no meio
+        sync_error = f"{type(exc).__name__}: {exc}"[:300]
+    else:
+        if bridge_out.get("degraded"):  # gravou, mas não conseguiu ligar o bot na caixa
+            sync_error = str(bridge_out.get("agent_bot") or "bot não associado")[:300]
+
+    with get_connection() as conn:
+        conn.execute(
+            """UPDATE inbox_ai_links SET bridge_synced = %s, bridge_error = %s
+                WHERE tenant_id = %s AND chatwoot_inbox_id = %s""",
+            (sync_error is None, sync_error, tenant_id, inbox_id),
+        )
+    if sync_error:
+        logger.warning("ponte não aceitou o vínculo da caixa %s: %s", inbox_id, sync_error)
+        return {
+            "status": "degraded",
+            "saved": True,
             "chatwoot_inbox_id": inbox_id,
             "template_id": payload.template_id,
             "autopilot": payload.autopilot,
-            "handoff_team_id": payload.handoff_team_id,
-        },
-    )
+            "detail": "Vínculo salvo, mas o atendimento automático ainda não foi atualizado "
+            "nesta caixa. Salve de novo em instantes.",
+        }
+    return {
+        **bridge_out,
+        "status": "ok",
+        "saved": True,
+        "chatwoot_inbox_id": inbox_id,
+        "template_id": payload.template_id,
+        "autopilot": payload.autopilot,
+    }

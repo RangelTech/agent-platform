@@ -628,6 +628,19 @@ def validate_user_skill(
     content: str, expected_name: str | None = None
 ) -> tuple[list[Problem], dict]:
     """Valida um SKILL.md pessoal. Devolve (problemas, frontmatter)."""
+    return _validate_loose_skill(content, expected_name, company=False)
+
+
+def validate_company_skill(
+    content: str, expected_name: str | None = None
+) -> tuple[list[Problem], dict]:
+    """Valida um SKILL.md da empresa (nome sem o prefixo u-, reservado às pessoais)."""
+    return _validate_loose_skill(content, expected_name, company=True)
+
+
+def _validate_loose_skill(
+    content: str, expected_name: str | None, *, company: bool
+) -> tuple[list[Problem], dict]:
     problems: list[Problem] = []
     path = "SKILL.md"
     if size_bytes(content) > MAX_USER_SKILL_BYTES:
@@ -646,9 +659,18 @@ def validate_user_skill(
         )
         return problems, {}
     name = data.get("name")
-    if not isinstance(name, str) or len(name) > MAX_NAME or not USER_SKILL_NAME.match(name):
+    name_re = SKILL_NAME if company else USER_SKILL_NAME
+    if not isinstance(name, str) or len(name) > MAX_NAME or not name_re.match(name):
+        message = (
+            "Nome inválido: use letras minúsculas, números, ponto, hífen ou sublinhado "
+            "(até 64 caracteres)"
+            if company
+            else "O nome de uma skill pessoal deve começar com u-"
+        )
+        problems.append(Problem(path, "bad_name", message, line=1))
+    elif company and name.startswith("u-"):
         problems.append(
-            Problem(path, "bad_name", "O nome de uma skill pessoal deve começar com u-", line=1)
+            Problem(path, "bad_name", "O prefixo u- é reservado às skills pessoais", line=1)
         )
     elif expected_name and name != expected_name:
         problems.append(Problem(path, "bad_name", "O nome da skill não pode ser alterado", line=1))
