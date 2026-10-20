@@ -280,6 +280,108 @@ def backup_environment(user: dict = Depends(require("environment", "manage"))):
     return _action(user, "backup", None)
 
 
+# ------------------------------------------------- serviços em execução ---
+
+_SERVICE_NAME = re.compile(r"^[a-z][a-z0-9_-]{0,30}$")
+_EMPTY_SERVICES = {
+    "ambiente": "desativado",
+    "servicos": [],
+    "soltos": [],
+    "conteineres": [],
+    "docker": False,
+    "avisos": [],
+}
+_MARK = "[REDACTED]"
+_SECRETISH = re.compile(
+    r"(?i)([A-Za-z0-9_.-]*(?:pass(?:word|wd)?|secret|token|api[-_]?key|auth|credential|key)"
+    r"[A-Za-z0-9_.-]*\s*[=:]\s*)(\"[^\"]*\"|'[^']*'|[^\s,;\"']+)"
+)
+
+
+def _scrub(text: str) -> str:
+    """Segunda barreira: o gerenciador já redige; o mesmo vale para o que sai ao navegador."""
+    return _SECRETISH.sub(lambda m: m.group(1) + _MARK, text or "")
+
+
+def _services_rm(method: str, tenant_id, path: str, body: dict | None = None) -> dict | None:
+    """Chamada só de leitura/ação ao gerenciador, no escopo do tenant da sessão."""
+    rmt = rt.rm_tenant(tenant_id)
+    try:
+        return rt.call(method, f"/v1/tenants/{rmt}{path}", scope=rmt, body=body, timeout=40.0)
+    except rt.RMError as exc:
+        if exc.status == 404 and exc.code in ("tenant_not_found", "not_found"):
+            return None
+        status = {400: 400, 404: 404, 409: 409, 423: 409}.get(exc.status, 502)
+        detail = {
+            400: "Nome de serviço inválido",
+            404: "Serviço não encontrado",
+            409: "O ambiente está parado ou suspenso",
+        }.get(status, "O ambiente não respondeu")
+        logger.warning("environment services refused: %s", exc.code)
+        raise HTTPException(status_code=status, detail=detail) from exc
+    except httpx.HTTPError as exc:
+        logger.warning("environment services unreachable: %s", exc.__class__.__name__)
+        raise HTTPException(status_code=502, detail="Ambiente indisponível no momento") from exc
+
+
+@router.get("/services")
+def list_services(user: dict = Depends(require("environment", "view"))):
+    """Serviços em execução no ambiente da empresa da sessão. Não acorda o ambiente parado."""
+    tenant_id = user["tenant_id"]
+    if tenant_id is None or not rt.configured():
+        return dict(_EMPTY_SERVICES, servicos=[], soltos=[], conteineres=[], avisos=[])
+    with get_connection() as conn:
+        if not tenant_skills_enabled(conn, tenant_id):
+            return dict(_EMPTY_SERVICES, servicos=[], soltos=[], conteineres=[], avisos=[])
+    data = _services_rm("GET", tenant_id, "/services")
+    if data is None:
+        return dict(
+            _EMPTY_SERVICES,
+            ambiente="sem_ambiente",
+            servicos=[],
+            soltos=[],
+            conteineres=[],
+            avisos=[],
+        )
+    for sv in data.get("soltos") or []:
+        sv["argumentos"] = _scrub(str(sv.get("argumentos", "")))
+    return data
+
+
+def _service_name(name: str) -> str:
+    if not _SERVICE_NAME.match(name or ""):
+        raise HTTPException(status_code=400, detail="Nome de serviço inválido")
+    return name
+
+
+@router.post("/services/{name}/{action}")
+def service_action(name: str, action: str, user: dict = Depends(require("environment", "manage"))):
+    if action not in ("start", "stop", "restart"):
+        raise HTTPException(status_code=404, detail="Ação desconhecida")
+    tenant_id = _tenant(user)
+    name = _service_name(name)
+    with get_connection() as conn:
+        _require_enabled(conn, tenant_id)
+        if not rt.configured():
+            raise HTTPException(status_code=409, detail="O ambiente está parado ou suspenso")
+        _services_rm("POST", tenant_id, f"/services/{name}:{action}", {"by": str(user["id"])})
+        _event(conn, tenant_id, f"service_{action}", user, {"service": name})
+    return {"service": name, "action": action, "ok": True}
+
+
+@router.get("/services/{name}/logs")
+def service_logs(name: str, user: dict = Depends(require("environment", "manage"))):
+    tenant_id = _tenant(user)
+    name = _service_name(name)
+    with get_connection() as conn:
+        _require_enabled(conn, tenant_id)
+        if not rt.configured():
+            raise HTTPException(status_code=409, detail="O ambiente está parado ou suspenso")
+        data = _services_rm("GET", tenant_id, f"/services/{name}/logs?lines=200&by={user['id']}")
+        _event(conn, tenant_id, "service_logs", user, {"service": name})
+    return {"service": name, "lines": 200, "log": _scrub((data or {}).get("log", ""))}
+
+
 @router.post("/domains", status_code=201)
 def add_domain(payload: DomainIn, user: dict = Depends(require("environment", "manage"))):
     tenant_id = _tenant(user)
