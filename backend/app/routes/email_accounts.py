@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr, Field
 
 from app.auth import require
+from app.credential_env import email_vars
 from app.crypto import decrypt, encrypt
 from app.db import get_connection
 from app.tenancy import resolve_target_tenant
@@ -40,6 +41,7 @@ def _serialize(row: dict) -> dict:
         "imap_port": row["imap_port"],
         "username": row["username"],
         "use_tls": row["use_tls"],
+        "env_vars": email_vars(row["label"]),
         "is_active": row["is_active"],
         "updated_at": row["updated_at"].isoformat(),
     }
@@ -82,6 +84,44 @@ def create_email_account(
                 payload.use_tls,
             ),
         ).fetchone()
+    return _serialize(row)
+
+
+class EmailAccountUpdate(BaseModel):
+    """Substituir: tudo opcional; senha em branco mantém a atual."""
+
+    label: str | None = Field(default=None, min_length=1, max_length=120)
+    email_address: EmailStr | None = None
+    smtp_host: str | None = Field(default=None, min_length=1, max_length=255)
+    smtp_port: int | None = Field(default=None, ge=1, le=65535)
+    imap_host: str | None = Field(default=None, min_length=1, max_length=255)
+    imap_port: int | None = Field(default=None, ge=1, le=65535)
+    username: str | None = Field(default=None, min_length=1, max_length=255)
+    password: str | None = Field(default=None, min_length=1, max_length=1_000)
+    use_tls: bool | None = None
+
+
+@router.put("/{account_id}")
+def update_email_account(
+    account_id: str,
+    payload: EmailAccountUpdate,
+    user: dict = Depends(require("email_accounts", "edit")),
+):
+    tenant_id = resolve_target_tenant(user, None)
+    changes = payload.model_dump(exclude_none=True)
+    if "password" in changes:
+        changes["password_encrypted"] = encrypt(changes.pop("password"))
+    if not changes:
+        raise HTTPException(status_code=400, detail="Nada para atualizar")
+    sets = ", ".join(f"{column} = %s" for column in changes)
+    with get_connection() as conn:
+        row = conn.execute(
+            f"""UPDATE tenant_email_accounts SET {sets}, updated_at = now()
+                 WHERE id = %s AND tenant_id = %s AND is_active RETURNING *""",
+            (*changes.values(), account_id, tenant_id),
+        ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Conta de email não encontrada")
     return _serialize(row)
 
 

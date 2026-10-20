@@ -12,7 +12,7 @@ import { useEffect, useState } from 'react'
  * motivo (bloqueador de popup, aba que não é opener direto, etc.).
  */
 export default function OAuthCallback() {
-  const [status, setStatus] = useState<'processando' | 'sucesso' | 'manual'>('processando')
+  const [status, setStatus] = useState<'processando' | 'sucesso' | 'conectado' | 'manual'>('processando')
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -20,34 +20,59 @@ export default function OAuthCallback() {
     const state = params.get('state')
     const error = params.get('error')
     const dados = { code, state, error, url: window.location.href }
+    let cancelado = false
+    let timer: ReturnType<typeof setTimeout> | undefined
 
-    let repassado = false
-    if (window.opener) {
+    function repassar() {
+      let repassado = false
+      if (window.opener) {
+        try {
+          window.opener.postMessage({ type: 'oauth_callback', dados }, window.location.origin)
+          repassado = true
+        } catch {
+          // ignorado -- cai pro modo manual abaixo
+        }
+      }
       try {
-        window.opener.postMessage({ type: 'oauth_callback', dados }, window.location.origin)
+        localStorage.setItem('oauth_callback', JSON.stringify({ ...dados, timestamp: Date.now() }))
         repassado = true
       } catch {
-        // ignorado -- cai pro modo manual abaixo
+        // localStorage pode estar bloqueado (aba anônima restrita) -- não é fatal
       }
-    }
-    try {
-      localStorage.setItem('oauth_callback', JSON.stringify({ ...dados, timestamp: Date.now() }))
-      repassado = true
-    } catch {
-      // localStorage pode estar bloqueado (aba anônima restrita) -- não é fatal
+      if ((!code && !error) || !repassado) {
+        setStatus('manual')
+        return
+      }
+      setStatus('sucesso')
+      timer = setTimeout(() => window.close(), 1500)
     }
 
-    if (!code && !error) {
-      setStatus('manual')
-      return
+    if (code && state) {
+      // Conexão iniciada pela tela de credenciais do Luar: o motor guardou o state e fecha a
+      // conexão sozinho. Falha (state desconhecido = fluxo antigo do painel do motor) cai no repasse.
+      fetch('/api/oauth/finalizar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ state, code }),
+      })
+        .then((r) => r.ok)
+        .catch(() => false)
+        .then((feito) => {
+          if (cancelado) return
+          if (feito) {
+            setStatus('conectado')
+            timer = setTimeout(() => window.close(), 2500)
+          } else {
+            repassar()
+          }
+        })
+    } else {
+      repassar()
     }
-    if (!repassado) {
-      setStatus('manual')
-      return
+    return () => {
+      cancelado = true
+      if (timer) clearTimeout(timer)
     }
-    setStatus('sucesso')
-    const t = setTimeout(() => window.close(), 1500)
-    return () => clearTimeout(t)
   }, [])
 
   return (
@@ -55,6 +80,14 @@ export default function OAuthCallback() {
       <div className="max-w-md">
         {status === 'processando' && (
           <p className="text-[var(--text-muted)]">Processando autorização…</p>
+        )}
+        {status === 'conectado' && (
+          <>
+            <p className="text-[var(--text)]">Conta conectada.</p>
+            <p className="mt-1 text-sm text-[var(--text-muted)]">
+              Pode fechar esta aba e voltar para a tela de credenciais.
+            </p>
+          </>
         )}
         {status === 'sucesso' && (
           <>

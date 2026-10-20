@@ -15,6 +15,7 @@ import uuid
 from fastapi import HTTPException
 
 from app.config import settings
+from app.credential_env import derive as derive_env
 from app.crypto import decrypt
 from app.db import get_connection
 from app.run_tokens import issue_run_token
@@ -159,27 +160,34 @@ def _credentials(conn, tenant_id) -> dict:
     from app.template_runtime import _embedding_spec, _payment_spec
 
     secret_rows = conn.execute(
-        "SELECT name, value_encrypted FROM secrets WHERE tenant_id = %s AND is_active",
+        """SELECT name, value_encrypted, kind, meta FROM secrets
+            WHERE tenant_id = %s AND is_active AND NOT is_deleted""",
         (tenant_id,),
     ).fetchall()
     datasource_rows = conn.execute(
-        "SELECT * FROM datasources WHERE tenant_id = %s AND is_active", (tenant_id,)
+        "SELECT * FROM datasources WHERE tenant_id = %s AND is_active AND NOT is_deleted",
+        (tenant_id,),
     ).fetchall()
+    datasources = [
+        {
+            "name": d["name"],
+            "kind": d["kind"],
+            "config": d["config"],
+            "secret": decrypt(d["secret_encrypted"]) if d["secret_encrypted"] else None,
+        }
+        for d in datasource_rows
+    ]
+    email = accounts_for_run_config(conn, tenant_id)
+    google = google_accounts(conn, tenant_id)
+    microsoft = microsoft_accounts(conn, tenant_id)
     return {
-        "secrets": {r["name"]: decrypt(r["value_encrypted"]) for r in secret_rows},
-        "datasources": [
-            {
-                "name": d["name"],
-                "kind": d["kind"],
-                "config": d["config"],
-                "secret": decrypt(d["secret_encrypted"]) if d["secret_encrypted"] else None,
-            }
-            for d in datasource_rows
-        ],
+        # segredos cadastrados + SSH/GCP/banco/e-mail/OAuth como variáveis nomeadas (H-5, H-7)
+        "secrets": derive_env(secret_rows, datasources, email, google, microsoft, decrypt),
+        "datasources": datasources,
         "payment": _payment_spec(conn, tenant_id),
-        "email_accounts": accounts_for_run_config(conn, tenant_id),
-        "google_accounts": google_accounts(conn, tenant_id),
-        "microsoft_accounts": microsoft_accounts(conn, tenant_id),
+        "email_accounts": email,
+        "google_accounts": google,
+        "microsoft_accounts": microsoft,
         "embedding": _embedding_spec(conn, tenant_id),
     }
 

@@ -56,6 +56,7 @@ def _serialize_credential(row: dict) -> dict:
         "provider": row["provider"],
         "has_token": bool(row["access_token_encrypted"]),
         "has_webhook_secret": bool(row["webhook_secret_encrypted"]),
+        "env_vars": ["MERCADO_PAGO_TOKEN"],
         "sandbox": row["sandbox"],
         "is_active": row["is_active"],
         # Só o sufixo opaco é exposto; a URL completa é montada pelo frontend.
