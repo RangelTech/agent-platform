@@ -21,6 +21,8 @@ import logging
 
 import httpx
 
+from app.config import settings
+
 logger = logging.getLogger(__name__)
 
 TIMEOUT = 30.0
@@ -39,6 +41,8 @@ async def _request(
     json_body: dict | None = None,
     params: dict | None = None,
 ) -> dict:
+    if not settings.litellm_enabled:
+        raise LiteLLMError("LiteLLM desligado: use o gateway de modelos")
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
             response = await client.request(
@@ -61,6 +65,8 @@ async def _request(
 
 
 async def health(base_url: str) -> bool:
+    if not settings.litellm_enabled:
+        return False
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(f"{base_url.rstrip('/')}/health/liveliness")

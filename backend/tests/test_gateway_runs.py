@@ -79,3 +79,16 @@ def test_unknown_combo_or_gateway_error_falls_back_to_none(monkeypatch):
 
     monkeypatch.setattr(gateway_runs.gateway_client, "combo_names", boom)
     assert gateway_runs.run_gateway(FakeConn(), "t", "c") is None
+
+
+def test_litellm_client_refuses_when_disabled(monkeypatch):
+    import asyncio
+
+    import pytest
+
+    from app import litellm_client
+
+    monkeypatch.setattr(settings, "litellm_enabled", False)
+    with pytest.raises(litellm_client.LiteLLMError):
+        asyncio.run(litellm_client._request("http://x", "k", "GET", "/health"))
+    assert asyncio.run(litellm_client.health("http://x")) is False
