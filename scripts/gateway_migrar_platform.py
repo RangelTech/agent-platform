@@ -20,6 +20,7 @@ ninerouter antigo com as mesmas contas.
 Uso: python3 gateway_migrar_platform.py [--sem-verificar] [--origem /opt/platform/data/ninerouter/db/data.sqlite]
 """
 
+# ruff: noqa: E501
 import argparse
 import json
 import sqlite3

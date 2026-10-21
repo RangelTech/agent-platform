@@ -51,7 +51,8 @@ def run_gateway(conn, tenant_id, combo: str) -> dict | None:
                     continue
                 key, key_id = gateway_client.create_combo_key(base, token, gw_tenant, combo=combo)
                 conn.execute(
-                    """INSERT INTO gateway_run_keys (gateway_tenant_id, combo, gateway_key_id, key_encrypted)
+                    """INSERT INTO gateway_run_keys
+                           (gateway_tenant_id, combo, gateway_key_id, key_encrypted)
                        VALUES (%s, %s, %s, %s)
                        ON CONFLICT (gateway_tenant_id, combo) DO UPDATE
                            SET gateway_key_id = EXCLUDED.gateway_key_id,

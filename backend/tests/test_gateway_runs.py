@@ -32,7 +32,9 @@ class FakeConn:
 def _on(monkeypatch, combos):
     monkeypatch.setattr(settings, "gateway_runs_enabled", True)
     monkeypatch.setattr(gateway_runs, "resolver_segredo", lambda n: "x")
-    monkeypatch.setattr(gateway_runs.gateway_client, "combo_names", lambda b, t, gw: combos.get(gw, set()))
+    monkeypatch.setattr(
+        gateway_runs.gateway_client, "combo_names", lambda b, t, gw: combos.get(gw, set())
+    )
     calls = []
     monkeypatch.setattr(
         gateway_runs.gateway_client,
@@ -71,5 +73,9 @@ def test_reuses_stored_key(monkeypatch):
 def test_unknown_combo_or_gateway_error_falls_back_to_none(monkeypatch):
     _on(monkeypatch, {})
     assert gateway_runs.run_gateway(FakeConn(), "t", "nope") is None
-    monkeypatch.setattr(gateway_runs.gateway_client, "combo_names", lambda *a: (_ for _ in ()).throw(RuntimeError("x")))
+
+    def boom(*_a):
+        raise RuntimeError("x")
+
+    monkeypatch.setattr(gateway_runs.gateway_client, "combo_names", boom)
     assert gateway_runs.run_gateway(FakeConn(), "t", "c") is None

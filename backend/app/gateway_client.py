@@ -117,9 +117,7 @@ def _sync(base_url, admin_token, tenant_id, method, path, body=None):
     except httpx.HTTPError as exc:
         raise GatewayError("Gateway de IA inacessível") from exc
     if response.status_code >= 400:
-        raise GatewayError(
-            f"Gateway de IA respondeu {response.status_code}: {response.text[:300]}"
-        )
+        raise GatewayError(f"Gateway de IA respondeu {response.status_code}: {response.text[:300]}")
     try:
         return response.json() if response.content else {}
     except ValueError:
