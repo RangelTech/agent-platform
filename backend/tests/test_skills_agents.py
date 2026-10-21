@@ -777,6 +777,23 @@ def test_authenticated_approval_flow(client, enabled, tenant_admin, fake_harness
     assert status["status"] == "approved"
 
 
+def test_approval_expires_when_run_finishes(client, enabled, tenant_admin, fake_harness):
+    from app import chat_runs
+
+    h = auth(tenant_admin["token"])
+    run_id, t = _run_for(client, tenant_admin, fake_harness)
+    approval_id = client.post(
+        "/internal/approvals",
+        json={"run_id": run_id, "summary": "Publicar app", "ttl_seconds": 900},
+        headers=SERVICE,
+    ).json()["approval_id"]
+    assert len(client.get("/api/approvals/pending", headers=h).json()) == 1
+    chat_runs.finish_run(run_id, "error")  # kernel expirou o cartão e encerrou a run
+    assert client.get("/api/approvals/pending", headers=h).json() == []
+    r = client.post(f"/api/approvals/{approval_id}", json={"decision": "approve"}, headers=h)
+    assert r.json() == {"status": "expired"}
+
+
 def test_approval_expiry_and_deny(client, enabled, tenant_admin, fake_harness):
     h = auth(tenant_admin["token"])
     run_id, t = _run_for(client, tenant_admin, fake_harness)

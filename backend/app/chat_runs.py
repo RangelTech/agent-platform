@@ -51,6 +51,12 @@ def finish_run(run_id: str, status: str) -> None:
                 WHERE run_id = %s AND status IN ('running', 'cancelling')""",
             (status, status, run_id),
         )
+        # Cartão sem resposta quando a run acaba (kernel expirou ou cancelou): não pode ficar
+        # clicável, senão o usuário "aprova" algo que já terminou.
+        conn.execute(
+            "UPDATE approvals SET status = 'expired' WHERE run_id = %s AND status = 'pending'",
+            (run_id,),
+        )
     CANCEL_EVENTS.pop(run_id, None)
 
 
