@@ -65,7 +65,7 @@ jobs:
             },
             "built_at": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
             "healthcheck": {"path": "/health/ready", "expect": 200, "timeout_s": 120, "port": 8090},
-            "env": {"required": ["DATABASE_URL","ENCRYPTION_KEY","MASTER_EMAIL","MASTER_PASSWORD","PUBLIC_BASE_URL","KERNEL_URL","KERNEL_INTERNAL_TOKEN","STORAGE_BACKEND","S3_ENDPOINT_URL","S3_PUBLIC_BASE_URL","S3_BUCKET","BRIDGE_URL","BRIDGE_ADMIN_TOKEN"]},
+            "env": {"required": ["DATABASE_URL","ENCRYPTION_KEY","MASTER_EMAIL","MASTER_PASSWORD","PUBLIC_BASE_URL","KERNEL_URL","KERNEL_INTERNAL_TOKEN","STORAGE_BACKEND","S3_ENDPOINT_URL","S3_PUBLIC_BASE_URL","S3_BUCKET","BRIDGE_URL","BRIDGE_ADMIN_TOKEN","GATEWAY_BASE_URL","GATEWAY_ADMIN_TOKEN"]},
             "resources": {"memory": "1g", "cpus": "1"}
           }
           json.dump(m, open("release-manifest.json", "w"), indent=2)
