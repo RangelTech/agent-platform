@@ -229,6 +229,19 @@ def test_manifest_confirm_actions_is_kept_only_when_true_and_validated():
     assert pkg.has_errors(bad)
 
 
+def test_manifest_model_combo_is_preserved_and_is_exclusive_with_alias():
+    manifest = {"model": {"combo": "atendimento-principal"}}
+    assert pkg.normalize_manifest(manifest)["model"] == manifest["model"]
+    assert not pkg.validate_manifest(manifest, TOOLS)
+
+    for invalid in (
+        {"model": {"combo": ""}},
+        {"model": {"combo": "a", "alias": "b"}},
+        {"model": {"combo": "a", "other": "b"}},
+    ):
+        assert "bad_manifest" in codes(pkg.validate_manifest(invalid, TOOLS))
+
+
 # ----------------------------------------------------- arquivos/ (H-2) ---
 
 

@@ -315,7 +315,12 @@ def normalize_manifest(raw: object) -> dict:
     env = raw.get("environment")
     base["environment"] = {"enabled": bool(env.get("enabled")) if isinstance(env, dict) else False}
     model = raw.get("model")
-    if isinstance(model, dict) and isinstance(model.get("alias"), str) and model["alias"].strip():
+    # `combo` is resolved by the tenant-aware gateway BFF.  Keep it in the
+    # package so a published template carries the intended routing policy;
+    # the engine deliberately does not resolve a combo by itself.
+    if isinstance(model, dict) and _valid_model_reference(model.get("combo")):
+        base["model"] = {"combo": model["combo"].strip()}
+    elif isinstance(model, dict) and _valid_model_reference(model.get("alias")):
         base["model"] = {"alias": model["alias"].strip()}
     base["output"] = {"format": output_format_of(raw)}
     limits = raw.get("limits")
@@ -352,6 +357,11 @@ MAX_LIST = 50
 SCOPE_RE_AI = re.compile(r"^ai\.[a-z_]+\.[a-z_]+$")
 
 
+def _valid_model_reference(value: object) -> bool:
+    """A bounded, non-blank routing reference (alias or tenant combo name)."""
+    return isinstance(value, str) and 0 < len(value.strip()) <= 120
+
+
 def _clean_list(value: object, pattern: re.Pattern, lower: bool = False) -> list[str]:
     if not isinstance(value, list):
         return []
@@ -386,9 +396,12 @@ def validate_manifest(raw: object, tool_ids: set[str]) -> list[Problem]:
     ):
         problems.append(Problem("manifest", "bad_manifest", "Configuração de ambiente inválida"))
     model = raw.get("model")
-    if model is not None and not (
-        isinstance(model, dict) and isinstance(model.get("alias", ""), str)
-    ):
+    model_is_valid = (
+        isinstance(model, dict)
+        and set(model).issubset({"alias", "combo"})
+        and sum(_valid_model_reference(model.get(key)) for key in ("alias", "combo")) == 1
+    )
+    if model is not None and not model_is_valid:
         problems.append(Problem("manifest", "bad_manifest", "Configuração de modelo inválida"))
     output = raw.get("output")
     if output is not None:
