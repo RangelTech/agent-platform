@@ -1,12 +1,7 @@
-"""Automatic LiteLLM Team provisioning dispatched by `create_tenant`
-(infra-06, migrated off 9Router in infra-04 — achado real 24/08/2026).
+"""Provisionamento do tenant no gateway, disparado por `create_tenant`.
 
-The real path calls `litellm_client.create_team`/`add_model_to_team`/
-`generate_key` over HTTP — never hit a real LiteLLM in tests. These tests
-only prove the dispatch logic: the flag gate, the background task updating
-`router_provisioning_status`, and the frontend-visible fields on
-`/ai-router/status`. `litellm_client`'s functions are monkeypatched so no
-HTTP call is ever made.
+Os testes nunca chamam um gateway real: provam apenas o despacho, o estado
+persistido e a ausência de efeito colateral quando a feature está desligada.
 """
 
 import uuid
@@ -26,16 +21,8 @@ def _create_tenant(client, master_token, **overrides):
     return r.json()
 
 
-async def _fake_create_team(base_url, master_key, *, team_alias):
-    return {"team_id": f"team-{team_alias}"}
-
-
-async def _fake_add_model_to_team(base_url, master_key, *, team_id, model_name):
-    return None
-
-
-async def _fake_generate_key(base_url, master_key, *, team_id, key_alias):
-    return f"sk-fake-{key_alias}"
+async def _fake_provision_gateway(base_url, admin_token, *, tenant_id, name):
+    return f"sk-fake-{tenant_id}-bridge", f"sk-fake-{tenant_id}-ai-assist"
 
 
 def test_tenant_is_created_with_pending_status_by_default(client, master_token):
@@ -62,14 +49,12 @@ def test_tenant_is_created_with_pending_status_by_default(client, master_token):
 
 
 def test_background_task_marks_ready_on_success(client, master_token, monkeypatch):
-    """With the flag on, a successful LiteLLM provisioning flips pending -> ready."""
+    """Com a flag ligada, o gateway pronto muda pending -> ready."""
     monkeypatch.setattr(settings, "router_auto_provision_enabled", True)
     monkeypatch.setattr("app.routes.tenants.resolver_segredo", lambda nome, padrao="": "fake")
-    monkeypatch.setattr("app.routes.tenants.litellm_client.create_team", _fake_create_team)
     monkeypatch.setattr(
-        "app.routes.tenants.litellm_client.add_model_to_team", _fake_add_model_to_team
+        "app.routes.tenants.gateway_client.provision_tenant", _fake_provision_gateway
     )
-    monkeypatch.setattr("app.routes.tenants.litellm_client.generate_key", _fake_generate_key)
 
     tenant = _create_tenant(client, master_token)
     # BackgroundTasks finish before TestClient hands back the response, so
@@ -80,15 +65,15 @@ def test_background_task_marks_ready_on_success(client, master_token, monkeypatc
 
 
 def test_background_task_marks_failed_on_error(client, master_token, monkeypatch):
-    """A failing provisioning call must not affect the tenant row besides the
+    """Uma falha no Gateway não altera a empresa além do
     status fields — the tenant keeps existing (spec point 4)."""
     monkeypatch.setattr(settings, "router_auto_provision_enabled", True)
     monkeypatch.setattr("app.routes.tenants.resolver_segredo", lambda nome, padrao="": "fake")
 
     async def _boom(*args, **kwargs):
-        raise RuntimeError("litellm indisponível: connection refused")
+        raise RuntimeError("gateway indisponível: connection refused")
 
-    monkeypatch.setattr("app.routes.tenants.litellm_client.create_team", _boom)
+    monkeypatch.setattr("app.routes.tenants.gateway_client.provision_tenant", _boom)
 
     tenant = _create_tenant(client, master_token)
     row = client.get("/api/tenants", headers=auth(master_token)).json()
@@ -107,9 +92,9 @@ def test_background_task_marks_failed_on_timeout(client, master_token, monkeypat
         import asyncio
 
         await asyncio.sleep(1)
-        return {"team_id": "x"}
+        return "bridge", "assist"
 
-    monkeypatch.setattr("app.routes.tenants.litellm_client.create_team", _slow)
+    monkeypatch.setattr("app.routes.tenants.gateway_client.provision_tenant", _slow)
 
     tenant = _create_tenant(client, master_token)
     row = client.get("/api/tenants", headers=auth(master_token)).json()

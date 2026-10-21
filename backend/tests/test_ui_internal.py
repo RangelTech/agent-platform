@@ -96,6 +96,32 @@ def test_suspend_resume_deprovision_never_delete(ui):
         )
 
 
+def test_suspend_and_resume_follow_gateway_when_provisioned(ui, monkeypatch):
+    tid = ui.post(
+        "/internal/ui/provision", json={"account_id": 10, "name": "Gateway"}, headers=_ctx()
+    ).json()["engine_tenant_id"]
+    with get_connection() as conn:
+        conn.execute(
+            """INSERT INTO tenant_routers
+                   (tenant_id, gateway_tenant_id, gateway_bridge_key_encrypted,
+                    gateway_ai_assist_key_encrypted)
+               VALUES (%s, %s, %s, %s)""",
+            (tid, tid, "bridge", "assist"),
+        )
+    calls = []
+
+    async def fake_status(base_url, admin_token, *, tenant_id, active):
+        calls.append((tenant_id, active))
+
+    monkeypatch.setattr("app.routes.ui_internal.resolver_segredo", lambda *_: "fake")
+    monkeypatch.setattr("app.routes.ui_internal.gateway_client.set_tenant_status", fake_status)
+    suspended = ui.post("/internal/ui/suspend", json={"account_id": 10}, headers=_ctx())
+    resumed = ui.post("/internal/ui/resume", json={"account_id": 10}, headers=_ctx())
+    assert suspended.status_code == 200
+    assert resumed.status_code == 200
+    assert calls == [(tid, False), (tid, True)]
+
+
 def test_me_projects_chatwoot_user_per_tenant_and_blocks_suspended(ui):
     tid = ui.post(
         "/internal/ui/provision", json={"account_id": 11, "name": "Z"}, headers=_ctx()
