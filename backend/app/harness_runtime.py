@@ -18,6 +18,7 @@ from app.config import settings
 from app.credential_env import derive as derive_env
 from app.crypto import decrypt
 from app.db import get_connection
+from app.gateway_runs import run_gateway
 from app.run_tokens import issue_run_token
 from app.skill_package import default_manifest, normalize_manifest, output_format_of
 from app.template_access import ensure_can_run
@@ -362,6 +363,17 @@ def prepare_harness_run(
 
     limits = {**DEFAULT_LIMITS, **(manifest.get("limits") or {})}
     model = manifest.get("model") or {}
+    alias = (
+        model.get("alias")
+        or model.get("combo")
+        or settings.harness_default_model
+        or DEFAULT_MODEL_ALIAS
+    )
+    model_block = {"alias": alias, "reasoning_effort": "medium"}
+    with get_connection() as conn:
+        gateway = run_gateway(conn, tenant_id, alias)
+    if gateway:
+        model_block["gateway"] = gateway
     payload = {
         "contract_version": CONTRACT_VERSION,
         "run_id": run_id,
@@ -381,10 +393,7 @@ def prepare_harness_run(
         "template": {"id": str(template_id), "version_id": str(version["id"]), "kind": "skills"},
         "message": message,
         "attachments": attachments or [],
-        "model": {
-            "alias": model.get("alias") or settings.harness_default_model or DEFAULT_MODEL_ALIAS,
-            "reasoning_effort": "medium",
-        },
+        "model": model_block,
         "skills": {
             "system_rev": settings.harness_system_skills_rev,
             "tenant_package": package,
