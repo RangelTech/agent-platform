@@ -101,3 +101,46 @@ async def set_tenant_status(
         f"/api/tenants/{tenant_id}",
         json_body={"status": "active" if active else "suspended"},
     )
+
+
+def _sync(base_url, admin_token, tenant_id, method, path, body=None):
+    if not base_url or not admin_token:
+        raise GatewayError("Gateway de IA não configurado nesta instalação")
+    try:
+        with httpx.Client(timeout=TIMEOUT) as client:
+            response = client.request(
+                method,
+                f"{base_url.rstrip('/')}{path}",
+                headers={"x-admin-token": admin_token, "x-tenant-id": tenant_id},
+                json=body,
+            )
+    except httpx.HTTPError as exc:
+        raise GatewayError("Gateway de IA inacessível") from exc
+    if response.status_code >= 400:
+        raise GatewayError(f"Gateway de IA respondeu {response.status_code}: {response.text[:300]}")
+    try:
+        return response.json() if response.content else {}
+    except ValueError:
+        return {}
+
+
+def combo_names(base_url: str, admin_token: str, tenant_id: str) -> set[str]:
+    data = _sync(base_url, admin_token, tenant_id, "GET", "/api/combos")
+    return {c.get("name") for c in data.get("combos", []) if c.get("name")}
+
+
+def create_combo_key(
+    base_url: str, admin_token: str, tenant_id: str, *, combo: str
+) -> tuple[str, str | None]:
+    """Chave do tenant restrita a um único combo. Devolve (chave, id)."""
+    data = _sync(
+        base_url,
+        admin_token,
+        tenant_id,
+        "POST",
+        "/api/keys",
+        {"name": f"run-{combo}"[:60], "allowedCombos": [combo]},
+    )
+    if not data.get("key"):
+        raise GatewayError("Gateway não devolveu a chave do combo")
+    return data["key"], data.get("id")

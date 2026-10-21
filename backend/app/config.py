@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     scheduler_enabled: bool = True
     # Alias do modelo no LiteLLM quando o manifesto do agente não define um.
     harness_default_model: str = ""
+    # G-9: manda model.gateway (chave restrita ao combo) em cada run do kernel.
+    gateway_runs_enabled: bool = False
+    # Desligar (LITELLM_ENABLED=false) no corte do LiteLLM: o cliente legado recusa chamadas.
+    litellm_enabled: bool = True
+    gateway_run_base_url: str = "http://llm-gateway:20128/v1"
     # Token de serviço das rotas /internal/* (kernel -> backend). Vazio fecha
     # essas rotas para o token de serviço; o run_token por run continua valendo.
     harness_internal_token: str = ""
