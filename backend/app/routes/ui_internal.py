@@ -4,6 +4,7 @@ Autenticação: contexto assinado (`app.ui_context`). A empresa (tenant) é a
 `Account` do Chatwoot; o motor só reage aos eventos dela. Tudo idempotente.
 """
 
+import asyncio
 import logging
 import re
 import unicodedata
@@ -12,8 +13,10 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from psycopg.types.json import Json
 from pydantic import BaseModel, Field
 
+from app import gateway_client
 from app import runtime_client as rt
 from app.db import get_connection
+from app.installation_secrets import resolver as resolver_segredo
 from app.permissions import ADMIN_PERMISSIONS, MEMBER_PERMISSIONS
 from app.routes.tenants import _provisionar_router_em_background
 from app.ui_context import install_actor, service_actor
@@ -47,6 +50,34 @@ def _tenant_by_account(conn, account_id: int):
     return conn.execute(
         "SELECT * FROM tenants WHERE chatwoot_account_id = %s", (account_id,)
     ).fetchone()
+
+
+def _sync_gateway_status(conn, tenant: dict, active: bool) -> None:
+    """Espelha suspensão/retomada no gateway sem tocar tenants legados.
+
+    A remoção física do gateway é deliberadamente excluída daqui: offboarding
+    em cascata exige ordem explícita do dono e continua com dados retidos.
+    """
+    row = conn.execute(
+        """SELECT gateway_tenant_id FROM tenant_routers
+             WHERE tenant_id = %s AND is_active""",
+        (tenant["id"],),
+    ).fetchone()
+    if not row or not row.get("gateway_tenant_id"):
+        return
+    try:
+        asyncio.run(
+            gateway_client.set_tenant_status(
+                resolver_segredo("GATEWAY_BASE_URL"),
+                resolver_segredo("GATEWAY_ADMIN_TOKEN"),
+                tenant_id=row["gateway_tenant_id"],
+                active=active,
+            )
+        )
+    except gateway_client.GatewayError as exc:
+        raise HTTPException(
+            status_code=502, detail="O Gateway de IA não aceitou a operação"
+        ) from exc
 
 
 def _rm(method: str, path: str, tenant_id, body: dict | None = None) -> None:
@@ -106,6 +137,7 @@ def _set_active(account_id: int, active: bool, by_chatwoot: bool):
         tenant = _tenant_by_account(conn, account_id)
         if tenant is None:
             raise HTTPException(status_code=404, detail="Empresa não provisionada")
+        _sync_gateway_status(conn, tenant, active)
         conn.execute(
             "UPDATE tenants SET is_active = %s, suspended_by_chatwoot = %s, "
             "updated_at = now() WHERE id = %s",

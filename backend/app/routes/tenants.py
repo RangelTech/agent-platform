@@ -15,7 +15,7 @@ from psycopg.errors import UniqueViolation
 from psycopg.types.json import Json
 from pydantic import BaseModel, EmailStr, Field
 
-from app import litellm_client
+from app import gateway_client
 from app.auth import current_user
 from app.config import settings
 from app.crypto import encrypt
@@ -84,28 +84,10 @@ def _set_provisioning_status(tenant_id, status: str, error: str | None = None) -
 
 
 async def _provisionar_router_em_background(tenant_id: str, tenant_key: str) -> None:
-    """Cria o Team LiteLLM de um tenant recém-criado, fora do caminho da
-    requisição, e reflete o resultado em `tenants.router_provisioning_status`.
+    """Provisiona o tenant no gateway e guarda as duas chaves internas.
 
-    Achado real 24/08/2026: este hook chamava `scripts/provisionar_router.py`
-    (9Router) até agora — mas o 9Router foi 100% desligado em 21/08/2026
-    (infra-04, ver `concluidas/infra-04-litellm-substitui-9router.md`).
-    Nenhum tenant criado depois da migração jamais recebeu um Team de
-    verdade: o script rodava contra uma infra que não existe mais (ou nem
-    rodava, com a flag desligada), e a tela "Contas de IA" ficava presa em
-    "empresa ainda não conectada" pra sempre — não havia caminho de
-    self-service nenhum, só o script manual `provisionar_litellm.py`
-    (pensado pra uso do dono via terminal, não pro fluxo automático).
-
-    Agora chama `litellm_client` direto (3 chamadas HTTP: criar Team, liberar
-    o fallback local pro Team, gerar as 2 virtual keys) e grava o resultado
-    em `tenant_routers` na mesma transação lógica do `/instancias-litellm`
-    (`ai_router.py`) -- sem SSH, sem DNS, sem subprocess: o LiteLLM é uma
-    instância só, compartilhada, criar um Team é rápido o bastante pra rodar
-    em processo mesmo dentro do `BackgroundTasks`.
-
-    Nunca levanta exceção: uma falha de provisionamento deixa o tenant como
-    estava, só a coluna de status reflete o problema. Sem retry automático.
+    Roda fora da requisição do Chatwoot. A identidade vem exclusivamente do
+    banco do motor: nenhum identificador de tenant do browser chega aqui.
     """
     if not settings.router_auto_provision_enabled:
         # Feature flag off (default em dev/tests/CI): mantém 'pending' --
@@ -114,69 +96,41 @@ async def _provisionar_router_em_background(tenant_id: str, tenant_key: str) -> 
 
     _set_provisioning_status(tenant_id, "provisioning")
     try:
-        base_url = resolver_segredo("LITELLM_BASE_URL")
-        master_key = resolver_segredo("LITELLM_MASTER_KEY")
-        if not base_url or not master_key:
-            raise RuntimeError("LiteLLM não configurado nesta instalação")
-
-        async def _provisionar() -> tuple[str, str, str]:
-            team = await litellm_client.create_team(base_url, master_key, team_alias=tenant_key)
-            team_id = team["team_id"]
-            bridge_key = await litellm_client.generate_key(
-                base_url, master_key, team_id=team_id, key_alias=f"{tenant_key}-bridge"
-            )
-            ai_assist_key = await litellm_client.generate_key(
-                base_url, master_key, team_id=team_id, key_alias=f"{tenant_key}-ai-assist"
-            )
-            return team_id, bridge_key, ai_assist_key
-
-        # `litellm-router` roda com min-instances=0 (achado real 23/08/2026,
-        # decisão deliberada -- menos tráfego direto de usuário que os outros
-        # serviços) e seu cold start real (~28s) fica na borda do timeout de
-        # 30s de `litellm_client` (`TIMEOUT`, por request). Uma tentativa
-        # de retry absorve exatamente esse caso: a 2ª chamada já bate numa
-        # instância quente e responde em <1s -- sem isso, todo tenant criado
-        # com o serviço frio falharia o provisionamento por um problema de
-        # timing, não de configuração.
-        try:
-            team_id, bridge_key, ai_assist_key = await asyncio.wait_for(
-                _provisionar(), timeout=settings.router_provision_timeout_seconds
-            )
-        except litellm_client.LiteLLMError:
-            # Retry chama `_provisionar()` do zero -- se o cold start acontecer
-            # já depois do `create_team` (raro, é a 1ª chamada da sequência),
-            # sobra um Team órfão no LiteLLM sem custo/tráfego associado, só
-            # id desperdiçado. Aceitável: o caso comum (timeout na 1ª chamada,
-            # antes de qualquer Team existir) é o que isto resolve de verdade.
-            logger.warning(
-                "1ª tentativa de provisionar %s falhou (provável cold start do "
-                "litellm-router) -- tentando de novo",
-                tenant_key,
-            )
-            team_id, bridge_key, ai_assist_key = await asyncio.wait_for(
-                _provisionar(), timeout=settings.router_provision_timeout_seconds
-            )
+        base_url = resolver_segredo("GATEWAY_BASE_URL")
+        admin_token = resolver_segredo("GATEWAY_ADMIN_TOKEN")
+        bridge_key, ai_assist_key = await asyncio.wait_for(
+            gateway_client.provision_tenant(
+                base_url,
+                admin_token,
+                tenant_id=tenant_id,
+                name=tenant_key,
+            ),
+            timeout=settings.router_provision_timeout_seconds,
+        )
     except TimeoutError:
-        logger.error("provisionamento do LiteLLM expirou para o tenant %s", tenant_key)
-        _set_provisioning_status(tenant_id, "failed", "Tempo esgotado ao provisionar o Team de IA")
+        logger.error("provisionamento do gateway expirou para o tenant %s", tenant_key)
+        _set_provisioning_status(
+            tenant_id, "failed", "Tempo esgotado ao provisionar o Gateway de IA"
+        )
         return
-    except Exception as exc:  # LiteLLM fora do ar, master key errada, etc.
-        logger.exception("falha ao provisionar o Team LiteLLM para %s", tenant_key)
+    except Exception as exc:
+        logger.exception("falha ao provisionar o Gateway de IA para %s", tenant_key)
         _set_provisioning_status(tenant_id, "failed", str(exc)[:500])
         return
 
     with get_connection() as conn:
         conn.execute(
             """INSERT INTO tenant_routers
-                   (tenant_id, litellm_team_id, bridge_key_encrypted, ai_assist_key_encrypted)
+                   (tenant_id, gateway_tenant_id, gateway_bridge_key_encrypted,
+                    gateway_ai_assist_key_encrypted)
                VALUES (%s, %s, %s, %s)
                ON CONFLICT (tenant_id) DO UPDATE
-                   SET litellm_team_id = EXCLUDED.litellm_team_id,
-                       bridge_key_encrypted = EXCLUDED.bridge_key_encrypted,
-                       ai_assist_key_encrypted = EXCLUDED.ai_assist_key_encrypted,
+                   SET gateway_tenant_id = EXCLUDED.gateway_tenant_id,
+                       gateway_bridge_key_encrypted = EXCLUDED.gateway_bridge_key_encrypted,
+                       gateway_ai_assist_key_encrypted = EXCLUDED.gateway_ai_assist_key_encrypted,
                        is_active = TRUE,
                        updated_at = now()""",
-            (tenant_id, team_id, encrypt(bridge_key), encrypt(ai_assist_key)),
+            (tenant_id, tenant_id, encrypt(bridge_key), encrypt(ai_assist_key)),
         )
     _set_provisioning_status(tenant_id, "ready")
 
