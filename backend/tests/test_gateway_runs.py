@@ -85,7 +85,6 @@ def test_litellm_client_refuses_when_disabled(monkeypatch):
     import asyncio
 
     import pytest
-
     from app import litellm_client
 
     monkeypatch.setattr(settings, "litellm_enabled", False)
