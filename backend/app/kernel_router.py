@@ -20,6 +20,10 @@ from app.config import settings
 
 UNAVAILABLE = "Agentes por skills indisponíveis no momento"
 NOT_ENABLED = "Recurso não habilitado para sua empresa"
+GRAPH_OFF = (
+    "Os agentes estruturados (graph) foram descontinuados para sua empresa. "
+    "O histórico continua disponível; para conversar, use um agente por skills."
+)
 SWITCH_CONFLICT = (
     "Este chat usa outro tipo de agente. Abra uma nova conversa para usar este agente."
 )
@@ -111,6 +115,17 @@ def template_row(conn, tenant_id, template_id) -> dict | None:
 def tenant_skills_enabled(conn, tenant_id) -> bool:
     row = conn.execute("SELECT harness_enabled FROM tenants WHERE id = %s", (tenant_id,)).fetchone()
     return bool(row and row["harness_enabled"])
+
+
+def tenant_graph_enabled(conn, tenant_id) -> bool:
+    row = conn.execute("SELECT graph_enabled FROM tenants WHERE id = %s", (tenant_id,)).fetchone()
+    return bool(row and row["graph_enabled"])
+
+
+def ensure_graph_enabled(conn, tenant_id) -> None:
+    """Novas execuções/templates `graph` só com a flag da empresa ligada (L-2)."""
+    if not tenant_graph_enabled(conn, tenant_id):
+        raise HTTPException(status_code=403, detail=GRAPH_OFF)
 
 
 def ensure_skills_enabled(conn, tenant_id) -> None:

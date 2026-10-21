@@ -34,6 +34,7 @@ def me(user: dict = Depends(current_user)):
         "permissions": user["permissions"] or {},
         # Só o próprio tenant vê a flag (com este nome); o master a vê em /tenants.
         "skills_agents_enabled": bool(user.get("harness_enabled")) if user["tenant_id"] else False,
+        "graph_agents_enabled": bool(user.get("graph_enabled")) if user["tenant_id"] else False,
         "branding": {
             "name": user.get("brand_name") or user.get("tenant_name") or "",
             "tenant_key": user.get("tenant_key") or "",

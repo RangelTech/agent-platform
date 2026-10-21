@@ -1,38 +1,14 @@
-"""Tool catalog for the template editor (proxied from the kernel's MCP
-list_tools) and the per-conversation tool-call trace."""
+"""Rastro de chamadas de ferramenta por conversa. (O catálogo `/api/toolkits` do
+editor `graph` saiu com o kernel-llm: o catálogo dos agentes por skills vem de
+`tool_catalog`.)"""
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.auth import current_user, require
-from app.config import settings
+from app.auth import current_user
 from app.db import get_connection
 from app.permissions import require_scope_for_chatwoot
 
 router = APIRouter(prefix="/api", tags=["toolkits"])
-
-
-async def _kernel_headers() -> dict:
-    if settings.kernel_audience:
-        from app.gcp_auth import id_token_for
-
-        return {"Authorization": f"Bearer {await id_token_for(settings.kernel_audience)}"}
-    if settings.kernel_internal_token:
-        return {"Authorization": f"Bearer {settings.kernel_internal_token}"}
-    return {}
-
-
-@router.get("/toolkits")
-async def list_toolkits(user: dict = Depends(require("templates", "view"))):
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.get(
-                f"{settings.kernel_url}/v1/tools", headers=await _kernel_headers()
-            )
-            response.raise_for_status()
-            return response.json()
-    except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail=f"Kernel indisponível: {exc}") from exc
 
 
 @router.get("/chats/{chat_id}/tool-calls")

@@ -2,14 +2,14 @@ import { expect, test } from '@playwright/test'
 import { createState, installMock, sse } from './mockApi'
 
 test.describe('chat', () => {
-  test('seletor agrupa por tipo e só lista agentes com versão ativa', async ({ page }) => {
+  test('seletor só lista agentes por skills com versão ativa', async ({ page }) => {
     await installMock(page, createState())
     await page.goto('/chat')
     const picker = page.locator('select[name="template-picker"]')
-    await expect(picker.locator('optgroup')).toHaveCount(2)
-    await expect(picker.locator('optgroup[label="Estruturados"] option')).toHaveText(['Vendas', 'Padrão da casa'])
-    await expect(picker.locator('optgroup[label="Por skills"] option')).toHaveText(['Atendimento N1'])
+    await expect(picker.locator('optgroup')).toHaveCount(0)
+    await expect(picker.locator('option:not([value=""])')).toHaveText(['Atendimento N1'])
     await expect(picker.locator('option[value=""]')).toHaveText('Agente: Padrão')
+    await expect(picker.locator('option', { hasText: 'Vendas' })).toHaveCount(0)
     await expect(picker.locator('option', { hasText: 'Rascunho cobranca' })).toHaveCount(0)
   })
 
@@ -110,7 +110,7 @@ test.describe('chat', () => {
     await expect(page.getByTestId('chat-stop')).toHaveCount(0)
   })
 
-  test('409 mostra a mensagem em pt-BR e oferece nova conversa', async ({ page }) => {
+  test('409 mostra a mensagem em pt-BR, sem oferta de troca de tipo', async ({ page }) => {
     const state = createState()
     state.chatSend = (route) =>
       route.fulfill({
@@ -123,7 +123,7 @@ test.describe('chat', () => {
     await page.locator('textarea[name="chat-input"]').fill('Oi')
     await page.getByTestId('chat-send').click()
     await expect(page.getByText('Este chat usa outro tipo de agente. Abra uma nova conversa para usar este agente.')).toBeVisible()
-    await expect(page.getByTestId('chat-conflict-new')).toBeVisible()
+    await expect(page.getByTestId('chat-conflict-new')).toHaveCount(0)
   })
 
   test('409 sem corpo cai na mensagem padrão em pt-BR', async ({ page }) => {
@@ -133,6 +133,6 @@ test.describe('chat', () => {
     await page.goto('/chat')
     await page.locator('textarea[name="chat-input"]').fill('Oi')
     await page.getByTestId('chat-send').click()
-    await expect(page.getByText(/Abra uma nova conversa/)).toBeVisible()
+    await expect(page.getByRole('alert')).toBeVisible()
   })
 })

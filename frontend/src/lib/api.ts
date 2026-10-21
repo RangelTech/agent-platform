@@ -147,6 +147,7 @@ export interface Me {
   branding: Branding
   /** Empresa com agentes por skills habilitados (serializado pelo servidor). */
   skills_agents_enabled?: boolean
+  graph_agents_enabled?: boolean
 }
 
 export interface Tenant {

@@ -2,35 +2,24 @@ import { expect, test } from '@playwright/test'
 import { createState, installMock, sse } from './mockApi'
 
 test.describe('lista de agentes', () => {
-  test('mostra os dois tipos, filtra, busca e cria por skills', async ({ page }) => {
+  test('lista só agentes por skills (estruturado descontinuado), busca e cria', async ({ page }) => {
     const state = createState()
     await installMock(page, state)
     await page.goto('/templates')
 
     const rows = page.getByTestId('template-row')
-    await expect(rows).toHaveCount(4)
-    await expect(rows.filter({ hasText: 'Vendas' }).getByTestId('template-kind')).toHaveText(/Estruturado/)
-    await expect(rows.filter({ hasText: 'Atendimento N1' }).getByTestId('template-kind')).toHaveText(/Por skills/)
-
-    await page.getByTestId('kind-filter-skills').click()
     await expect(rows).toHaveCount(2)
-    await page.getByTestId('kind-filter-structured').click()
-    await expect(rows).toHaveCount(2)
-    await page.getByTestId('kind-filter-all').click()
+    await expect(rows.filter({ hasText: 'Vendas' })).toHaveCount(0)
+    await expect(page.getByTestId('kind-filter')).toHaveCount(0)
     await page.getByTestId('template-search').fill('cobranca')
     await expect(rows).toHaveCount(1)
     await page.getByTestId('template-search').fill('')
-
-    // Agente de sistema não pode ser arquivado.
-    await expect(rows.filter({ hasText: 'Padrão da casa' }).getByTestId('template-archive')).toBeDisabled()
 
     // Modal: nome obrigatório e criação do tipo por skills.
     await page.getByTestId('new-agent-btn').click()
     const modal = page.getByTestId('new-agent-modal')
     await expect(modal).toBeVisible()
-    await expect(modal.getByTestId('kind-option-structured')).toContainText('Agente estruturado')
-    await expect(modal.getByTestId('kind-option-skills')).toContainText('Agente por skills')
-    await modal.getByTestId('kind-option-skills').click()
+    await expect(modal.getByTestId('kind-option-structured')).toHaveCount(0)
     await modal.getByTestId('new-agent-submit').click()
     await expect(modal).toContainText('Informe um nome para o agente.')
     await modal.locator('input[name="tpl-name"]').fill('Suporte novo')

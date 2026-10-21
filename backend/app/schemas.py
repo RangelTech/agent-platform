@@ -28,6 +28,9 @@ class TenantUpdate(BaseModel):
     is_active: bool | None = None
     # Liga/desliga os agentes por skills da empresa (só o master altera).
     harness_enabled: bool | None = None
+    # Liga/desliga os agentes estruturados (graph) da empresa; o desligamento
+    # completo (com backup) é scripts/graph_desligar.py.
+    graph_enabled: bool | None = None
 
 
 class ProfileIn(BaseModel):

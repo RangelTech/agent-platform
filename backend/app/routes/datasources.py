@@ -1,5 +1,5 @@
 """Tenant datasources. The sensitive part (password / service-account JSON)
-is encrypted at rest and write-only; connectivity tests run on the kernel,
+is encrypted at rest and write-only; connectivity tests run on the harness executor,
 where the database drivers live."""
 
 import httpx
@@ -9,7 +9,6 @@ from psycopg.types.json import Json
 from pydantic import BaseModel, Field
 
 from app.auth import require
-from app.config import settings
 from app.credential_env import database_var
 from app.crypto import decrypt, encrypt
 from app.db import get_connection
@@ -145,6 +144,28 @@ def update_datasource(
     return _serialize(row)
 
 
+async def _probe(spec: dict) -> tuple[bool, str]:
+    """Teste de conexão feito pelo executor do harness (onde a fonte é de fato consultada)."""
+    from app.kernel_router import kernel_headers, target_for_kind
+
+    try:
+        target = target_for_kind("skills")
+        async with httpx.AsyncClient(timeout=45.0) as client:
+            response = await client.post(
+                f"{target.url.rstrip('/')}/v1/datasources/test",
+                json=spec,
+                headers=await kernel_headers(target),
+            )
+        body = response.json()
+        if response.status_code != 200:
+            return False, f"teste indisponível ({response.status_code})"
+        return bool(body.get("ok", False)), str(body.get("detail", ""))
+    except HTTPException:
+        return False, "executor de testes indisponível"
+    except (httpx.HTTPError, ValueError) as exc:
+        return False, f"executor de testes inacessível: {type(exc).__name__}"
+
+
 @router.post("/{datasource_id}/test")
 async def test_datasource(
     datasource_id: str, user: dict = Depends(require("datasources", "edit"))
@@ -157,24 +178,7 @@ async def test_datasource(
         "config": row["config"],
         "secret": decrypt(row["secret_encrypted"]) if row["secret_encrypted"] else None,
     }
-    headers = {}
-    if settings.kernel_audience:
-        from app.gcp_auth import id_token_for
-
-        headers["Authorization"] = f"Bearer {await id_token_for(settings.kernel_audience)}"
-    elif settings.kernel_internal_token:
-        headers["Authorization"] = f"Bearer {settings.kernel_internal_token}"
-
-    ok, detail = False, ""
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                f"{settings.kernel_url}/v1/test-datasource", json=spec, headers=headers
-            )
-            body = response.json()
-            ok, detail = body.get("ok", False), body.get("detail", "")
-    except httpx.HTTPError as exc:
-        detail = f"kernel inacessível: {exc}"
+    ok, detail = await _probe(spec)
 
     with get_connection() as conn:
         conn.execute(

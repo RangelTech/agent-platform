@@ -11,9 +11,9 @@ import { Button } from '../components/ui'
 import { api } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { listPendingApprovals, type ApprovalStatus } from '../lib/approvals'
-import { cancelRun, CONFLICT_MESSAGE, sendMessage, stepText, type ChatMessage, type ChatSummary, type StepEvent } from '../lib/chat'
+import { cancelRun, sendMessage, stepText, type ChatMessage, type ChatSummary, type StepEvent } from '../lib/chat'
 import { fadeUp } from '../lib/motion'
-import { KIND_GROUP, listTemplates, normalizeKind, type AgentKind } from '../lib/templates'
+import { listTemplates, normalizeKind } from '../lib/templates'
 
 function useChats() {
   return useQuery({
@@ -101,7 +101,6 @@ export default function Chat() {
   const [proposedSkills, setProposedSkills] = useState<{ id: string; name: string }[]>([])
   const [usageLine, setUsageLine] = useState('')
   const [stopped, setStopped] = useState(false)
-  const [conflict, setConflict] = useState(false)
   const runIdRef = useRef<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
@@ -176,7 +175,6 @@ export default function Chat() {
 
     setDraft('')
     setError('')
-    setConflict(false)
     setStopped(false)
     setSteps([])
     setUsageLine('')
@@ -251,16 +249,11 @@ export default function Chat() {
             api<ChatMessage[]>(`/chats/${target}/messages`).then(setMessages).catch(() => undefined)
           }
         },
-        onError: (detail, status) => {
+        onError: (detail) => {
           setStreaming('')
           setWorkingAgent('')
           setSteps([])
-          if (status === 409) {
-            setConflict(true)
-            setError(detail || CONFLICT_MESSAGE)
-          } else {
-            setError(detail)
-          }
+          setError(detail)
         },
       },
       templateId || null,
@@ -328,7 +321,6 @@ export default function Chat() {
     setArtifacts([])
     setStreaming('')
     setError('')
-    setConflict(false)
     setStopped(false)
     setSteps([])
     setApprovals([])
@@ -338,11 +330,10 @@ export default function Chat() {
     setApprovals((list) => list.map((x) => (x.approval_id === id ? { ...x, status } : x)))
   }, [])
 
-  // Seletor agrupado por tipo; agentes sem versão em produção ficam de fora.
-  const pickable = templates.filter((t) => t.active_version_id)
-  const groups = (['structured', 'skills'] as AgentKind[])
-    .map((kind) => ({ kind, items: pickable.filter((t) => normalizeKind(t.agent_kind) === kind) }))
-    .filter((g) => g.items.length > 0)
+  // Seletor: só agentes por skills com versão em produção (o tipo estruturado foi descontinuado).
+  const pickable = templates.filter(
+    (t) => t.active_version_id && normalizeKind(t.agent_kind) === 'skills',
+  )
 
   const activeTemplate = templates.find((t) => t.id === templateId)
   const assistantMessages = messages.filter((m) => m.role === 'assistant').length
@@ -698,11 +689,6 @@ export default function Chat() {
                 {error && (
                   <p role="alert" className="rounded-2xl border border-[var(--danger)]/20 bg-[var(--danger-soft)] px-4 py-3 text-sm text-[var(--danger)]">
                     {error}
-                    {conflict && (
-                      <Button type="button" variant="ghost" className="ml-3" data-testid="chat-conflict-new" onClick={newConversation}>
-                        Abrir nova conversa
-                      </Button>
-                    )}
                   </p>
                 )}
                 <div ref={bottomRef} />
@@ -787,12 +773,8 @@ export default function Chat() {
                           className="max-w-44 rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text)] outline-none transition focus:border-[var(--brand)] focus:bg-[var(--surface-elevated)]"
                         >
                           <option value="">Agente: Padrão</option>
-                          {groups.map((g) => (
-                            <optgroup key={g.kind} label={KIND_GROUP[g.kind]}>
-                              {g.items.map((t) => (
-                                <option key={t.id} value={t.id}>{t.name}</option>
-                              ))}
-                            </optgroup>
+                          {pickable.map((t) => (
+                            <option key={t.id} value={t.id}>{t.name}</option>
                           ))}
                         </select>
                       </label>

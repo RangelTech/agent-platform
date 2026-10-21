@@ -1,17 +1,15 @@
 """AI service (BYOK) management. The API key is write-only: stored encrypted,
-never echoed back. Connectivity tests go through the kernel so provider SDKs
-live in one place only."""
+never echoed back. O teste de conectividade chama o provedor direto (`app.model_probe`)."""
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from psycopg.errors import UniqueViolation
 from psycopg.types.json import Json
 from pydantic import BaseModel, Field
 
 from app.auth import require
-from app.config import settings
 from app.crypto import decrypt, encrypt
 from app.db import get_connection
+from app.model_probe import probe_model
 from app.tenancy import resolve_target_tenant
 
 router = APIRouter(prefix="/api/ai-services", tags=["ai_services"])
@@ -161,25 +159,7 @@ async def test_service(
         "api_key": decrypt(row["api_key_encrypted"]),
         "api_base": row["api_base"],
     }
-    headers = {}
-    if settings.kernel_audience:
-        from app.gcp_auth import id_token_for
-
-        headers["Authorization"] = f"Bearer {await id_token_for(settings.kernel_audience)}"
-    elif settings.kernel_internal_token:
-        headers["Authorization"] = f"Bearer {settings.kernel_internal_token}"
-
-    ok, detail = False, ""
-    try:
-        async with httpx.AsyncClient(timeout=45.0) as client:
-            response = await client.post(
-                f"{settings.kernel_url}/v1/test-model", json=spec, headers=headers
-            )
-            body = response.json()
-            ok = body.get("ok", False)
-            detail = body.get("detail", "")
-    except httpx.HTTPError as exc:
-        detail = f"kernel inacessível: {exc}"
+    ok, detail = await probe_model(spec)
 
     with get_connection() as conn:
         conn.execute(

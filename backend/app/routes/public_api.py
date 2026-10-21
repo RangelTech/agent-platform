@@ -207,6 +207,10 @@ def _build_kernel_payload(integration: dict, payload: PublicMessageIn) -> dict:
                         "role": "external",
                     },
                 )
+    from app.kernel_router import ensure_graph_enabled
+
+    with get_connection() as conn:
+        ensure_graph_enabled(conn, integration["tenant_id"])
     run = build_run_payload(integration["tenant_id"], template_id, thread_id)
     kernel_payload = {"thread_id": thread_id, "message": message, **run}
     if stored_attachments:

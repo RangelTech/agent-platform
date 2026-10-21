@@ -12,7 +12,6 @@ import {
   Input,
   Modal,
   PageHeader,
-  Segmented,
   Table,
   TableSkeleton,
   useToast,
@@ -21,46 +20,33 @@ import { useAuth } from '../../lib/auth'
 import {
   archiveTemplate,
   createTemplate,
-  KIND_LABEL,
-  KIND_SHORT,
   listTemplates,
   normalizeKind,
-  type AgentKind,
   type TemplateSummary,
 } from '../../lib/templates'
 
-type KindFilter = 'all' | AgentKind
-
-export function editorPath(t: Pick<TemplateSummary, 'id' | 'agent_kind'>): string {
-  return normalizeKind(t.agent_kind) === 'skills' ? `/templates/skills/${t.id}` : `/templates/estruturado/${t.id}`
-}
-
-const KIND_HELP: Record<AgentKind, string> = {
-  structured: 'Um supervisor e especialistas configurados em campos (modelo, ferramentas, documentos).',
-  skills: 'Instruções em texto Markdown organizadas em skills, com validação e versões.',
+export function editorPath(t: Pick<TemplateSummary, 'id'>): string {
+  return `/templates/skills/${t.id}`
 }
 
 function NewAgentModal({ open, onClose, skillsEnabled }: { open: boolean; onClose: () => void; skillsEnabled: boolean }) {
   const qc = useQueryClient()
   const navigate = useNavigate()
   const toast = useToast()
-  const [kind, setKind] = useState<AgentKind>('structured')
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [nameError, setNameError] = useState('')
   const [error, setError] = useState('')
 
-  const kinds: AgentKind[] = skillsEnabled ? ['structured', 'skills'] : ['structured']
-
   const create = useMutation({
-    mutationFn: () => createTemplate({ name: name.trim(), description: description.trim(), agent_kind: kind }),
+    mutationFn: () => createTemplate({ name: name.trim(), description: description.trim(), agent_kind: 'skills' }),
     onSuccess: (t) => {
       qc.invalidateQueries({ queryKey: ['templates'] })
       toast(`Agente “${t.name}” criado.`)
       setName('')
       setDescription('')
       onClose()
-      navigate(editorPath({ id: t.id, agent_kind: t.agent_kind ?? kind }))
+      navigate(editorPath({ id: t.id }))
     },
     onError: (e: Error) => setError(e.message),
   })
@@ -86,29 +72,12 @@ function NewAgentModal({ open, onClose, skillsEnabled }: { open: boolean; onClos
       onClose={onClose}
       testId="new-agent-modal"
       title="Novo agente"
-      description="Escolha o tipo de agente. O tipo não muda depois de criado."
+      description="Agente por skills: instruções em Markdown organizadas em skills, com validação e versões."
     >
       <form onSubmit={onSubmit} noValidate className="space-y-4">
-        <div role="radiogroup" aria-label="Tipo de agente" className="grid gap-3">
-          {kinds.map((k) => (
-            <button
-              key={k}
-              type="button"
-              role="radio"
-              aria-checked={kind === k}
-              data-testid={`kind-option-${k}`}
-              onClick={() => setKind(k)}
-              className={`rounded-2xl border px-4 py-3 text-left transition ${
-                kind === k
-                  ? 'border-[var(--brand)] bg-[var(--brand-soft)]'
-                  : 'border-[var(--border)] hover:border-[var(--brand)]'
-              }`}
-            >
-              <span className="block text-sm font-semibold text-[var(--text)]">{KIND_LABEL[k]}</span>
-              <span className="mt-1 block text-sm leading-5 text-[var(--text-muted)]">{KIND_HELP[k]}</span>
-            </button>
-          ))}
-        </div>
+        {!skillsEnabled && (
+          <ErrorText>Os agentes por skills ainda não estão habilitados para sua empresa.</ErrorText>
+        )}
         <Input
           label="Nome"
           name="tpl-name"
@@ -146,7 +115,6 @@ export default function TemplateList() {
     queryKey: ['templates'],
     queryFn: listTemplates,
   })
-  const [filter, setFilter] = useState<KindFilter>('all')
   const [search, setSearch] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [actionError, setActionError] = useState('')
@@ -169,11 +137,11 @@ export default function TemplateList() {
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase()
     return templates.filter((t) => {
-      if (filter !== 'all' && normalizeKind(t.agent_kind) !== filter) return false
+      if (normalizeKind(t.agent_kind) !== 'skills') return false
       if (!q) return true
       return t.name.toLowerCase().includes(q) || (t.description ?? '').toLowerCase().includes(q)
     })
-  }, [templates, filter, search])
+  }, [templates, search])
 
   const canCreate = can('templates', 'create')
   const canEdit = can('templates', 'edit')
@@ -183,7 +151,7 @@ export default function TemplateList() {
     <div className="space-y-6" data-testid="template-list">
       <PageHeader
         title="Agentes de IA"
-        description="Monte agentes estruturados (supervisor e especialistas) ou agentes por skills (instruções em Markdown), versionados para o chat."
+        description="Monte agentes por skills (instruções em Markdown), versionados para o chat."
         actions={
           canCreate && (
             <Button type="button" data-testid="new-agent-btn" onClick={() => setModalOpen(true)}>
@@ -194,20 +162,7 @@ export default function TemplateList() {
       />
 
       <Card>
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <Segmented
-            label="Filtrar por tipo"
-            testId="kind-filter"
-            value={filter}
-            onChange={(v) => setFilter(v as KindFilter)}
-            items={[
-              { id: 'all', label: 'Todos', testId: 'kind-filter-all' },
-              { id: 'structured', label: 'Estruturados', testId: 'kind-filter-structured' },
-              ...(skillsEnabled || templates.some((t) => normalizeKind(t.agent_kind) === 'skills')
-                ? [{ id: 'skills', label: 'Por skills', testId: 'kind-filter-skills' }]
-                : []),
-            ]}
-          />
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
           <div className="w-full sm:max-w-xs">
             <input
               type="search"
@@ -223,7 +178,7 @@ export default function TemplateList() {
         </div>
         <ErrorText>{actionError}</ErrorText>
         {isLoading ? (
-          <TableSkeleton columns={5} />
+          <TableSkeleton columns={4} />
         ) : loadError ? (
           <ErrorText>Não foi possível carregar os agentes. Recarregue a página ou tente novamente.</ErrorText>
         ) : visible.length === 0 ? (
@@ -246,7 +201,6 @@ export default function TemplateList() {
           <Table
             headers={[
               'Nome',
-              'Tipo',
               { label: 'Versão', className: 'hidden sm:table-cell' },
               { label: 'Atualizado', className: 'hidden sm:table-cell' },
               '',
@@ -264,9 +218,6 @@ export default function TemplateList() {
                   <td className="px-3 py-2">
                     <span className="block text-[var(--text)]">{t.name}</span>
                     {t.description && <span className="block text-xs text-[var(--text-muted)]">{t.description}</span>}
-                  </td>
-                  <td className="px-3 py-2 text-[var(--text-muted)]" data-testid="template-kind">
-                    {KIND_SHORT[kind]}
                   </td>
                   <td className="hidden px-3 py-2 sm:table-cell">
                     {t.active_version_number ? (

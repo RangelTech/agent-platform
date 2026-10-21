@@ -180,6 +180,7 @@ class FakeHarness:
     def reset(self):
         for value in self.calls.values():
             value.clear()
+        self.calls.pop("facts_to_return", None)
 
 
 def _fake_harness_app(calls: dict) -> FastAPI:
@@ -198,6 +199,18 @@ def _fake_harness_app(calls: dict) -> FastAPI:
 
         return StreamingResponse(stream(), media_type="text/event-stream")
 
+    @app.post("/v1/datasources/test")
+    async def ds_test(payload: dict):
+        calls["ds_tests"].append(payload)
+        if payload.get("config", {}).get("falha"):
+            return {"ok": False, "detail": "conexão recusada"}
+        return {"ok": True, "detail": ""}
+
+    @app.post("/v1/memories/extract")
+    async def mem_extract(payload: dict):
+        calls["mem_extract"].append(payload)
+        return {"facts": calls.get("facts_to_return") or []}
+
     @app.post("/v1/runs/{run_id}/cancel")
     async def cancel(run_id: str):
         calls["cancels"].append(run_id)
@@ -213,7 +226,7 @@ def _fake_harness_app(calls: dict) -> FastAPI:
 
 @pytest.fixture(scope="session")
 def _fake_harness_server():
-    calls = {"runs": [], "cancels": [], "approvals": []}
+    calls = {"runs": [], "cancels": [], "approvals": [], "ds_tests": [], "mem_extract": []}
     config = uvicorn.Config(_fake_harness_app(calls), host="127.0.0.1", port=0, log_level="error")
     server = uvicorn.Server(config)
     thread = threading.Thread(target=server.run, daemon=True)
