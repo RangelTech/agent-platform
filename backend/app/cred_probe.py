@@ -35,7 +35,7 @@ def public_host(host: str) -> str | None:
     return infos[0][4][0] if infos else None
 
 
-async def test_ssh(meta: dict) -> tuple[bool, str]:
+async def probe_ssh(meta: dict) -> tuple[bool, str]:
     host, port = str(meta.get("host") or ""), int(meta.get("port") or 22)
     ip = await asyncio.to_thread(public_host, host)
     if ip is None:
@@ -55,7 +55,7 @@ def _b64(data: bytes) -> bytes:
     return base64.urlsafe_b64encode(data).rstrip(b"=")
 
 
-async def test_gcp(value: str) -> tuple[bool, str]:
+async def probe_gcp(value: str) -> tuple[bool, str]:
     from cryptography.hazmat.primitives import hashes, serialization
     from cryptography.hazmat.primitives.asymmetric import padding
 
@@ -100,14 +100,14 @@ def _aws_sync(value: str) -> tuple[bool, str]:
     return True, f"Conta AWS {who['Account']} ({who['Arn'].split('/')[-1]})"
 
 
-async def test_aws(value: str) -> tuple[bool, str]:
+async def probe_aws(value: str) -> tuple[bool, str]:
     try:
         return await asyncio.wait_for(asyncio.to_thread(_aws_sync, value), TIMEOUT + 5)
     except Exception as exc:  # noqa: BLE001
         return False, f"A AWS recusou a credencial ({type(exc).__name__})"
 
 
-async def test_azure(value: str) -> tuple[bool, str]:
+async def probe_azure(value: str) -> tuple[bool, str]:
     d = json.loads(value)
     url = f"https://login.microsoftonline.com/{d['tenant_id']}/oauth2/v2.0/token"
     async with httpx.AsyncClient(timeout=TIMEOUT) as c:
@@ -128,13 +128,13 @@ async def test_azure(value: str) -> tuple[bool, str]:
 async def run_test(kind: str, value: str, meta: dict) -> tuple[bool, str]:
     try:
         if kind == "ssh":
-            return await test_ssh(meta)
+            return await probe_ssh(meta)
         if kind == "gcp":
-            return await test_gcp(value)
+            return await probe_gcp(value)
         if kind == "aws":
-            return await test_aws(value)
+            return await probe_aws(value)
         if kind == "azure":
-            return await test_azure(value)
+            return await probe_azure(value)
         return True, "Guardada. Este tipo não tem teste de conexão."
     except Exception as exc:  # noqa: BLE001
         return False, f"Falha no teste: {type(exc).__name__}"

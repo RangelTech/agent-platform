@@ -224,7 +224,7 @@ def archive_secret(secret_id: str, user: dict = Depends(require("secrets", "dele
 
 @router.post("/{secret_id}/test")
 async def test_secret(secret_id: str, user: dict = Depends(require("secrets", "edit"))):
-    from app.credential_test import run_test
+    from app.cred_probe import run_test
     from app.crypto import decrypt
 
     scope = "" if user["is_master"] else " AND tenant_id = %s"
