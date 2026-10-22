@@ -110,6 +110,14 @@ def service_actor(x_ui_context: str | None = Header(default=None)) -> dict:
         if tenant is None or not tenant["is_active"]:
             raise HTTPException(status_code=403, detail="Empresa indisponível")
         email = str(claims.get("email") or f"cw{cw_user}@invalid.local")
+        # Mesma pessoa (e-mail) removida e readicionada no Chatwoot volta com outro id: religa a
+        # projeção antiga em vez de colidir em users_tenant_email_key (500 no stream).
+        conn.execute(
+            """UPDATE users SET chatwoot_user_id = %s, updated_at = now()
+               WHERE tenant_id = %s AND lower(email) = lower(%s)
+                 AND chatwoot_user_id IS DISTINCT FROM %s""",
+            (cw_user, tenant_id, email, cw_user),
+        )
         row = conn.execute(
             """INSERT INTO users (tenant_id, chatwoot_user_id, email, name)
                VALUES (%s, %s, %s, %s)
