@@ -43,9 +43,12 @@ def legacy_scopes(user: dict) -> set[str]:
 
 
 def can_run(manifest: dict | None, scopes: set[str]) -> bool:
-    allowed = ((manifest or {}).get("limits") or {}).get("allowed_scopes") or []
+    limits = (manifest or {}).get("limits") or {}
+    allowed = limits.get("allowed_scopes") or []
     if not allowed:
         return True
+    if limits.get("strict_scope"):
+        return any(s in scopes for s in allowed)
     return "ai.agents.edit" in scopes or any(s in scopes for s in allowed)
 
 

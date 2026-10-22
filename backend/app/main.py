@@ -91,6 +91,9 @@ async def lifespan(app: FastAPI):
         try:
             bootstrap_master()
             ensure_all_tenants()
+            from app.moon import ensure_all_tenants as ensure_moon
+
+            ensure_moon()
         except Exception as exc:
             detail = _sanitize_error(exc)
             app.state.boot_status = {

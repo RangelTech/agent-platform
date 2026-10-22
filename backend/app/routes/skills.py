@@ -707,3 +707,32 @@ def set_agent_skills(template_id: str, payload: AgentSkillsIn, user: dict = Depe
                 (tpl["id"], sid, user["tenant_id"], pos),
             )
     return {"linked": ids}
+
+
+# --- Spec 11 §23: Sr Moon, resetar o que ele aprendeu ----------------------------------------
+
+
+@router.post("/me/moon/reset")
+def reset_moon_memory(everyone: bool = False, user: dict = Depends(current_user)):
+    if user.get("via") == "chatwoot" and "ai.moon.use" not in set(user.get("scopes", ())):
+        raise HTTPException(status_code=403, detail="Permissão negada")
+    with get_connection() as conn:
+        tpl = conn.execute(
+            "SELECT id FROM templates WHERE tenant_id = %s AND system_key = 'moon' AND NOT is_deleted",
+            (user["tenant_id"],),
+        ).fetchone()
+        if tpl is None:
+            return {"removed": 0}
+        if everyone:
+            if not can_manage_company(user):
+                raise HTTPException(status_code=403, detail="Permissão negada")
+            cur = conn.execute(
+                "DELETE FROM user_skills WHERE tenant_id = %s AND template_id = %s",
+                (user["tenant_id"], tpl["id"]),
+            )
+        else:
+            cur = conn.execute(
+                "DELETE FROM user_skills WHERE tenant_id = %s AND user_id = %s AND template_id = %s",
+                (user["tenant_id"], user["id"], tpl["id"]),
+            )
+    return {"removed": cur.rowcount}
