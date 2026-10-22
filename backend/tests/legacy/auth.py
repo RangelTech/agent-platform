@@ -1,8 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
-
 from app.auth import authenticate, current_user, resolve_session, revoke_session
 from app.schemas import LoginRequest, LoginResponse
 from app.services import chatwoot_sso
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 

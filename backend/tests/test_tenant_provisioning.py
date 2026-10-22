@@ -51,9 +51,9 @@ def test_tenant_is_created_with_pending_status_by_default(client, master_token):
 def test_background_task_marks_ready_on_success(client, master_token, monkeypatch):
     """Com a flag ligada, o gateway pronto muda pending -> ready."""
     monkeypatch.setattr(settings, "router_auto_provision_enabled", True)
-    monkeypatch.setattr("app.routes.tenants.resolver_segredo", lambda nome, padrao="": "fake")
+    monkeypatch.setattr("app.router_provisioning.resolver_segredo", lambda nome, padrao="": "fake")
     monkeypatch.setattr(
-        "app.routes.tenants.gateway_client.provision_tenant", _fake_provision_gateway
+        "app.router_provisioning.gateway_client.provision_tenant", _fake_provision_gateway
     )
 
     tenant = _create_tenant(client, master_token)
@@ -68,12 +68,12 @@ def test_background_task_marks_failed_on_error(client, master_token, monkeypatch
     """Uma falha no Gateway não altera a empresa além do
     status fields — the tenant keeps existing (spec point 4)."""
     monkeypatch.setattr(settings, "router_auto_provision_enabled", True)
-    monkeypatch.setattr("app.routes.tenants.resolver_segredo", lambda nome, padrao="": "fake")
+    monkeypatch.setattr("app.router_provisioning.resolver_segredo", lambda nome, padrao="": "fake")
 
     async def _boom(*args, **kwargs):
         raise RuntimeError("gateway indisponível: connection refused")
 
-    monkeypatch.setattr("app.routes.tenants.gateway_client.provision_tenant", _boom)
+    monkeypatch.setattr("app.router_provisioning.gateway_client.provision_tenant", _boom)
 
     tenant = _create_tenant(client, master_token)
     row = client.get("/api/tenants", headers=auth(master_token)).json()
@@ -86,7 +86,7 @@ def test_background_task_marks_failed_on_error(client, master_token, monkeypatch
 def test_background_task_marks_failed_on_timeout(client, master_token, monkeypatch):
     monkeypatch.setattr(settings, "router_auto_provision_enabled", True)
     monkeypatch.setattr(settings, "router_provision_timeout_seconds", 0)
-    monkeypatch.setattr("app.routes.tenants.resolver_segredo", lambda nome, padrao="": "fake")
+    monkeypatch.setattr("app.router_provisioning.resolver_segredo", lambda nome, padrao="": "fake")
 
     async def _slow(*args, **kwargs):
         import asyncio
@@ -94,7 +94,7 @@ def test_background_task_marks_failed_on_timeout(client, master_token, monkeypat
         await asyncio.sleep(1)
         return "bridge", "assist"
 
-    monkeypatch.setattr("app.routes.tenants.gateway_client.provision_tenant", _slow)
+    monkeypatch.setattr("app.router_provisioning.gateway_client.provision_tenant", _slow)
 
     tenant = _create_tenant(client, master_token)
     row = client.get("/api/tenants", headers=auth(master_token)).json()

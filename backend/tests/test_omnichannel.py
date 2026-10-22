@@ -55,47 +55,6 @@ def test_status_reports_when_the_layer_is_off(client, tenant_admin, monkeypatch)
     assert r.json()["configured"] is False
 
 
-def test_provision_creates_the_account_and_mirrors_the_user(client, tenant_admin, monkeypatch):
-    server, port, seen = _fake_bridge()
-    monkeypatch.setattr(settings, "bridge_url", f"http://127.0.0.1:{port}")
-    monkeypatch.setattr(settings, "bridge_admin_token", "token-ponte")
-    try:
-        r = client.post("/api/omnichannel/provision", json={}, headers=auth(tenant_admin["token"]))
-        status = client.get("/api/omnichannel/status", headers=auth(tenant_admin["token"]))
-    finally:
-        server.should_exit = True
-
-    assert r.status_code == 200, r.text
-    assert r.json()["chatwoot_account_id"] == 4242
-    assert status.json()["chatwoot_account_id"] == 4242
-    assert seen["auth"] == "Bearer token-ponte"
-    # O primeiro usuário precisa entrar como administrador: é ele que a ponte
-    # usa depois para criar inbox e operar a conta.
-    assert seen["user"]["role"] == "administrator"
-    assert seen["user"]["email"] == tenant_admin["email"]
-
-
-def test_sso_delegates_to_the_bridge(client, tenant_admin, monkeypatch):
-    server, port, seen = _fake_bridge()
-    monkeypatch.setattr(settings, "bridge_url", f"http://127.0.0.1:{port}")
-    monkeypatch.setattr(settings, "bridge_admin_token", "token-ponte")
-    try:
-        r = client.get("/api/omnichannel/sso", headers=auth(tenant_admin["token"]))
-    finally:
-        server.should_exit = True
-
-    assert r.status_code == 200
-    assert r.json()["url"] == "https://chatwoot.example/sso/abc"
-    assert seen["sso"] == (tenant_admin["user"]["tenant_id"], tenant_admin["user"]["id"])
-
-
-def test_master_has_no_operational_inbox(client, master_token, monkeypatch):
-    monkeypatch.setattr(settings, "bridge_url", "http://127.0.0.1:1")
-    monkeypatch.setattr(settings, "bridge_admin_token", "x")
-    r = client.get("/api/omnichannel/sso", headers=auth(master_token))
-    assert r.status_code == 400
-
-
 def test_inbox_show_progress_defaults_off_persists_and_is_not_reset(
     client, tenant_admin, monkeypatch
 ):

@@ -1,12 +1,4 @@
-# Stage 1: build the SPA
-FROM node:20-slim AS frontend
-WORKDIR /build
-COPY frontend/package.json frontend/package-lock.json* ./
-RUN npm ci || npm install
-COPY frontend/ .
-RUN npm run build
-
-# Stage 2: backend + static build
+# Motor de IA (API): sem frontend desde o U-6 (a UI e o Chatwoot).
 FROM python:3.12-slim
 
 WORKDIR /srv
@@ -15,11 +7,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend/app ./app
 COPY backend/migrations ./migrations
-COPY --from=frontend /build/dist ./static
 
 ARG GIT_COMMIT=unknown
 ARG SOURCE_URL=https://github.com/RangelTech/agent-platform
-ENV PORT=8090 STATIC_DIR=/srv/static GIT_COMMIT=${GIT_COMMIT}
+ENV PORT=8090 GIT_COMMIT=${GIT_COMMIT}
 LABEL org.opencontainers.image.source=${SOURCE_URL}       org.opencontainers.image.revision=${GIT_COMMIT}
 
 RUN useradd -r -u 10001 app

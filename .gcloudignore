@@ -6,8 +6,6 @@
 venv/
 backend/.venv/
 kernel/.venv/
-frontend/node_modules/
-frontend/dist/
 __pycache__/
 *.pyc
 .pytest_cache/
@@ -27,8 +25,6 @@ secrets/
 *.tmp
 *.log
 docs/
-frontend/test-results/
-frontend/playwright-report/
 
 # Editor/OS noise
 .idea/

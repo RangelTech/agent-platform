@@ -2,7 +2,7 @@
 
 O motor de IA do Luar. É um backend FastAPI, sem tela e sem login próprio, que guarda e executa o que faz um agente funcionar: templates e versões, skills, credenciais, datasources, memórias, uso e rotinas agendadas.
 
-> Nome anterior: `agent-platform`. A pasta `frontend/` (React) sai no corte U-6; as telas ficam no `luar_chatwoot`.
+> Nome anterior: `agent-platform`. A pasta `frontend/` (React) saiu no corte U-6 (22/10/2026); as telas ficam no `luar_chatwoot`.
 
 ## Onde ele se encaixa
 

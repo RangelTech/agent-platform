@@ -1,11 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException
-from psycopg.errors import UniqueViolation
-
 from app.auth import require
 from app.db import get_connection
 from app.schemas import UserIn, UserUpdate
 from app.security import hash_password
 from app.tenancy import resolve_target_tenant
+from fastapi import APIRouter, Depends, HTTPException
+from psycopg.errors import UniqueViolation
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
