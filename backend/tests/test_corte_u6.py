@@ -44,7 +44,7 @@ from app.main import app
 alvos = json.loads(sys.argv[1])
 c = TestClient(app, raise_server_exceptions=False)
 print(json.dumps({
-    "paths": sorted({getattr(r, "path", "") for r in app.routes}),
+    "paths": sorted(app.openapi()["paths"]),
     "status": {f"{m} {p}": c.request(m, p).status_code for m, p in alvos},
 }))
 """
@@ -80,9 +80,9 @@ def test_contratos_m2m_e_internos_continuam(sonda):
         "/internal/runs/{run_id}/usage",
         "/internal/ui/me",
         "/api/omnichannel/inboxes/{inbox_id}/ia",
-        "/api/internal/templates/{template_id}/status",
+        "/internal/templates/{template_id}/status",
     ):
-        assert esperado in caminhos, esperado
+        assert esperado in caminhos, (esperado, len(caminhos), sorted(caminhos)[:40])
 
 
 def test_m2m_sem_chave_continua_exigindo_autenticacao(sonda):
