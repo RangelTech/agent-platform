@@ -147,9 +147,12 @@ def _set_active(account_id: int, active: bool, by_chatwoot: bool):
 
 
 @router.post("/suspend")
-def suspend(payload: AccountRef, actor: dict = Depends(install_actor)):
+async def suspend(payload: AccountRef, actor: dict = Depends(install_actor)):
     _need(actor, "lifecycle")
     tenant = _set_active(payload.account_id, False, True)
+    from app.routes.chats import cancel_tenant_runs
+
+    await cancel_tenant_runs(tenant["id"])
     _rm(
         "POST",
         ":suspend",
