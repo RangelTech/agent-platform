@@ -13,7 +13,9 @@ from __future__ import annotations
 import hashlib
 import mimetypes
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+import base64
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -592,18 +594,27 @@ def list_company_skill_files(skill_id: str, user: dict = Depends(require("skills
     }
 
 
+class SkillFileIn(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    mime: str | None = None
+    content_b64: str = Field(min_length=1, max_length=15_000_000)
+
+
 @router.post("/skills/company/{skill_id}/files", status_code=201)
-async def upload_company_skill_file(
-    skill_id: str, file: UploadFile = File(...), user: dict = Depends(current_user)
+def upload_company_skill_file(
+    skill_id: str, payload: SkillFileIn, user: dict = Depends(current_user)
 ):
     _require_manage_company(user)
-    data = await file.read()
-    name = (file.filename or "").replace("\\", "/").split("/")[-1].strip()
+    try:
+        data = base64.b64decode(payload.content_b64, validate=True)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Arquivo inválido") from None
+    name = payload.name.replace("\\", "/").split("/")[-1].strip()
     problems = pkg.validate_asset(f"{pkg.ASSETS_DIR}/{name}", data)
     if name == "" or pkg.has_errors(problems):
         return _problems_response(problems or [pkg.Problem(name, "bad_path", "Nome inválido")])
     digest = hashlib.sha256(data).hexdigest()
-    mime = file.content_type or mimetypes.guess_type(name)[0] or "application/octet-stream"
+    mime = payload.mime or mimetypes.guess_type(name)[0] or "application/octet-stream"
     with get_connection() as conn:
         row = _company_row(conn, skill_id, user)
         used = conn.execute(
