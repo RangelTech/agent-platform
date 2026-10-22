@@ -249,6 +249,9 @@ def _ensure_chat(user: dict, payload: SendRequest, attachments: list[dict] | Non
             pinned = kind_of_chat_kernel(chat["kernel"])
             # Uma conversa não troca de tipo de agente no meio: o histórico de
             # um não é conversível no outro.
+            if pinned == "graph":
+                # Conversa antiga de agente `graph` (descontinuado, Fase L): só leitura.
+                ensure_graph_enabled(conn, user["tenant_id"])
             if pinned is not None and pinned != kind:
                 raise HTTPException(status_code=409, detail=SWITCH_CONFLICT)
             if kind == "skills":
