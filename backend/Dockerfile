@@ -9,7 +9,7 @@ COPY backend/app ./app
 COPY backend/migrations ./migrations
 
 ARG GIT_COMMIT=unknown
-ARG SOURCE_URL=https://github.com/RangelTech/agent-platform
+ARG SOURCE_URL=https://github.com/RangelTech/luar_engine
 ENV PORT=8090 GIT_COMMIT=${GIT_COMMIT}
 LABEL org.opencontainers.image.source=${SOURCE_URL}       org.opencontainers.image.revision=${GIT_COMMIT}
 
