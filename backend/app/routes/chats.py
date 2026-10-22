@@ -342,12 +342,14 @@ async def cancel_tenant_runs(tenant_id) -> int:
     """Suspensão da empresa corta as execuções em andamento (GATE S: stream seguia por minutos)."""
     with get_connection() as conn:
         runs = conn.execute(
-            "SELECT run_id, kernel FROM chat_runs WHERE tenant_id = %s AND status IN ('running', 'cancelling')",
+            "SELECT run_id, kernel FROM chat_runs "
+            "WHERE tenant_id = %s AND status IN ('running', 'cancelling')",
             (tenant_id,),
         ).fetchall()
         if runs:
             conn.execute(
-                "UPDATE chat_runs SET status = 'cancelling' WHERE tenant_id = %s AND status = 'running'",
+                "UPDATE chat_runs SET status = 'cancelling' "
+                "WHERE tenant_id = %s AND status = 'running'",
                 (tenant_id,),
             )
     for run in runs:
