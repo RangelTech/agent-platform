@@ -53,7 +53,7 @@ jobs:
           m = {
             "schema": 1,
             "service": "agent-platform-backend",
-            "repo": "RangelTech/agent-platform",
+            "repo": "RangelTech/luar_engine",
             "commit": os.environ["GITHUB_SHA"][:7],
             "version": v,
             "artifact": {
