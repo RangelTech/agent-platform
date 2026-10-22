@@ -174,7 +174,7 @@ def resume(payload: AccountRef, actor: dict = Depends(install_actor)):
 def deprovision(payload: AccountRef, actor: dict = Depends(install_actor)):
     """Desliga a empresa. **Nunca apaga dados** (decisão do dono): fica inativa e preservada."""
     _need(actor, "lifecycle")
-    tenant = await asyncio.to_thread(_set_active, payload.account_id, False, True)
+    tenant = _set_active(payload.account_id, False, True)
     _rm(
         "POST",
         ":suspend",
