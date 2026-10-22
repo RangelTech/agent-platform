@@ -26,6 +26,7 @@ from app.routes import hermes_audit as hermes_audit_routes
 from app.routes import hermes_commands as hermes_command_routes
 from app.routes import hermes_devices as hermes_device_routes
 from app.routes import hermes_sessions as hermes_session_routes
+from app.routes import hosts as host_routes
 from app.routes import installation_secrets as installation_secret_routes
 from app.routes import integrations as integration_routes
 from app.routes import internal as internal_routes
@@ -171,6 +172,7 @@ def health_db():
 # Motor sem UI (U-6): so API. Login/usuarios/perfis/tenants/branding/SPA/McpStore
 # foram removidos; a identidade vem do Chatwoot (contexto assinado) ou de chave M2M.
 app.include_router(chat_routes.router)
+app.include_router(host_routes.router)
 app.include_router(custom_tool_routes.router)
 app.include_router(ai_service_routes.router)
 app.include_router(template_routes.router)
