@@ -210,3 +210,29 @@ def test_suspend_cancels_running_runs_of_tenant(ui):
             "SELECT status FROM chat_runs WHERE run_id::text=%s", (rid,)
         ).fetchone()["status"]
     assert status == "cancelling"
+
+
+def test_member_revoked_blocks_old_context_and_allows_readded_user(ui):
+    tid = ui.post(
+        "/internal/ui/provision", json={"account_id": 77, "name": "Rev"}, headers=_ctx()
+    ).json()["engine_tenant_id"]
+    base = dict(
+        aud="ui", scopes=("ai.chat.run",), engine_tenant_id=tid, account_id=77, email="rev@y.com"
+    )
+    old = _ctx(chatwoot_user_id=90, iat=int(time.time()) - 20, **base)
+    assert ui.get("/internal/ui/me", headers=old).status_code == 200
+    resp = ui.post(
+        "/internal/ui/member-revoked",
+        json={"account_id": 77, "chatwoot_user_id": 90},
+        headers=_ctx(),
+    )
+    assert resp.status_code == 200 and resp.json()["revoked"] is True
+    blocked = ui.get(
+        "/internal/ui/me", headers=_ctx(chatwoot_user_id=90, iat=int(time.time()) - 20, **base)
+    )
+    assert blocked.status_code == 403
+    assert "removido" in blocked.json()["detail"]
+    # Pessoa readicionada depois da remocao: contexto novo volta a valer.
+    time.sleep(2)
+    fresh = ui.get("/internal/ui/me", headers=_ctx(chatwoot_user_id=90, **base))
+    assert fresh.status_code == 200
