@@ -201,7 +201,7 @@ def test_suspend_cancels_running_runs_of_tenant(ui):
     with get_connection() as conn:
         conn.execute(
             "INSERT INTO chat_runs (run_id, tenant_id, chat_id, kernel, status) "
-            "VALUES (%s, %s, %s, 'graph', 'running')",
+            "VALUES (%s, %s, %s, 'harness', 'running')",
             (rid, tid, "c-1"),
         )
     ui.post("/internal/ui/suspend", json={"account_id": 13}, headers=_ctx())
