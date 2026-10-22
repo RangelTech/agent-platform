@@ -155,3 +155,17 @@ def test_same_person_in_two_companies_gets_two_isolated_users(ui):
     ua = ui.get("/internal/ui/me", headers=_ctx(engine_tenant_id=a, account_id=21, **common)).json()
     ub = ui.get("/internal/ui/me", headers=_ctx(engine_tenant_id=b, account_id=22, **common)).json()
     assert ua["user_id"] != ub["user_id"] and ua["tenant_id"] != ub["tenant_id"]
+
+
+def test_usuario_readicionado_com_novo_id_reaproveita_a_projecao(ui):
+    """Gate FINAL: remover e readicionar a mesma pessoa (novo id) dava 500 por e-mail duplicado."""
+    tid = ui.post(
+        "/internal/ui/provision", json={"account_id": 31, "name": "R"}, headers=_ctx()
+    ).json()["engine_tenant_id"]
+    base = dict(
+        aud="ui", scopes=("ai.chat.run",), engine_tenant_id=tid, account_id=31, email="r@y.com"
+    )
+    first = ui.get("/internal/ui/me", headers=_ctx(chatwoot_user_id=70, **base))
+    second = ui.get("/internal/ui/me", headers=_ctx(chatwoot_user_id=71, **base))
+    assert first.status_code == 200 and second.status_code == 200
+    assert first.json()["user_id"] == second.json()["user_id"]
