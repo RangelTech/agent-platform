@@ -378,6 +378,8 @@ def test_chat_with_skills_template_goes_to_the_second_kernel(
         payload["tenant_id"] == enabled["id"] and payload["user_id"] == tenant_admin["user"]["id"]
     )
     assert payload["manifest"]["tools"] == ["rt_sql_read"]
+    assert payload["manifest"]["toolsets"] == []
+    assert payload["manifest"]["limits"]["turn_timeout_s"] == 1800  # tarefa longa >= 10 min
     assert (
         payload["manifest"]["limits"]["max_turns"] == 30 and payload["model"]["alias"] == "agente-x"
     )

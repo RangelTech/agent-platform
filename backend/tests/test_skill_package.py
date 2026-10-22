@@ -322,3 +322,19 @@ def test_output_format_validation():
     assert codes(pkg.validate_manifest({"output": {"format": "html"}}, TOOLS)) == {"bad_manifest"}
     assert codes(pkg.validate_manifest({"output": "markdown"}, TOOLS)) == {"bad_manifest"}
     assert not pkg.validate_manifest({"output": {}}, TOOLS)
+
+
+def test_manifest_toolsets_are_kept_when_optional_and_dropped_otherwise():
+    got = pkg.normalize_manifest({"toolsets": ["web", "terminal", "vision", "web", "xyz", 3]})
+    assert got["toolsets"] == ["web", "vision"]
+    assert "toolsets" not in pkg.normalize_manifest({"tools": []})
+    assert "toolsets" not in pkg.normalize_manifest({"toolsets": ["terminal"]})
+
+
+def test_manifest_toolsets_validation_flags_forbidden_and_unknown():
+    ok = {"toolsets": ["web", "image_gen"]}
+    assert not pkg.has_errors(pkg.validate_package(_files(), ok, TOOLS))
+    forbidden = pkg.validate_package(_files(), {"toolsets": ["terminal"]}, TOOLS)
+    assert "forbidden_toolset" in codes(forbidden) and pkg.has_errors(forbidden)
+    assert "unknown_toolset" in codes(pkg.validate_package(_files(), {"toolsets": ["xyz"]}, TOOLS))
+    assert "bad_manifest" in codes(pkg.validate_package(_files(), {"toolsets": "web"}, TOOLS))

@@ -295,6 +295,14 @@ def default_manifest() -> dict:
 
 # Formato em que o agente escreve a resposta (por canal): markdown (web), whatsapp, text.
 OUTPUT_FORMATS = ("markdown", "whatsapp", "text")
+
+# Toolsets nativos do worker que o manifesto pode ligar. Espelha o OPTIONAL/FORBIDDEN_TOOLSETS do
+# kernel-harness (profiles/profile_config.py): o kernel recusa a run com toolset fora desta lista.
+OPTIONAL_TOOLSETS = ("web", "vision", "image_gen")
+FORBIDDEN_TOOLSETS = frozenset({
+    "terminal", "file", "code_execution", "browser", "cronjob", "delegation", "tts", "kanban",
+    "computer_use", "connections", "clarify",
+})
 DEFAULT_OUTPUT_FORMAT = "markdown"
 
 
@@ -312,6 +320,13 @@ def normalize_manifest(raw: object) -> dict:
         return base
     tools = raw.get("tools")
     base["tools"] = [t for t in tools if isinstance(t, str)] if isinstance(tools, list) else []
+    toolsets = raw.get("toolsets")
+    if isinstance(toolsets, list):
+        # so os liberaveis (web, vision, image_gen); proibidos e desconhecidos sao descartados aqui
+        # (validate_manifest avisa quem salva). Sem toolsets nao ha chave: formato canonico igual.
+        kept = [t for t in dict.fromkeys(toolsets) if t in OPTIONAL_TOOLSETS]
+        if kept:
+            base["toolsets"] = kept
     env = raw.get("environment")
     base["environment"] = {"enabled": bool(env.get("enabled")) if isinstance(env, dict) else False}
     model = raw.get("model")
@@ -390,6 +405,20 @@ def validate_manifest(raw: object, tool_ids: set[str]) -> list[Problem]:
                 problems.append(
                     Problem("manifest", "unknown_tool", f"Ferramenta desconhecida: {tool}")
                 )
+    toolsets = raw.get("toolsets")
+    if toolsets is not None:
+        if not isinstance(toolsets, list) or not all(isinstance(t, str) for t in toolsets):
+            problems.append(Problem("manifest", "bad_manifest", "A lista de toolsets é inválida"))
+        else:
+            for name in dict.fromkeys(toolsets):
+                if name in FORBIDDEN_TOOLSETS:
+                    problems.append(
+                        Problem("manifest", "forbidden_toolset", f"Toolset não permitido: {name}")
+                    )
+                elif name not in OPTIONAL_TOOLSETS:
+                    problems.append(
+                        Problem("manifest", "unknown_toolset", f"Toolset desconhecido: {name}")
+                    )
     env = raw.get("environment")
     if env is not None and not (
         isinstance(env, dict) and isinstance(env.get("enabled", False), bool)
