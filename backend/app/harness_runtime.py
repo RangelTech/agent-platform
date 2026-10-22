@@ -337,10 +337,12 @@ def prepare_harness_run(
         if attachments:
             credentials["transcription"] = transcription or {}
         user_skills = active_user_skills(conn, tenant_id, user_id, template_id)
+        # Perfil e sessão são por agente: trocar de agente na conversa semeia o histórico de novo.
         first_run = (
             conn.execute(
-                "SELECT 1 FROM chat_runs WHERE chat_id = %s AND kernel = 'harness' LIMIT 1",
-                (chat_id,),
+                "SELECT 1 FROM chat_runs WHERE chat_id = %s AND kernel = 'harness' "
+                "AND template_id = %s LIMIT 1",
+                (chat_id, template_id),
             ).fetchone()
             is None
         )

@@ -1463,3 +1463,20 @@ def test_publish_blocked_when_assets_exceed_total(client, enabled, tenant_admin,
     )
     assert r.status_code == 422
     assert "package_too_large" in {p["code"] for p in r.json()["problems"]}
+
+
+def test_switching_agent_in_same_chat_seeds_history_again(
+    client, enabled, tenant_admin, fake_harness
+):
+    h = auth(tenant_admin["token"])
+    a = _setup_runtime(client, tenant_admin)
+    b = _setup_runtime(client, tenant_admin)
+    first = _sse(
+        client.post("/api/chat/send", json={"message": "um", "template_id": a["id"]}, headers=h)
+    )
+    chat_id = first[0][1]["chat_id"]
+    body = {"message": "dois", "chat_id": chat_id, "template_id": b["id"]}
+    client.post("/api/chat/send", json=body, headers=h)
+    runs = fake_harness.calls["runs"]
+    assert runs[1]["message"] == "dois"
+    assert [m["content"] for m in runs[1]["history"]][:1] == ["um"]
