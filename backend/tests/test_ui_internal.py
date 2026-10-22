@@ -176,8 +176,14 @@ def test_ui_context_flags_drive_tenant_harness_and_graph(ui):
         "/internal/ui/provision", json={"account_id": 12, "name": "Y"}, headers=_ctx()
     ).json()["engine_tenant_id"]
     ctx = dict(
-        aud="ui", scopes=("ai.chat.run",), engine_tenant_id=tid, chatwoot_user_id=7, account_id=12,
-        email="b@exemplo.com", name="B", flags={"harness_enabled": True, "graph_enabled": False},
+        aud="ui",
+        scopes=("ai.chat.run",),
+        engine_tenant_id=tid,
+        chatwoot_user_id=7,
+        account_id=12,
+        email="b@exemplo.com",
+        name="B",
+        flags={"harness_enabled": True, "graph_enabled": False},
     )
     assert ui.get("/internal/ui/me", headers=_ctx(**ctx)).status_code == 200
     with get_connection() as conn:
@@ -185,3 +191,22 @@ def test_ui_context_flags_drive_tenant_harness_and_graph(ui):
             "SELECT harness_enabled, graph_enabled FROM tenants WHERE id=%s", (tid,)
         ).fetchone()
     assert row["harness_enabled"] is True and row["graph_enabled"] is False
+
+
+def test_suspend_cancels_running_runs_of_tenant(ui):
+    tid = ui.post(
+        "/internal/ui/provision", json={"account_id": 13, "name": "W"}, headers=_ctx()
+    ).json()["engine_tenant_id"]
+    rid = str(uuid.uuid4())
+    with get_connection() as conn:
+        conn.execute(
+            "INSERT INTO chat_runs (run_id, tenant_id, chat_id, kernel, status) "
+            "VALUES (%s, %s, %s, 'graph', 'running')",
+            (rid, tid, "c-1"),
+        )
+    ui.post("/internal/ui/suspend", json={"account_id": 13}, headers=_ctx())
+    with get_connection() as conn:
+        status = conn.execute(
+            "SELECT status FROM chat_runs WHERE run_id::text=%s", (rid,)
+        ).fetchone()["status"]
+    assert status == "cancelling"

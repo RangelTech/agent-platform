@@ -338,6 +338,35 @@ async def cancel_run(run_id: str, user: dict = Depends(current_user)):
     return {"status": "cancelling"}
 
 
+async def cancel_tenant_runs(tenant_id) -> int:
+    """Suspensão da empresa corta as execuções em andamento (GATE S: stream seguia por minutos)."""
+    with get_connection() as conn:
+        runs = conn.execute(
+            "SELECT run_id, kernel FROM chat_runs WHERE tenant_id = %s AND status IN ('running', 'cancelling')",
+            (tenant_id,),
+        ).fetchall()
+        if runs:
+            conn.execute(
+                "UPDATE chat_runs SET status = 'cancelling' WHERE tenant_id = %s AND status = 'running'",
+                (tenant_id,),
+            )
+    for run in runs:
+        event = chat_runs.CANCEL_EVENTS.get(str(run["run_id"]))
+        if event is not None:
+            event.set()
+        if run["kernel"] == "harness":
+            try:
+                target = target_for_kind("skills")
+                async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client:
+                    await client.post(
+                        f"{target.url.rstrip('/')}/v1/runs/{run['run_id']}/cancel",
+                        headers=await kernel_headers(target),
+                    )
+            except (httpx.HTTPError, HTTPException):
+                logger.warning("cancel could not be forwarded for run %s", run["run_id"])
+    return len(runs)
+
+
 @router.post("/chat/send")
 async def send_message(request: Request, user: dict = Depends(current_user)):
     require_scope_for_chatwoot(user, "ai.chat.run")
