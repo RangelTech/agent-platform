@@ -51,13 +51,6 @@ def client(_schema):
     return TestClient(_app_com_semente())
 
 
-def rotas_de_producao() -> list:
-    """Rotas do app de producao, sem as rotas de semente dos testes."""
-    from app.main import app
-
-    return [r for r in app.routes if not getattr(r, "_semente_teste", False)]
-
-
 def _app_com_semente():
     """App de producao + rotas LEGADAS usadas so para semear dados nos testes.
 
@@ -69,11 +62,8 @@ def _app_com_semente():
     from legacy import auth, profiles, tenants, users
 
     if not getattr(app.state, "semente_montada", False):
-        antes = len(app.routes)
         for modulo in (auth, tenants, profiles, users):
             app.include_router(modulo.router)
-        for rota in app.routes[antes:]:
-            rota._semente_teste = True
         app.state.semente_montada = True
     return app
 

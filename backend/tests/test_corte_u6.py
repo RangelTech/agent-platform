@@ -1,9 +1,12 @@
 """U-6: o motor nao tem UI nem login. Contratos M2M e internos continuam."""
 
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
 import pytest
-from conftest import rotas_de_producao
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
 REMOVIDAS = [
     ("POST", "/api/auth/login"),
@@ -32,24 +35,44 @@ REMOVIDAS = [
 ]
 
 
-@pytest.fixture
-def app_producao():
-    app = FastAPI()
-    app.router.routes = rotas_de_producao()
-    return TestClient(app)
+BACKEND = Path(__file__).resolve().parent.parent
+
+_SONDA = """
+import json, sys
+from fastapi.testclient import TestClient
+from app.main import app
+alvos = json.loads(sys.argv[1])
+c = TestClient(app, raise_server_exceptions=False)
+print(json.dumps({
+    "paths": sorted({getattr(r, "path", "") for r in app.routes}),
+    "status": {f"{m} {p}": c.request(m, p).status_code for m, p in alvos},
+}))
+"""
+
+
+@pytest.fixture(scope="module")
+def sonda():
+    """Interpretador limpo: o app de producao puro, sem a semente dos testes."""
+    alvos = [list(a) for a in REMOVIDAS] + [["POST", "/v1/messages"]]
+    out = subprocess.run(
+        [sys.executable, "-c", _SONDA, json.dumps(alvos)],
+        cwd=BACKEND,
+        env={**os.environ, "PYTHONPATH": str(BACKEND)},
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=True,
+    )
+    return json.loads(out.stdout.strip().splitlines()[-1])
 
 
 @pytest.mark.parametrize(("metodo", "caminho"), REMOVIDAS)
-def test_rota_removida_devolve_404(app_producao, metodo, caminho):
-    r = app_producao.request(metodo, caminho)
-    assert r.status_code in (404, 405), (metodo, caminho, r.status_code)
-    if r.status_code == 405:
-        # existe o caminho para outro metodo: so e aceitavel se nao for do legado
-        pytest.fail(f"{metodo} {caminho} ainda registrado (405)")
+def test_rota_removida_devolve_404(sonda, metodo, caminho):
+    assert sonda["status"][f"{metodo} {caminho}"] == 404, (metodo, caminho)
 
 
-def test_contratos_m2m_e_internos_continuam():
-    caminhos = {getattr(r, "path", "") for r in rotas_de_producao()}
+def test_contratos_m2m_e_internos_continuam(sonda):
+    caminhos = set(sonda["paths"])
     for esperado in (
         "/v1/messages",
         "/health",
@@ -59,10 +82,8 @@ def test_contratos_m2m_e_internos_continuam():
         "/api/omnichannel/inboxes/{inbox_id}/ia",
         "/api/internal/templates/{template_id}/status",
     ):
-        vistos = sorted(c for c in caminhos if c.startswith(('/v1', '/internal')))
-        assert esperado in caminhos, (esperado, vistos, len(caminhos))
+        assert esperado in caminhos, esperado
 
 
-def test_m2m_sem_chave_continua_exigindo_autenticacao(app_producao):
-    r = app_producao.post("/v1/messages", json={})
-    assert r.status_code in (401, 403, 422)
+def test_m2m_sem_chave_continua_exigindo_autenticacao(sonda):
+    assert sonda["status"]["POST /v1/messages"] in (401, 403, 422)
