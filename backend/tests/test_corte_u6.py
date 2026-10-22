@@ -59,7 +59,8 @@ def test_contratos_m2m_e_internos_continuam():
         "/api/omnichannel/inboxes/{inbox_id}/ia",
         "/api/internal/templates/{template_id}/status",
     ):
-        assert esperado in caminhos, (esperado, sorted(c for c in caminhos if c.startswith('/v1') or c.startswith('/internal')), len(caminhos))
+        vistos = sorted(c for c in caminhos if c.startswith(('/v1', '/internal')))
+        assert esperado in caminhos, (esperado, vistos, len(caminhos))
 
 
 def test_m2m_sem_chave_continua_exigindo_autenticacao(app_producao):
