@@ -18,7 +18,7 @@ from app import runtime_client as rt
 from app.db import get_connection
 from app.installation_secrets import resolver as resolver_segredo
 from app.permissions import ADMIN_PERMISSIONS, MEMBER_PERMISSIONS
-from app.routes.tenants import _provisionar_router_em_background
+from app.router_provisioning import _provisionar_router_em_background
 from app.ui_context import install_actor, service_actor
 
 logger = logging.getLogger(__name__)

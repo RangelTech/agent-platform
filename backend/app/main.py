@@ -1,10 +1,9 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import JSONResponse
 
 from app.bootstrap import bootstrap_master
 from app.config import settings
@@ -15,7 +14,6 @@ from app.routes import ai_router as ai_router_routes
 from app.routes import ai_services as ai_service_routes
 from app.routes import approvals as approval_routes
 from app.routes import artifacts as artifact_routes
-from app.routes import auth as auth_routes
 from app.routes import chats as chat_routes
 from app.routes import custom_tools as custom_tool_routes
 from app.routes import datasources as datasource_routes
@@ -32,13 +30,11 @@ from app.routes import installation_secrets as installation_secret_routes
 from app.routes import integrations as integration_routes
 from app.routes import internal as internal_routes
 from app.routes import internal_kernel as internal_kernel_routes
-from app.routes import mcp_store as mcp_store_routes
 from app.routes import memories as memory_routes
 from app.routes import microsoft_accounts as microsoft_account_routes
 from app.routes import oauth_connect as oauth_connect_routes
 from app.routes import omnichannel as omnichannel_routes
 from app.routes import payments as payment_routes
-from app.routes import profiles as profile_routes
 from app.routes import public_api as public_routes
 from app.routes import runs as run_routes
 from app.routes import schedules as schedule_routes
@@ -46,13 +42,11 @@ from app.routes import secrets as secret_routes
 from app.routes import skills as skill_routes
 from app.routes import templates as template_routes
 from app.routes import tenant_guide as tenant_guide_routes
-from app.routes import tenants as tenant_routes
 from app.routes import toolkits as toolkit_routes
 from app.routes import tools as tool_routes
 from app.routes import ui_internal as ui_internal_routes
 from app.routes import unofficial_connections as unofficial_connection_routes
 from app.routes import usage as usage_routes
-from app.routes import users as user_routes
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -62,15 +56,6 @@ BOOT_PENDING = {
     "migrations_ok": False,
     "detail": "startup has not run",
 }
-
-
-def _resolve_static_dir() -> Path | None:
-    if settings.static_dir:
-        p = Path(settings.static_dir)
-        return p if p.is_dir() else None
-    # Dev fallback: sibling frontend build.
-    p = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
-    return p if p.is_dir() else None
 
 
 def _boot_status(application: FastAPI) -> dict:
@@ -180,12 +165,8 @@ def health_db():
         )
 
 
-# API routers are registered here, before the SPA fallback below. Route order
-# matters: the catch-all must stay last or it would shadow every /api route.
-app.include_router(auth_routes.router)
-app.include_router(tenant_routes.router)
-app.include_router(profile_routes.router)
-app.include_router(user_routes.router)
+# Motor sem UI (U-6): so API. Login/usuarios/perfis/tenants/branding/SPA/McpStore
+# foram removidos; a identidade vem do Chatwoot (contexto assinado) ou de chave M2M.
 app.include_router(chat_routes.router)
 app.include_router(custom_tool_routes.router)
 app.include_router(ai_service_routes.router)
@@ -207,7 +188,6 @@ app.include_router(google_account_routes.router)
 app.include_router(microsoft_account_routes.router)
 app.include_router(oauth_connect_routes.router)
 app.include_router(unofficial_connection_routes.router)
-app.include_router(mcp_store_routes.router)
 app.include_router(omnichannel_routes.router)
 app.include_router(ai_router_routes.router)
 app.include_router(installation_secret_routes.router)
@@ -228,38 +208,3 @@ app.include_router(internal_routes.router)
 app.include_router(internal_kernel_routes.router)
 app.include_router(internal_routes.router, prefix="/api", include_in_schema=False)
 app.include_router(internal_kernel_routes.router, prefix="/api", include_in_schema=False)
-
-
-def _mount_spa(application: FastAPI) -> None:
-    """Register the SPA fallback. Must be called after every API router."""
-    static_dir = _resolve_static_dir()
-
-    if static_dir is None:
-
-        @application.get("/")
-        def placeholder():
-            return JSONResponse(
-                {
-                    "service": "backend",
-                    "hint": "frontend build not found - run npm run build",
-                }
-            )
-
-        return
-
-    root = static_dir.resolve()
-    index = root / "index.html"
-
-    @application.get("/{full_path:path}")
-    def spa(full_path: str):
-        """Serve a real build file when it exists, else index.html so the SPA
-        can route client-side. Paths are confined to the build directory."""
-        if full_path:
-            candidate = (root / full_path).resolve()
-            # Confinement check: blocks traversal such as ../../etc/passwd
-            if candidate.is_file() and candidate.is_relative_to(root):
-                return FileResponse(candidate)
-        return FileResponse(index)
-
-
-_mount_spa(app)

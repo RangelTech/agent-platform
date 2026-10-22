@@ -46,10 +46,26 @@ def client(_schema):
         conn.commit()
 
     from app.bootstrap import bootstrap_master
-    from app.main import app
 
     bootstrap_master()
-    return TestClient(app)
+    return TestClient(_app_com_semente())
+
+
+def _app_com_semente():
+    """App de producao + rotas LEGADAS usadas so para semear dados nos testes.
+
+    No U-6 login/usuarios/perfis/tenants sairam do motor (404 em producao).
+    Os testes ainda precisam criar tenant/usuario/sessao; esses routers vivem em
+    `tests/legacy` e so sao montados aqui. A producao nao os importa.
+    """
+    from app.main import app
+    from legacy import auth, profiles, tenants, users
+
+    if not getattr(app.state, "semente_montada", False):
+        for modulo in (auth, tenants, profiles, users):
+            app.include_router(modulo.router)
+        app.state.semente_montada = True
+    return app
 
 
 @pytest.fixture

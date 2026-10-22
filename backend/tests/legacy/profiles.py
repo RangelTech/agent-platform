@@ -1,11 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException
-from psycopg.types.json import Json
-
 from app.auth import require
 from app.db import get_connection
 from app.permissions import validate_permissions
 from app.schemas import ProfileIn, ProfileUpdate
 from app.tenancy import resolve_target_tenant
+from fastapi import APIRouter, Depends, HTTPException
+from psycopg.types.json import Json
 
 router = APIRouter(prefix="/api/user-profiles", tags=["user_profiles"])
 

@@ -14,7 +14,6 @@ class Settings(BaseSettings):
     db_connect_timeout: int = 5
     # Directory with the built SPA. Resolved relative to the repo in dev,
     # baked into the image in production.
-    static_dir: str = ""
 
     # Sessions
     # A sessão é deslizante: cada atividade humana válida renova esta janela.

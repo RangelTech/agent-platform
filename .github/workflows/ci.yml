@@ -1,6 +1,6 @@
 name: CI
 
-# Gate de qualidade (lint + testes + build do SPA). Nao faz deploy: a entrega
+# Gate de qualidade (lint + testes). Nao faz deploy: a entrega
 # e pelo workflow Release (tag v*) e quem implanta e o vps_rt_infra.
 
 on:
@@ -38,16 +38,3 @@ jobs:
         env:
           DATABASE_URL: postgresql://agent:agent@localhost:5433/agent_llm
         run: python -m pytest -q -m "integration or not integration"
-
-  frontend:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-      - name: Install & build
-        working-directory: frontend
-        run: |
-          npm ci
-          npm run build
