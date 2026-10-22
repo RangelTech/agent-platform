@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 import uuid
 
 from app.db import get_connection
@@ -85,3 +86,62 @@ def save_assistant_message(run_id: str, chat_id: str, text: str, attachments=Non
         ).fetchone()
         conn.execute("UPDATE chats SET updated_at = now() WHERE id::text = %s", (chat_id,))
     return str(row["id"])
+
+
+# --- corte por revogação (usuário removido / empresa suspensa) -------------------------------
+REVOKED_MESSAGE = "Seu acesso foi removido"
+SUSPENDED_MESSAGE = "O acesso desta empresa foi suspenso"
+WATCH_INTERVAL = 5.0  # s; com o repasse do motor o corte fica bem abaixo de 30 s
+
+
+class AccessRevoked(Exception):
+    """O usuário perdeu o acesso (ou a empresa foi suspensa) com o stream aberto."""
+
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.message = message
+
+
+def access_reason(tenant_id, user_id) -> str | None:
+    """Mensagem pt-BR se o usuário não pode mais receber o stream; None se segue valendo."""
+    with get_connection() as conn:
+        row = conn.execute(
+            """SELECT t.is_active AS tenant_active, u.is_active AS user_active
+                 FROM tenants t LEFT JOIN users u ON u.id = %s AND u.tenant_id = t.id
+                WHERE t.id = %s""",
+            (user_id, tenant_id),
+        ).fetchone()
+    if row is None or not row["tenant_active"]:
+        return SUSPENDED_MESSAGE
+    if row["user_active"] is False:
+        return REVOKED_MESSAGE
+    return None
+
+
+async def watch(source, tenant_id, user_id, interval: float = WATCH_INTERVAL):
+    """Repassa `source` conferindo o acesso a cada `interval` s, mesmo sem chegar nada.
+
+    Levanta AccessRevoked no corte. O item pendente de `source` não é cancelado a cada
+    espera (cancelar um stream httpx no meio o corromperia).
+    """
+    iterator = source.__aiter__()
+    pending = asyncio.ensure_future(iterator.__anext__())
+    last = time.monotonic()
+    try:
+        while True:
+            done, _ = await asyncio.wait({pending}, timeout=interval)
+            if time.monotonic() - last >= interval:
+                last = time.monotonic()
+                reason = await asyncio.to_thread(access_reason, tenant_id, user_id)
+                if reason:
+                    raise AccessRevoked(reason)
+            if not done:
+                continue
+            try:
+                item = pending.result()
+            except StopAsyncIteration:
+                return
+            yield item
+            pending = asyncio.ensure_future(iterator.__anext__())
+    finally:
+        pending.cancel()

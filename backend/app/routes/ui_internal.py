@@ -35,6 +35,13 @@ class AccountRef(BaseModel):
     account_id: int = Field(ge=1)
 
 
+class MemberRevokedIn(BaseModel):
+    account_id: int = Field(ge=1)
+    chatwoot_user_id: int = Field(ge=1)
+    # Hora da remoção no Rails (epoch s). Contexto emitido antes dela é recusado; depois, reativa.
+    revoked_at: float | None = None
+
+
 def _need(actor: dict, scope: str) -> None:
     if scope not in actor["scopes"]:
         raise HTTPException(status_code=403, detail="Permissão negada")
@@ -162,6 +169,50 @@ async def suspend(payload: AccountRef, actor: dict = Depends(install_actor)):
     return {"status": "ok", "engine_tenant_id": str(tenant["id"])}
 
 
+@router.post("/member-revoked")
+async def member_revoked(payload: MemberRevokedIn, actor: dict = Depends(install_actor)):
+    """Usuário removido da empresa: projeção inativa, runs canceladas, novas chamadas = 403.
+
+    O stream aberto encerra com "Seu acesso foi removido" pelo vigia do repasse (poucos
+    segundos). Idempotente: repetir o evento não muda nada além de reafirmar o estado.
+    """
+    _need(actor, "lifecycle")
+    with get_connection() as conn:
+        tenant = _tenant_by_account(conn, payload.account_id)
+        if tenant is None:
+            return {"status": "ok", "revoked": False}
+        # Sem projeção ainda (nunca usou IA) cria o marcador: um contexto emitido antes da
+        # remoção e usado depois não pode criar a pessoa de volta.
+        user = conn.execute(
+            """INSERT INTO users (tenant_id, chatwoot_user_id, email, name, is_active, revoked_at)
+               VALUES (%s, %s, %s, %s, false, to_timestamp(COALESCE(%s, extract(epoch FROM now()))))
+               ON CONFLICT (tenant_id, chatwoot_user_id) WHERE chatwoot_user_id IS NOT NULL
+               DO UPDATE SET is_active = false, updated_at = now(),
+                             revoked_at = EXCLUDED.revoked_at
+               RETURNING id""",
+            (
+                tenant["id"],
+                payload.chatwoot_user_id,
+                f"cw{payload.chatwoot_user_id}@invalid.local",
+                "Usuário removido",
+                payload.revoked_at,
+            ),
+        ).fetchone()
+        conn.execute(
+            "UPDATE sessions SET revoked_at = now() WHERE user_id = %s AND revoked_at IS NULL",
+            (user["id"],),
+        )
+    from app.routes.chats import cancel_tenant_runs
+
+    cancelled = await cancel_tenant_runs(tenant["id"], user["id"])
+    return {
+        "status": "ok",
+        "revoked": True,
+        "user_id": str(user["id"]),
+        "runs_cancelled": cancelled,
+    }
+
+
 @router.post("/resume")
 def resume(payload: AccountRef, actor: dict = Depends(install_actor)):
     _need(actor, "lifecycle")
@@ -171,10 +222,13 @@ def resume(payload: AccountRef, actor: dict = Depends(install_actor)):
 
 
 @router.post("/deprovision")
-def deprovision(payload: AccountRef, actor: dict = Depends(install_actor)):
+async def deprovision(payload: AccountRef, actor: dict = Depends(install_actor)):
     """Desliga a empresa. **Nunca apaga dados** (decisão do dono): fica inativa e preservada."""
     _need(actor, "lifecycle")
     tenant = _set_active(payload.account_id, False, True)
+    from app.routes.chats import cancel_tenant_runs
+
+    await cancel_tenant_runs(tenant["id"])
     _rm(
         "POST",
         ":suspend",

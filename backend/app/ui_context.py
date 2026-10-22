@@ -19,6 +19,7 @@ from fastapi import Depends, Header, HTTPException
 from app.config import settings
 from app.db import get_connection
 
+REVOKED_MESSAGE = "Seu acesso foi removido"
 MAX_TTL_SECONDS = 60
 CLOCK_SKEW_SECONDS = 5
 
@@ -134,6 +135,23 @@ def service_actor(x_ui_context: str | None = Header(default=None)) -> dict:
                  AND chatwoot_user_id IS DISTINCT FROM %s""",
             (cw_user, tenant_id, email, cw_user),
         )
+        revoked = conn.execute(
+            """SELECT id, is_active, revoked_at,
+                      extract(epoch FROM revoked_at) AS revoked_ts
+                 FROM users WHERE tenant_id = %s AND chatwoot_user_id = %s""",
+            (tenant_id, cw_user),
+        ).fetchone()
+        if revoked is not None and not revoked["is_active"]:
+            # Removido no Chatwoot: só um contexto emitido depois da remoção (pessoa readicionada)
+            # reativa. Contexto anterior, ou desativação sem remoção, segue recusado.
+            issued = float(claims.get("iat") or 0)
+            if revoked["revoked_at"] is None or issued + 1 <= float(revoked["revoked_ts"]):
+                raise HTTPException(status_code=403, detail=REVOKED_MESSAGE)
+            conn.execute(
+                "UPDATE users SET is_active = true, revoked_at = NULL, updated_at = now() "
+                "WHERE id = %s",
+                (revoked["id"],),
+            )
         row = conn.execute(
             """INSERT INTO users (tenant_id, chatwoot_user_id, email, name)
                VALUES (%s, %s, %s, %s)
@@ -143,7 +161,7 @@ def service_actor(x_ui_context: str | None = Header(default=None)) -> dict:
             (tenant_id, cw_user, email, str(claims.get("name") or email)),
         ).fetchone()
     if not row["is_active"]:
-        raise HTTPException(status_code=403, detail="Usuário inativo")
+        raise HTTPException(status_code=403, detail=REVOKED_MESSAGE)
     return {
         "kind": "ui",
         "tenant_id": str(tenant_id),

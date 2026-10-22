@@ -9,6 +9,7 @@ configured).
 import asyncio
 import json
 import logging
+import time
 import uuid
 
 import httpx
@@ -338,19 +339,23 @@ async def cancel_run(run_id: str, user: dict = Depends(current_user)):
     return {"status": "cancelling"}
 
 
-async def cancel_tenant_runs(tenant_id) -> int:
-    """Suspensão da empresa corta as execuções em andamento (GATE S: stream seguia por minutos)."""
+async def cancel_tenant_runs(tenant_id, user_id=None) -> int:
+    """Corta as execuções em andamento da empresa (suspensão) ou só as de um usuário (removido).
+
+    GATE S/O: o stream seguia por minutos depois da suspensão / remoção.
+    """
+    scope = "tenant_id = %s" + (" AND user_id = %s" if user_id else "")
+    args = (tenant_id, user_id) if user_id else (tenant_id,)
     with get_connection() as conn:
         runs = conn.execute(
-            "SELECT run_id, kernel FROM chat_runs "
-            "WHERE tenant_id = %s AND status IN ('running', 'cancelling')",
-            (tenant_id,),
+            f"SELECT run_id, kernel FROM chat_runs WHERE {scope} "
+            "AND status IN ('running', 'cancelling')",
+            args,
         ).fetchall()
         if runs:
             conn.execute(
-                "UPDATE chat_runs SET status = 'cancelling' "
-                "WHERE tenant_id = %s AND status = 'running'",
-                (tenant_id,),
+                f"UPDATE chat_runs SET status = 'cancelling' WHERE {scope} AND status = 'running'",
+                args,
             )
     for run in runs:
         event = chat_runs.CANCEL_EVENTS.get(str(run["run_id"]))
@@ -455,7 +460,9 @@ async def send_message(request: Request, user: dict = Depends(current_user)):
                         yield (f"event: error\ndata: {json.dumps({'detail': detail})}\n\n")
                         return
                     current_event = ""
-                    async for line in response.aiter_lines():
+                    async for line in chat_runs.watch(
+                        response.aiter_lines(), user["tenant_id"], user["id"]
+                    ):
                         # Pass the kernel's SSE through untouched; capture the
                         # `done` payload (the full reply) for persistence.
                         if line.startswith("event: "):
@@ -469,6 +476,10 @@ async def send_message(request: Request, user: dict = Depends(current_user)):
                         if cancelled.is_set():
                             outcome = "cancelled"
                             break
+        except chat_runs.AccessRevoked as exc:
+            outcome = "cancelled"
+            yield _sse("error", {"detail": exc.message})
+            return
         except httpx.HTTPError as exc:
             logger.exception("kernel unreachable")
             outcome = "error"
@@ -477,6 +488,11 @@ async def send_message(request: Request, user: dict = Depends(current_user)):
         finally:
             chat_runs.finish_run(run_id, outcome)
         if outcome == "cancelled":
+            reason = await asyncio.to_thread(
+                chat_runs.access_reason, user["tenant_id"], user["id"]
+            )
+            if reason:  # cancelamento por revogação/suspensão: o front mostra o motivo
+                yield _sse("error", {"detail": reason})
             return
         if assistant_text:
             with get_connection() as conn:
@@ -596,11 +612,24 @@ async def _send_to_skills_agent(
                 "output_format": (payload.get("manifest") or {}).get("output_format"),
             },
         )
+        last_check = time.monotonic()
         while True:
-            item = await queue.get()
+            try:
+                item = await asyncio.wait_for(queue.get(), timeout=chat_runs.WATCH_INTERVAL)
+            except TimeoutError:
+                item = ""
+            if time.monotonic() - last_check >= chat_runs.WATCH_INTERVAL:
+                last_check = time.monotonic()
+                reason = await asyncio.to_thread(
+                    chat_runs.access_reason, user["tenant_id"], user["id"]
+                )
+                if reason:
+                    yield _sse("error", {"detail": reason})
+                    return
             if item is None:
                 return
-            yield item
+            if item:
+                yield item
 
     return StreamingResponse(
         relay(),
