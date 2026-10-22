@@ -10,7 +10,10 @@ Nenhuma rota daqui lista ou devolve as skills de sistema.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+import hashlib
+import mimetypes
+
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -553,3 +556,143 @@ def disable_my_skill(skill_id: str, user: dict = Depends(current_user)):
 def enable_my_skill(skill_id: str, user: dict = Depends(current_user)):
     require_scope_for_chatwoot(user, "ai.skills.manage_own")
     return _transition(skill_id, user, "enable", "active", ("disabled",))
+
+
+# --- Spec 11 §4: arquivos da skill da empresa e vínculo agente <-> skills ---------------------
+
+MAX_TENANT_SKILL_BYTES = 500 * 1024 * 1024
+
+
+@router.get("/skills/company/{skill_id}/files")
+def list_company_skill_files(skill_id: str, user: dict = Depends(require("skills", "view"))):
+    with get_connection() as conn:
+        row = _company_row(conn, skill_id, user)
+        files = conn.execute(
+            """SELECT id, name, mime, size_bytes, created_at FROM skill_files
+                WHERE skill_id = %s ORDER BY name""",
+            (row["id"],),
+        ).fetchall()
+        used = conn.execute(
+            "SELECT COALESCE(SUM(size_bytes), 0) AS n FROM skill_files WHERE tenant_id = %s",
+            (user["tenant_id"],),
+        ).fetchone()["n"]
+    return {
+        "files": [
+            {
+                "id": str(f["id"]),
+                "name": f["name"],
+                "mime": f["mime"],
+                "size_bytes": f["size_bytes"],
+                "created_at": f["created_at"].isoformat(),
+            }
+            for f in files
+        ],
+        "used_bytes": int(used),
+        "limit_bytes": MAX_TENANT_SKILL_BYTES,
+    }
+
+
+@router.post("/skills/company/{skill_id}/files", status_code=201)
+async def upload_company_skill_file(
+    skill_id: str, file: UploadFile = File(...), user: dict = Depends(current_user)
+):
+    _require_manage_company(user)
+    data = await file.read()
+    name = (file.filename or "").replace("\\", "/").split("/")[-1].strip()
+    problems = pkg.validate_asset(f"{pkg.ASSETS_DIR}/{name}", data)
+    if name == "" or pkg.has_errors(problems):
+        return _problems_response(problems or [pkg.Problem(name, "bad_path", "Nome inválido")])
+    digest = hashlib.sha256(data).hexdigest()
+    mime = file.content_type or mimetypes.guess_type(name)[0] or "application/octet-stream"
+    with get_connection() as conn:
+        row = _company_row(conn, skill_id, user)
+        used = conn.execute(
+            """SELECT COALESCE(SUM(size_bytes), 0) AS n FROM skill_files
+                WHERE tenant_id = %s AND NOT (skill_id = %s AND name = %s)""",
+            (user["tenant_id"], row["id"], name),
+        ).fetchone()["n"]
+        if used + len(data) > MAX_TENANT_SKILL_BYTES:
+            raise HTTPException(status_code=413, detail="Limite de 500 MB de arquivos de skills da empresa atingido")
+        saved = conn.execute(
+            """INSERT INTO skill_files (tenant_id, skill_id, name, mime, size_bytes, sha256, data, created_by)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+               ON CONFLICT (skill_id, name) DO UPDATE
+                  SET mime = EXCLUDED.mime, size_bytes = EXCLUDED.size_bytes,
+                      sha256 = EXCLUDED.sha256, data = EXCLUDED.data
+               RETURNING id, name, size_bytes""",
+            (user["tenant_id"], row["id"], name, mime, len(data), digest, data, user["id"]),
+        ).fetchone()
+        conn.execute("UPDATE tenant_skills SET revision = revision + 1, updated_at = now() WHERE id = %s", (row["id"],))
+    return {"id": str(saved["id"]), "name": saved["name"], "size_bytes": saved["size_bytes"]}
+
+
+@router.delete("/skills/company/{skill_id}/files/{file_id}")
+def delete_company_skill_file(skill_id: str, file_id: str, user: dict = Depends(current_user)):
+    _require_manage_company(user)
+    with get_connection() as conn:
+        row = _company_row(conn, skill_id, user)
+        conn.execute(
+            "DELETE FROM skill_files WHERE id::text = %s AND skill_id = %s", (file_id, row["id"])
+        )
+        conn.execute("UPDATE tenant_skills SET revision = revision + 1, updated_at = now() WHERE id = %s", (row["id"],))
+    return {"ok": True}
+
+
+class AgentSkillsIn(BaseModel):
+    skill_ids: list[str] = Field(default_factory=list, max_length=200)
+
+
+@router.get("/skills/agent/{template_id}")
+def get_agent_skills(template_id: str, user: dict = Depends(require("skills", "view"))):
+    with get_connection() as conn:
+        linked = {
+            str(r["skill_id"])
+            for r in conn.execute(
+                "SELECT skill_id FROM agent_skills WHERE template_id::text = %s AND tenant_id = %s",
+                (template_id, user["tenant_id"]),
+            ).fetchall()
+        }
+        rows = conn.execute(
+            """SELECT s.id, s.name, s.description,
+                      (SELECT count(*) FROM skill_files f WHERE f.skill_id = s.id) AS files
+                 FROM tenant_skills s WHERE s.tenant_id = %s AND s.status = 'active' ORDER BY s.name""",
+            (user["tenant_id"],),
+        ).fetchall()
+    return {
+        "skills": [
+            {
+                "id": str(r["id"]),
+                "name": r["name"],
+                "description": r["description"],
+                "files": r["files"],
+                "linked": str(r["id"]) in linked,
+            }
+            for r in rows
+        ]
+    }
+
+
+@router.put("/skills/agent/{template_id}")
+def set_agent_skills(template_id: str, payload: AgentSkillsIn, user: dict = Depends(current_user)):
+    _require_manage_company(user)
+    with get_connection() as conn:
+        tpl = conn.execute(
+            "SELECT id FROM templates WHERE id::text = %s AND tenant_id = %s",
+            (template_id, user["tenant_id"]),
+        ).fetchone()
+        if tpl is None:
+            raise HTTPException(status_code=404, detail="Agente não encontrado")
+        valid = {
+            str(r["id"])
+            for r in conn.execute(
+                "SELECT id FROM tenant_skills WHERE tenant_id = %s", (user["tenant_id"],)
+            ).fetchall()
+        }
+        ids = [i for i in dict.fromkeys(payload.skill_ids) if i in valid]
+        conn.execute("DELETE FROM agent_skills WHERE template_id = %s", (tpl["id"],))
+        for pos, sid in enumerate(ids):
+            conn.execute(
+                "INSERT INTO agent_skills (template_id, skill_id, tenant_id, position) VALUES (%s, %s, %s, %s)",
+                (tpl["id"], sid, user["tenant_id"], pos),
+            )
+    return {"linked": ids}

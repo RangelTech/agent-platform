@@ -65,35 +65,63 @@ def version_package(conn, version_id, *, include_content: bool = True) -> list[d
     return out
 
 
-def company_skill_files(conn, tenant_id, taken: set[str], *, include_content: bool) -> list[dict]:
-    """Skills compartilhadas da empresa, no formato dos arquivos do pacote do agente.
+def company_skill_files(
+    conn, tenant_id, taken: set[str], *, include_content: bool, template_id=None
+) -> list[dict]:
+    """Skills da empresa VINCULADAS ao agente (agent_skills), com os arquivos de cada uma.
 
-    Entram em todo agente por skills do tenant; se o pacote já traz uma skill com o mesmo
-    caminho, a do pacote vence.
+    SKILL.md em `skills/<nome>/SKILL.md`; arquivos em `skills/<nome>/arquivos/<arquivo>`.
+    Se o pacote do agente já traz o mesmo caminho, o do pacote vence. Sem vínculo, nenhuma.
     """
+    if template_id is None:
+        return []
     rows = conn.execute(
-        """SELECT name, content FROM tenant_skills
-            WHERE tenant_id = %s AND status = 'active' ORDER BY name""",
-        (tenant_id,),
+        """SELECT s.id, s.name, s.content FROM tenant_skills s
+             JOIN agent_skills a ON a.skill_id = s.id
+            WHERE a.template_id = %s AND s.tenant_id = %s AND s.status = 'active'
+            ORDER BY a.position, s.name""",
+        (template_id, tenant_id),
     ).fetchall()
     out = []
     for r in rows:
         path = f"skills/{r['name']}/SKILL.md"
-        if path in taken:
-            continue
-        data = r["content"].encode("utf-8")
-        out.append(
-            {
-                "path": path,
-                "kind": "skill",
-                "sha256": hashlib.sha256(data).hexdigest(),
-                "size_bytes": len(data),
-                "is_binary": False,
-                "mime": "text/markdown",
-                "content": r["content"] if include_content else None,
-                "encoding": "utf-8",
-            }
-        )
+        if path not in taken:
+            data = r["content"].encode("utf-8")
+            out.append(
+                {
+                    "path": path,
+                    "kind": "skill",
+                    "sha256": hashlib.sha256(data).hexdigest(),
+                    "size_bytes": len(data),
+                    "is_binary": False,
+                    "mime": "text/markdown",
+                    "content": r["content"] if include_content else None,
+                    "encoding": "utf-8",
+                }
+            )
+        files = conn.execute(
+            """SELECT name, mime, size_bytes, sha256,
+                      CASE WHEN %s THEN data ELSE NULL END AS data
+                 FROM skill_files WHERE skill_id = %s ORDER BY name""",
+            (include_content, r["id"]),
+        ).fetchall()
+        for f in files:
+            fpath = f"skills/{r['name']}/arquivos/{f['name']}"
+            if fpath in taken:
+                continue
+            raw = bytes(f["data"]) if f["data"] is not None else None
+            out.append(
+                {
+                    "path": fpath,
+                    "kind": "asset",
+                    "sha256": f["sha256"],
+                    "size_bytes": f["size_bytes"],
+                    "is_binary": True,
+                    "mime": f["mime"],
+                    "content": base64.b64encode(raw).decode("ascii") if raw is not None else None,
+                    "encoding": "base64",
+                }
+            )
     return out
 
 
@@ -101,8 +129,18 @@ def package_files(conn, version_id, tenant_id, *, include_content: bool = True) 
     """Arquivos do pacote da versão mais as skills compartilhadas da empresa."""
     files = version_package(conn, version_id, include_content=include_content)
     taken = {f["path"] for f in files}
+    tpl = conn.execute(
+        "SELECT template_id FROM template_versions WHERE id = %s", (version_id,)
+    ).fetchone()
     return sorted(
-        files + company_skill_files(conn, tenant_id, taken, include_content=include_content),
+        files
+        + company_skill_files(
+            conn,
+            tenant_id,
+            taken,
+            include_content=include_content,
+            template_id=tpl["template_id"] if tpl else None,
+        ),
         key=lambda f: f["path"],
     )
 
