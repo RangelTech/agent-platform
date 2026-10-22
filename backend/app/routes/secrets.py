@@ -18,7 +18,7 @@ from app.tenancy import resolve_target_tenant
 router = APIRouter(prefix="/api/secrets", tags=["secrets"])
 
 _NAME = re.compile(r"^[A-Za-z0-9_.-]{1,80}$")
-KINDS = ("secret", "ssh", "gcp")
+KINDS = ("secret", "ssh", "gcp", "aws", "azure")
 
 
 class SecretIn(BaseModel):
@@ -41,6 +41,9 @@ def env_name(kind: str, name: str) -> str:
     if kind == "secret":
         return name
     base = re.sub(r"[^A-Za-z0-9]+", "_", name).strip("_").upper()
+    if kind in ("aws", "azure"):
+        pre = kind.upper()
+        return f"{pre}_{base.removeprefix(pre + '_').removesuffix('_JSON') or 'CONTA'}_JSON"
     if kind == "ssh":
         base = base.removeprefix("SSH_")
         return f"SSH_{base or 'SERVIDOR'}"
@@ -86,6 +89,18 @@ def _check_value(kind: str, value: str) -> str:
                 status_code=400,
                 detail="Não parece uma service account do Google (faltam client_email/private_key)",
             )
+    if kind in ("aws", "azure"):
+        need = (
+            ("access_key_id", "secret_access_key")
+            if kind == "aws"
+            else ("tenant_id", "client_id", "client_secret")
+        )
+        try:
+            data = json.loads(value)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="O texto não é um JSON válido") from exc
+        if not isinstance(data, dict) or any(not data.get(k) for k in need):
+            raise HTTPException(status_code=400, detail=f"Faltam campos: {', '.join(need)}")
     return value
 
 
@@ -104,6 +119,8 @@ def _serialize(row: dict) -> dict:
         "hint": row["hint"],
         "env_vars": secret_vars(row["kind"], row["name"]),
         "is_active": row["is_active"],
+        "last_test_ok": row.get("last_test_ok"),
+        "last_test_detail": row.get("last_test_detail"),
         "created_at": row["created_at"].isoformat(),
         "updated_at": row["updated_at"].isoformat(),
     }
@@ -203,3 +220,26 @@ def archive_secret(secret_id: str, user: dict = Depends(require("secrets", "dele
     if row is None:
         raise HTTPException(status_code=404, detail="Segredo não encontrado")
     return {"status": "ok"}
+
+
+@router.post("/{secret_id}/test")
+async def test_secret(secret_id: str, user: dict = Depends(require("secrets", "edit"))):
+    from app.cred_probe import run_test
+    from app.crypto import decrypt
+
+    scope = "" if user["is_master"] else " AND tenant_id = %s"
+    params = [secret_id] + ([] if user["is_master"] else [user["tenant_id"]])
+    with get_connection() as conn:
+        row = conn.execute(
+            f"SELECT * FROM secrets WHERE id = %s AND NOT is_deleted{scope}", tuple(params)
+        ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Segredo não encontrado")
+    ok, detail = await run_test(row["kind"], decrypt(row["value_encrypted"]), row["meta"] or {})
+    with get_connection() as conn:
+        conn.execute(
+            """UPDATE secrets SET last_test_at = now(), last_test_ok = %s, last_test_detail = %s
+                WHERE id = %s""",
+            (ok, detail[:300], row["id"]),
+        )
+    return {"ok": ok, "detail": detail}
