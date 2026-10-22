@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     ui_context_secret: str = ""
     run_token_ttl_seconds: int = 900
     # Teto do cliente HTTP para uma run longa (acima do turno máximo de 540 s).
-    harness_run_timeout_seconds: int = 660
+    harness_run_timeout_seconds: int = 1900
     # Revisão das skills de sistema (pin enviado no payload da run).
     harness_system_skills_rev: str = "latest"
     # Gerenciador de execução (ambiente do cliente). Vazio = modo simulado,

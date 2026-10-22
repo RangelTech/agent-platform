@@ -29,7 +29,7 @@ INLINE_PACKAGE_LIMIT = 700 * 1024
 USER_SKILLS_INLINE_LIMIT = 256 * 1024
 HISTORY_MESSAGES = 20
 DEFAULT_MODEL_ALIAS = "agente-padrao"
-DEFAULT_LIMITS = {"max_turns": 60, "turn_timeout_s": 540, "idle_timeout_s": 120}
+DEFAULT_LIMITS = {"max_turns": 60, "turn_timeout_s": 1800, "idle_timeout_s": 120}
 
 
 def package_sha(files: list[dict]) -> str:
@@ -401,6 +401,7 @@ def prepare_harness_run(
         },
         "manifest": {
             "tools": manifest["tools"],
+            "toolsets": manifest.get("toolsets", []),
             "credential_grants": grants,
             "environment": manifest["environment"],
             "limits": limits,
