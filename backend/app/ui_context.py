@@ -93,6 +93,21 @@ def install_actor(x_ui_context: str | None = Header(default=None)) -> dict:
     return {"kind": "install", "claims": claims, "scopes": set(claims.get("scopes") or [])}
 
 
+def _sync_engine_flags(conn, tenant_id, flags: dict) -> None:
+    """O Chatwoot decide as flags; o motor só obedece (spec 10 §0.6).
+
+    `harness_enabled` e `graph_enabled` também vivem na linha do tenant e
+    guardam as rotas de templates; alinhá-las ao contexto assinado evita que
+    uma Account nova receba 403 "Recurso não habilitado" com a flag ligada.
+    """
+    for key in ("harness_enabled", "graph_enabled"):
+        if key in flags:
+            conn.execute(
+                f"UPDATE tenants SET {key} = %s WHERE id = %s AND {key} IS DISTINCT FROM %s",  # noqa: S608
+                (bool(flags[key]), tenant_id, bool(flags[key])),
+            )
+
+
 def service_actor(x_ui_context: str | None = Header(default=None)) -> dict:
     """Ator de uma Account: tenant, usuário, escopos e flags vêm só das claims.
 
@@ -109,6 +124,7 @@ def service_actor(x_ui_context: str | None = Header(default=None)) -> dict:
         ).fetchone()
         if tenant is None or not tenant["is_active"]:
             raise HTTPException(status_code=403, detail="Empresa indisponível")
+        _sync_engine_flags(conn, tenant_id, claims.get("flags") or {})
         email = str(claims.get("email") or f"cw{cw_user}@invalid.local")
         # Mesma pessoa (e-mail) removida e readicionada no Chatwoot volta com outro id: religa a
         # projeção antiga em vez de colidir em users_tenant_email_key (500 no stream).
