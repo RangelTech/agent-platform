@@ -169,3 +169,19 @@ def test_usuario_readicionado_com_novo_id_reaproveita_a_projecao(ui):
     second = ui.get("/internal/ui/me", headers=_ctx(chatwoot_user_id=71, **base))
     assert first.status_code == 200 and second.status_code == 200
     assert first.json()["user_id"] == second.json()["user_id"]
+
+
+def test_ui_context_flags_drive_tenant_harness_and_graph(ui):
+    tid = ui.post(
+        "/internal/ui/provision", json={"account_id": 12, "name": "Y"}, headers=_ctx()
+    ).json()["engine_tenant_id"]
+    ctx = dict(
+        aud="ui", scopes=("ai.chat.run",), engine_tenant_id=tid, chatwoot_user_id=7, account_id=12,
+        email="b@exemplo.com", name="B", flags={"harness_enabled": True, "graph_enabled": False},
+    )
+    assert ui.get("/internal/ui/me", headers=_ctx(**ctx)).status_code == 200
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT harness_enabled, graph_enabled FROM tenants WHERE id=%s", (tid,)
+        ).fetchone()
+    assert row["harness_enabled"] is True and row["graph_enabled"] is False
