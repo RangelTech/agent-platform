@@ -1,48 +1,89 @@
-# agent-platform
+# luar_engine
 
-Multi-tenant AI agent platform — corporate-grade, template-driven.
+O motor de IA do Luar. É um backend FastAPI, sem tela e sem login próprio, que guarda e executa o que faz um agente funcionar: templates e versões, skills, credenciais, datasources, memórias, uso e rotinas agendadas.
 
-Monorepo:
+> Nome anterior: `agent-platform`. A pasta `frontend/` (React) sai no corte U-6; as telas ficam no `luar_chatwoot`.
 
-| Path | Service | Description |
-|------|---------|-------------|
-| `kernel/` | teste_ia-kernel | AI kernel: LangGraph runtime, LiteLLM providers, in-process MCP tools, SSE streaming |
-| `backend/` | teste_ia-backend | App backend: auth, CRUD, chat gateway, integrations, serves the frontend build |
-| `frontend/` | (static) | React + Vite + TS + Tailwind SPA, built and served by the backend |
-| `infra/` | — | Sem deploy aqui: entrega por tag `v*` (workflow Release -> image.tar.gz + release-manifest.json); quem implanta e o vps_rt_infra |
-| `docs/` | — | Architecture docs. Decisions and spec live in the legacy repo `agent-llm/docs/replatform/` |
+## Onde ele se encaixa
 
-## Dev quickstart
+```
+                    Cliente (navegador e canais)
+                                |
+                        Traefik (VPS)
+                                |
+ luar_chatwoot --contexto assinado--> luar_engine --runs--> luar_harness
+ (telas, inbox, Kanban,               (motor de IA:         (fila, broker,
+  bridge, gateway de canais)           templates, skills,    workers Hermes)
+                                       credenciais, uso)            |
+                                            |                luar_workspaces
+                                       luar_ai_gateway       (ambiente de cada
+                                       (LLM multi-tenant)     empresa)
 
-```bash
-docker compose up --build
-# backend: http://localhost:8090  (serves the SPA + /health)
-# kernel:  http://localhost:8080/health
+ vps_rt_infra: compose, releases por digest, deploy e backup (só ela implanta)
+ airflow:      orquestração da empresa, inclui o backup noturno da VPS
+ luar_docs:    specs, evidências e ADRs
 ```
 
-Docker here is a local developer convenience only. Production does **not** depend
-on a local Docker daemon: the target runtime is Cloud Run for compute, VPS
-PostgreSQL for the database, and S3-compatible object storage (for example
-MinIO) for uploads/artifacts.
+Recebe chamadas do `luar_chatwoot` com contexto assinado, monta a run e a entrega ao `luar_harness`. Os modelos são chamados pelo `luar_ai_gateway`.
 
-Local (no docker) — Python 3.12, Node 20+:
+## Árvore de pastas
+
+```
+backend/app/         código do motor (rotas, kernel_router, harness_runtime, scheduler, uso)
+backend/migrations/  migrations SQL, aplicadas quando o serviço sobe
+backend/tests/       testes pytest (caixa preta na API, modelo de IA simulado)
+custom_tool_runner/  execução isolada de ferramentas personalizadas
+scripts/             provisionamento e manutenção (provisionar_router, graph_desligar, importar_oauth, verify.sh)
+docs/                arquitetura, contratos e runbooks
+```
+
+## Como rodar
 
 ```bash
-# backend
-cd backend && py -3.12 -m venv .venv && .venv/Scripts/pip install -r requirements.txt
+cd backend
+py -3.12 -m venv .venv && .venv/Scripts/pip install -r requirements.txt
+docker compose up postgres        # pgvector/pg16, só para desenvolvimento
 .venv/Scripts/uvicorn app.main:app --port 8090
-# kernel
-cd kernel && py -3.12 -m venv .venv && .venv/Scripts/pip install -r requirements.txt
-.venv/Scripts/uvicorn app.main:app --port 8080
-# frontend
-cd frontend && npm install && npm run build   # backend serves frontend/dist
 ```
 
-Postgres dev: `docker compose up postgres` (pgvector/pg16, db `agent_llm`, user/pass `agent/agent`). This is only for local integration tests and local development.
+## Como testar
 
-## Conventions
+`cd backend && pytest -q` roda offline. Testes marcados `integration` pedem Postgres. O gate completo é `scripts/verify.sh`.
 
-- Code, identifiers and comments: **English**. UI copy and agent prompts: **PT-BR**.
-- All state in Postgres. No Redis. Files/artifacts in S3-compatible storage or GCS in production, and local dir in dev.
-- Migrations: SQL files in `backend/migrations/`, applied automatically on backend boot.
-- Tests: black-box at the HTTP seam (`pytest`), LLM faked via deterministic stub provider. `-m integration` requires a running Postgres.
+## Como implantar
+
+Uma tag `v*` gera `image.tar.gz` e `release-manifest.json`. O deploy é só pelo `vps_rt_infra`. Em produção o serviço continua chamando `agent-platform-backend`.
+
+## Variáveis de ambiente
+
+Definidas em `backend/app/config.py` (aqui só os nomes): `DATABASE_URL`, `KERNEL_HARNESS_URL`, `KERNEL_HARNESS_AUDIENCE`, `KERNEL_HARNESS_TOKEN`, `HARNESS_INTERNAL_TOKEN`, `RUN_TOKEN_SECRET`, `UI_CONTEXT_SECRET`, `ENCRYPTION_KEY`, `SCHEDULER_ENABLED`. Segredos de negócio ficam cifrados no banco.
+
+## Isolamento e segurança
+
+- Toda consulta é filtrada por empresa (`tenant_id`).
+- As rotas `/internal/*` só aceitam o token de serviço ou o `run_token` da própria run.
+- Segredos nunca voltam em resposta, log ou evento.
+
+## Contratos e APIs
+
+| Superfície | Quem chama | Como autentica |
+|---|---|---|
+| `/api/*` (templates, skills, credenciais, datasources, memórias, uso, ambiente, aprovações, Hermes) | BFF do `luar_chatwoot` | contexto assinado (`UI_CONTEXT_SECRET`), nunca login |
+| `/internal/*` e `/internal/ui/*` | `luar_harness` e BFF | token de serviço ou `run_token` da própria run |
+| `/v1/messages` | integrações de máquina | chave de integração da empresa |
+
+O contrato do harness está em [`backend/docs/harness-internal-api.md`](backend/docs/harness-internal-api.md). O roteamento de IA por empresa está em [`docs/router-ia-por-tenant.md`](docs/router-ia-por-tenant.md).
+
+## Runbooks e decisões
+
+- [`docs/runbooks/desligar-graph.md`](docs/runbooks/desligar-graph.md): desligar os agentes `graph` de uma empresa, com backup e reativação.
+- [`docs/adr/0001-motor-sem-login.md`](docs/adr/0001-motor-sem-login.md): por que o motor não autentica pessoas.
+- Specs, evidências e decisões globais: repositório `luar_docs`.
+
+## Em extinção
+
+Os agentes `graph` e o `kernel-llm` saem na Fase L. Os dados ficam preservados.
+
+## Como contribuir
+
+Uma branch por tarefa, Conventional Commits em português, testes verdes e PR. Código e identificadores em inglês; textos de interface em português.
