@@ -10,10 +10,9 @@ Nenhuma rota daqui lista ou devolve as skills de sistema.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import mimetypes
-
-import base64
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
@@ -623,7 +622,9 @@ def upload_company_skill_file(
             (user["tenant_id"], row["id"], name),
         ).fetchone()["n"]
         if used + len(data) > MAX_TENANT_SKILL_BYTES:
-            raise HTTPException(status_code=413, detail="Limite de 500 MB de arquivos de skills da empresa atingido")
+            raise HTTPException(
+                status_code=413, detail="Limite de 500 MB de arquivos de skills da empresa atingido"
+            )
         saved = conn.execute(
             """INSERT INTO skill_files (tenant_id, skill_id, name, mime, size_bytes, sha256, data, created_by)
                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
@@ -633,7 +634,10 @@ def upload_company_skill_file(
                RETURNING id, name, size_bytes""",
             (user["tenant_id"], row["id"], name, mime, len(data), digest, data, user["id"]),
         ).fetchone()
-        conn.execute("UPDATE tenant_skills SET revision = revision + 1, updated_at = now() WHERE id = %s", (row["id"],))
+        conn.execute(
+            "UPDATE tenant_skills SET revision = revision + 1, updated_at = now() WHERE id = %s",
+            (row["id"],),
+        )
     return {"id": str(saved["id"]), "name": saved["name"], "size_bytes": saved["size_bytes"]}
 
 
@@ -645,7 +649,10 @@ def delete_company_skill_file(skill_id: str, file_id: str, user: dict = Depends(
         conn.execute(
             "DELETE FROM skill_files WHERE id::text = %s AND skill_id = %s", (file_id, row["id"])
         )
-        conn.execute("UPDATE tenant_skills SET revision = revision + 1, updated_at = now() WHERE id = %s", (row["id"],))
+        conn.execute(
+            "UPDATE tenant_skills SET revision = revision + 1, updated_at = now() WHERE id = %s",
+            (row["id"],),
+        )
     return {"ok": True}
 
 

@@ -71,9 +71,13 @@ def ensure_for_tenant(conn, tenant_id) -> str:
             (tenant_id, NAME, DESCRIPTION, SYSTEM_KEY),
         ).fetchone()
     tag = f"moon:{package_hash()}"
-    current = conn.execute(
-        "SELECT notes FROM template_versions WHERE id = %s", (template["active_version_id"],)
-    ).fetchone() if template["active_version_id"] else None
+    current = (
+        conn.execute(
+            "SELECT notes FROM template_versions WHERE id = %s", (template["active_version_id"],)
+        ).fetchone()
+        if template["active_version_id"]
+        else None
+    )
     if current and current["notes"] == tag:
         return str(template["id"])
     number = conn.execute(
@@ -89,7 +93,13 @@ def ensure_for_tenant(conn, tenant_id) -> str:
         conn.execute(
             """INSERT INTO template_skill_files (version_id, path, kind, content, sha256, size_bytes)
                VALUES (%s, %s, 'agent', %s, %s, %s)""",
-            (version["id"], f["path"], f["content"], sha256_text(f["content"]), size_bytes(f["content"])),
+            (
+                version["id"],
+                f["path"],
+                f["content"],
+                sha256_text(f["content"]),
+                size_bytes(f["content"]),
+            ),
         )
     conn.execute(
         "UPDATE templates SET active_version_id=%s, updated_at=now() WHERE id=%s",
