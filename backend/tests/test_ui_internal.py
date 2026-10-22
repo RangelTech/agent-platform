@@ -40,7 +40,7 @@ def test_provision_is_idempotent_and_creates_factory(ui):
             "SELECT count(*) AS n FROM templates WHERE tenant_id=%s AND system_key IS NOT NULL",
             (first.json()["engine_tenant_id"],),
         ).fetchone()["n"]
-    assert n == 1
+    assert n == 2  # assistente-ragentes e Sr Moon (spec 11 §23)
 
 
 def test_context_rejects_replay_wrong_audience_and_tamper(ui):

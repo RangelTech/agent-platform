@@ -183,6 +183,8 @@ def test_company_skills_reach_the_run_package(client, enabled, tenant_admin, fak
     on = client.post("/api/skills/company", json={"content": _md("saudacao")}, headers=h).json()
     off = client.post("/api/skills/company", json={"content": _md("desligada")}, headers=h).json()
     client.post(f"/api/skills/company/{off['id']}/disable", headers=h)
+    # spec 11 §4: só entram as skills vinculadas ao agente
+    client.put(f"/api/skills/agent/{t['id']}", json={"skill_ids": [on["id"], off["id"]]}, headers=h)
     client.post("/api/chat/send", json={"message": "oi", "template_id": t["id"]}, headers=h)
     pkg = fake_harness.calls["runs"][-1]["skills"]["tenant_package"]
     paths = [f["path"] for f in pkg["files"]]
