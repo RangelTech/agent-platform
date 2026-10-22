@@ -132,6 +132,9 @@ def provision(
                 (tenant["id"],),
             )
         ensure_for_tenant(conn, tenant["id"])
+        from app.moon import ensure_for_tenant as ensure_moon
+
+        ensure_moon(conn, tenant["id"])
     if created:
         background.add_task(
             _provisionar_router_em_background, str(tenant["id"]), tenant["tenant_key"]

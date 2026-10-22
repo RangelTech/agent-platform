@@ -352,6 +352,8 @@ def normalize_manifest(raw: object) -> dict:
             kinds = [k for k in ca if isinstance(k, str) and CONFIRM_KIND_RE.match(k)]
             if kinds:
                 out["confirm_actions"] = kinds  # cartão só para estes tipos de ação
+        if limits.get("strict_scope") is True:
+            out["strict_scope"] = True  # desliga o atalho de quem edita agentes (Sr Moon)
         scopes = _clean_list(limits.get("allowed_scopes"), SCOPE_RE_AI, lower=True)
         if scopes:
             out["allowed_scopes"] = scopes  # quem pode usar este agente (any-of)
