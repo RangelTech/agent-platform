@@ -296,7 +296,7 @@ def default_manifest() -> dict:
 # Formato em que o agente escreve a resposta (por canal): markdown (web), whatsapp, text.
 OUTPUT_FORMATS = ("markdown", "whatsapp", "text")
 
-# Toolsets nativos do worker que o manifesto pode ligar. Espelha OPTIONAL_TOOLSETS/FORBIDDEN_TOOLSETS do
+# Toolsets nativos do worker que o manifesto pode ligar. Espelha o OPTIONAL/FORBIDDEN_TOOLSETS do
 # kernel-harness (profiles/profile_config.py): o kernel recusa a run com toolset fora desta lista.
 OPTIONAL_TOOLSETS = ("web", "vision", "image_gen")
 FORBIDDEN_TOOLSETS = frozenset({
@@ -323,7 +323,7 @@ def normalize_manifest(raw: object) -> dict:
     toolsets = raw.get("toolsets")
     if isinstance(toolsets, list):
         # so os liberaveis (web, vision, image_gen); proibidos e desconhecidos sao descartados aqui
-        # (validate_manifest avisa quem salva). Sem toolsets nao ha chave, o formato canonico nao muda.
+        # (validate_manifest avisa quem salva). Sem toolsets nao ha chave: formato canonico igual.
         kept = [t for t in dict.fromkeys(toolsets) if t in OPTIONAL_TOOLSETS]
         if kept:
             base["toolsets"] = kept
