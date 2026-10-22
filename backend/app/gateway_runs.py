@@ -43,7 +43,7 @@ def run_gateway(conn, tenant_id, combo: str) -> dict | None:
     try:
         base = resolver_segredo("GATEWAY_BASE_URL")
         token = resolver_segredo("GATEWAY_ADMIN_TOKEN")
-        # tenant do gateway = o proprio tenant do motor (G-2 cria com o mesmo id); platform e o fallback
+        # tenant do gateway = o proprio tenant do motor (mesmo id do G-2); platform e o fallback
         own = _own_gateway_tenant(conn, tenant_id) or str(tenant_id)
         candidates = [t for t in (own, PLATFORM_TENANT) if t]
         for gw_tenant in dict.fromkeys(candidates):
