@@ -219,7 +219,7 @@ def test_member_revoked_blocks_old_context_and_allows_readded_user(ui):
     base = dict(
         aud="ui", scopes=("ai.chat.run",), engine_tenant_id=tid, account_id=77, email="rev@y.com"
     )
-    old = _ctx(chatwoot_user_id=90, iat=int(time.time()) - 60, **base)
+    old = _ctx(chatwoot_user_id=90, iat=int(time.time()) - 20, **base)
     assert ui.get("/internal/ui/me", headers=old).status_code == 200
     resp = ui.post(
         "/internal/ui/member-revoked",
@@ -228,7 +228,7 @@ def test_member_revoked_blocks_old_context_and_allows_readded_user(ui):
     )
     assert resp.status_code == 200 and resp.json()["revoked"] is True
     blocked = ui.get(
-        "/internal/ui/me", headers=_ctx(chatwoot_user_id=90, iat=int(time.time()) - 60, **base)
+        "/internal/ui/me", headers=_ctx(chatwoot_user_id=90, iat=int(time.time()) - 20, **base)
     )
     assert blocked.status_code == 403
     assert "removido" in blocked.json()["detail"]
