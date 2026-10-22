@@ -33,7 +33,7 @@ backend/app/         código do motor (rotas, kernel_router, harness_runtime, sc
 backend/migrations/  migrations SQL, aplicadas quando o serviço sobe
 backend/tests/       testes pytest (caixa preta na API, modelo de IA simulado)
 custom_tool_runner/  execução isolada de ferramentas personalizadas
-scripts/             QA e provisionamento que ainda são usados
+scripts/             provisionamento e manutenção (provisionar_router, graph_desligar, importar_oauth, verify.sh)
 docs/                arquitetura, contratos e runbooks
 ```
 
@@ -63,6 +63,22 @@ Definidas em `backend/app/config.py` (aqui só os nomes): `DATABASE_URL`, `KERNE
 - Toda consulta é filtrada por empresa (`tenant_id`).
 - As rotas `/internal/*` só aceitam o token de serviço ou o `run_token` da própria run.
 - Segredos nunca voltam em resposta, log ou evento.
+
+## Contratos e APIs
+
+| Superfície | Quem chama | Como autentica |
+|---|---|---|
+| `/api/*` (templates, skills, credenciais, datasources, memórias, uso, ambiente, aprovações, Hermes) | BFF do `luar_chatwoot` | contexto assinado (`UI_CONTEXT_SECRET`), nunca login |
+| `/internal/*` e `/internal/ui/*` | `luar_harness` e BFF | token de serviço ou `run_token` da própria run |
+| `/v1/messages` | integrações de máquina | chave de integração da empresa |
+
+O contrato do harness está em [`backend/docs/harness-internal-api.md`](backend/docs/harness-internal-api.md). O roteamento de IA por empresa está em [`docs/router-ia-por-tenant.md`](docs/router-ia-por-tenant.md).
+
+## Runbooks e decisões
+
+- [`docs/runbooks/desligar-graph.md`](docs/runbooks/desligar-graph.md): desligar os agentes `graph` de uma empresa, com backup e reativação.
+- [`docs/adr/0001-motor-sem-login.md`](docs/adr/0001-motor-sem-login.md): por que o motor não autentica pessoas.
+- Specs, evidências e decisões globais: repositório `luar_docs`.
 
 ## Em extinção
 
