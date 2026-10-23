@@ -376,9 +376,15 @@ def prepare_harness_run(
             sk = conn.execute(
                 "SELECT system_key FROM templates WHERE id = %s", (template_id,)
             ).fetchone()
-            credentials["secrets"].update(
-                hosts_mod.run_env(conn, tenant_id, template_id, (sk or {}).get("system_key"))
+            hosts_env = hosts_mod.run_env(
+                conn, tenant_id, template_id, (sk or {}).get("system_key")
             )
+            if hosts_env:
+                if not any(g["kind"] == "secrets" for g in grants):
+                    # o agente só enxerga os computadores liberados, não os segredos da empresa
+                    credentials["secrets"] = {}
+                    grants.append({"kind": "secrets", "id": None})
+                credentials["secrets"].update(hosts_env)
         luar = _luar_access(conn, manifest, tenant_id, user_id, run_id)
         if luar:
             credentials["luar"] = luar  # o agente opera o Luar como o usuário do chat (spec 10 H-6)
