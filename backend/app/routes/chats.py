@@ -636,3 +636,55 @@ async def _send_to_skills_agent(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+# --- Spec 11 §3: ditado (voz -> texto no campo do chat) ----------------------------------------
+
+_STT_URLS = {
+    "groq": "https://api.groq.com/openai/v1/audio/transcriptions",
+    "openai": "https://api.openai.com/v1/audio/transcriptions",
+}
+MAX_DICTATION_BYTES = 20 * 1024 * 1024
+
+
+class TranscribeBody(BaseModel):
+    content_b64: str = Field(min_length=4)
+    mime: str = "audio/webm"
+
+
+@router.post("/me/transcribe")
+async def transcribe_dictation(body: TranscribeBody, user: dict = Depends(current_user)):
+    """Transcreve um áudio curto com o provedor de voz da empresa (Groq, OpenAI ou compatível)."""
+    import base64
+
+    require_scope_for_chatwoot(user, "ai.chat.view")
+    spec = _transcription_spec(user["tenant_id"])
+    prov = spec.get("provider")
+    if prov not in ("groq", "openai", "openai-compatible"):
+        raise HTTPException(status_code=409, detail="no_voice_provider")
+    try:
+        raw = base64.b64decode(body.content_b64, validate=False)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Áudio inválido.") from None
+    if not raw or len(raw) > MAX_DICTATION_BYTES:
+        raise HTTPException(status_code=422, detail="Áudio vazio ou grande demais.")
+    url = (
+        _STT_URLS[prov]
+        if prov in _STT_URLS
+        else spec["api_base"].rstrip("/") + "/audio/transcriptions"
+    )
+    model = str(spec.get("model") or "whisper-1").split("/")[-1]
+    ext = "m4a" if "mp4" in body.mime else "webm"
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        try:
+            r = await client.post(
+                url,
+                headers={"Authorization": f"Bearer {spec['api_key']}"},
+                data={"model": model, "language": "pt"},
+                files={"file": (f"voz.{ext}", raw, body.mime.split(";")[0])},
+            )
+        except httpx.HTTPError:
+            raise HTTPException(status_code=502, detail="voice_provider_unreachable") from None
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail="voice_provider_error")
+    return {"text": str(r.json().get("text") or "").strip()}
