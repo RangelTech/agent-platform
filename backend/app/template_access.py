@@ -55,5 +55,7 @@ def can_run(manifest: dict | None, scopes: set[str]) -> bool:
 def ensure_can_run(manifest: dict | None, user: dict) -> None:
     if user.get("is_master"):
         return
-    if not can_run(manifest, legacy_scopes(user)):
+    # contexto assinado do Chatwoot traz os escopos ai.* direto; o perfil legado só serve ao app antigo
+    scopes = legacy_scopes(user) | set(user.get("scopes", ()) or ())
+    if not can_run(manifest, scopes):
         raise HTTPException(status_code=403, detail="Você não tem permissão para usar este agente")
