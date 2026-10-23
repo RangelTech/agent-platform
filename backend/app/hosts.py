@@ -24,7 +24,7 @@ def _headers() -> dict:
 
 def relay_addr() -> str:
     """host:porta do relay TCP do hub, como o ambiente da empresa o enxerga."""
-    return os.environ.get("CONECTOR_RELAY_ADDR", "conector.rangeltech.net:2222")
+    return os.environ.get("CONECTOR_RELAY_ADDR", "conector.rangeltech.net:443")
 
 
 def new_keypair() -> tuple[str, str]:
@@ -116,7 +116,7 @@ def run_env(conn, tenant_id, template_id, system_key: str | None) -> dict[str, s
         host, _, port = relay_addr().partition(":")
         out[f"{base}_KEY"] = decrypt(h["conn_key_encrypted"])
         out[f"{base}_HUB"] = host
-        out[f"{base}_PORT"] = port or "2222"
+        out[f"{base}_PORT"] = port or "443"
         out[f"{base}_TOKEN"] = tok
         out[f"{base}_OS"] = (status.get(str(h["id"])) or {}).get("os") or (h["os"] or "")
         names.append(f"{h['name']}={base}")
