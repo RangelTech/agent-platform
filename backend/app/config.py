@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     # Seconds to wait for a database connection before failing. Never unset:
     # an unreachable database must fail fast, not hang the process.
     db_connect_timeout: int = 5
+    # >0 liga o pool de conexoes (producao); 0 = uma conexao por chamada (testes, scripts)
+    db_pool_max: int = 0
     # Directory with the built SPA. Resolved relative to the repo in dev,
     # baked into the image in production.
 
