@@ -743,3 +743,45 @@ def reset_moon_memory(everyone: bool = False, user: dict = Depends(current_user)
                 (user["tenant_id"], user["id"], tpl["id"]),
             )
     return {"removed": cur.rowcount}
+
+
+# --- Spec 11 §5: promover skill pessoal (ou aprendida) para skill do tenant -----------------
+
+
+@router.post("/me/skills/{skill_id}/promote", status_code=201)
+def promote_my_skill(skill_id: str, user: dict = Depends(current_user)):
+    """Copia a skill pessoal para a empresa (só quem gere skills da empresa). A original sai do
+    chat do usuário (fica arquivada) para não duplicar. Não existe o caminho inverso."""
+    require_scope_for_chatwoot(user, "ai.skills.manage_own")
+    _require_manage_company(user)
+    with get_connection() as conn:
+        own = _own(conn, skill_id, user)
+        problems, data = check_company_skill(conn, user["tenant_id"], own["content"], None)
+        if pkg.has_errors(problems):
+            return _problems_response(problems)
+        row = conn.execute(
+            """INSERT INTO tenant_skills (tenant_id, name, description, content, created_by,
+                                          updated_by)
+               VALUES (%s, %s, %s, %s, %s, %s) RETURNING *""",
+            (
+                user["tenant_id"],
+                data["name"],
+                str(data["description"]),
+                own["content"],
+                user["id"],
+                user["id"],
+            ),
+        ).fetchone()
+        conn.execute(
+            "UPDATE user_skills SET status = 'discarded', updated_at = now() WHERE id = %s",
+            (own["id"],),
+        )
+        audit(
+            conn,
+            tenant_id=user["tenant_id"],
+            user_id=user["id"],
+            actor="user",
+            action="promote_to_company",
+            skill_ref=row["name"],
+        )
+    return _company_view(row, with_content=True)
