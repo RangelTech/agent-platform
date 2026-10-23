@@ -720,7 +720,8 @@ def set_agent_skills(template_id: str, payload: AgentSkillsIn, user: dict = Depe
 
 
 @router.post("/me/moon/reset")
-def reset_moon_memory(everyone: bool = False, user: dict = Depends(current_user)):
+async def reset_moon_memory(everyone: bool = False, user: dict = Depends(current_user)):
+    """Zera o que o Sr Moon aprendeu: skills aprendidas e o perfil do agente no kernel."""
     if user.get("via") == "chatwoot" and "ai.moon.use" not in set(user.get("scopes", ())):
         raise HTTPException(status_code=403, detail="Permissão negada")
     with get_connection() as conn:
@@ -737,12 +738,47 @@ def reset_moon_memory(everyone: bool = False, user: dict = Depends(current_user)
                 "DELETE FROM user_skills WHERE tenant_id = %s AND template_id = %s",
                 (user["tenant_id"], tpl["id"]),
             )
+            users = [
+                str(r["user_id"])
+                for r in conn.execute(
+                    "SELECT DISTINCT user_id FROM chat_runs WHERE tenant_id = %s AND template_id = %s",
+                    (user["tenant_id"], tpl["id"]),
+                ).fetchall()
+                if r["user_id"]
+            ]
         else:
             cur = conn.execute(
                 "DELETE FROM user_skills WHERE tenant_id = %s AND user_id = %s AND template_id = %s",
                 (user["tenant_id"], user["id"], tpl["id"]),
             )
-    return {"removed": cur.rowcount}
+            users = [str(user["id"])]
+    profiles = await _reset_profiles(str(user["tenant_id"]), str(tpl["id"]), users)
+    return {"removed": cur.rowcount, "profiles": profiles}
+
+
+async def _reset_profiles(tenant_id: str, template_id: str, users: list[str]) -> int:
+    """Pede ao kernel para apagar o perfil (memória e sessões do Hermes) de cada usuário."""
+    import httpx
+
+    from app.kernel_router import kernel_headers, target_for_kind
+
+    try:
+        target = target_for_kind("skills")
+    except HTTPException:
+        return 0
+    done = 0
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        for uid in users:
+            try:
+                r = await client.post(
+                    f"{target.url.rstrip('/')}/v1/profiles/reset",
+                    headers=await kernel_headers(target),
+                    json={"tenant_id": tenant_id, "template_id": template_id, "user_id": uid},
+                )
+                done += 1 if r.status_code == 200 and r.json().get("removed") else 0
+            except httpx.HTTPError:
+                continue
+    return done
 
 
 # --- Spec 11 §5: promover skill pessoal (ou aprendida) para skill do tenant -----------------
