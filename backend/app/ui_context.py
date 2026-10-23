@@ -65,10 +65,18 @@ def verify_context(token: str, audience: str) -> dict | None:
     return claims
 
 
+_last_nonce_gc = 0.0
+NONCE_GC_INTERVAL = 60.0
+
+
 def _consume_nonce(nonce: str, exp: float) -> bool:
     """True se o nonce era novo (e agora está gasto)."""
+    global _last_nonce_gc
     with get_connection() as conn:
-        conn.execute("DELETE FROM ui_nonces WHERE expires_at < now()")
+        # limpeza dos vencidos no maximo 1x por minuto por processo (antes: a cada requisicao)
+        if time.monotonic() - _last_nonce_gc > NONCE_GC_INTERVAL:
+            _last_nonce_gc = time.monotonic()
+            conn.execute("DELETE FROM ui_nonces WHERE expires_at < now()")
         row = conn.execute(
             """INSERT INTO ui_nonces (nonce, expires_at) VALUES (%s, to_timestamp(%s))
                ON CONFLICT DO NOTHING RETURNING nonce""",
@@ -136,7 +144,7 @@ def service_actor(x_ui_context: str | None = Header(default=None)) -> dict:
             (cw_user, tenant_id, email, cw_user),
         )
         revoked = conn.execute(
-            """SELECT id, is_active, revoked_at,
+            """SELECT id, is_active, revoked_at, email, name,
                       extract(epoch FROM revoked_at) AS revoked_ts
                  FROM users WHERE tenant_id = %s AND chatwoot_user_id = %s""",
             (tenant_id, cw_user),
@@ -152,14 +160,24 @@ def service_actor(x_ui_context: str | None = Header(default=None)) -> dict:
                 "WHERE id = %s",
                 (revoked["id"],),
             )
-        row = conn.execute(
-            """INSERT INTO users (tenant_id, chatwoot_user_id, email, name)
-               VALUES (%s, %s, %s, %s)
-               ON CONFLICT (tenant_id, chatwoot_user_id) WHERE chatwoot_user_id IS NOT NULL
-               DO UPDATE SET email = EXCLUDED.email, name = EXCLUDED.name, updated_at = now()
-               RETURNING id, is_active""",
-            (tenant_id, cw_user, email, str(claims.get("name") or email)),
-        ).fetchone()
+        name = str(claims.get("name") or email)
+        if (
+            revoked is not None
+            and revoked["is_active"]
+            and revoked["email"] == email
+            and revoked["name"] == name
+        ):
+            # nada mudou: sem UPSERT (evita travar a mesma linha sob requisicoes simultaneas)
+            row = {"id": revoked["id"], "is_active": True}
+        else:
+            row = conn.execute(
+                """INSERT INTO users (tenant_id, chatwoot_user_id, email, name)
+                   VALUES (%s, %s, %s, %s)
+                   ON CONFLICT (tenant_id, chatwoot_user_id) WHERE chatwoot_user_id IS NOT NULL
+                   DO UPDATE SET email = EXCLUDED.email, name = EXCLUDED.name, updated_at = now()
+                   RETURNING id, is_active""",
+                (tenant_id, cw_user, email, name),
+            ).fetchone()
     if not row["is_active"]:
         raise HTTPException(status_code=403, detail=REVOKED_MESSAGE)
     return {
